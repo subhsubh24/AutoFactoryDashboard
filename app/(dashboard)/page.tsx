@@ -6,7 +6,7 @@ import {
   getFactoryBriefing,
   type Narrative,
 } from "@/lib/narrative";
-import { getHistory } from "@/lib/kv";
+import { getHistory, getFactoryHistory } from "@/lib/kv";
 import { estimateCompletion, formatEtaDate, formatHorizon, type Estimate } from "@/lib/estimate";
 import { formatCycle } from "@/lib/quality";
 import { getProjectBySlug } from "@/config/projects";
@@ -23,6 +23,7 @@ import {
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { WeekBars } from "@/components/WeekBars";
 import { ProgressTrend, type ProjectTrend } from "@/components/ProgressTrend";
+import { FactoryTrends } from "@/components/FactoryTrends";
 import { RelativeTime } from "@/components/RelativeTime";
 import { CalmCoda, Greeting, TimeOfDay } from "@/components/TimeAware";
 import {
@@ -61,6 +62,9 @@ export default async function OverviewPage() {
     current: headlinePct(s),
     values: (histories[i]?.slice(-HISTORY_DAYS) ?? []).map((m) => m.pct),
   }));
+  const factoryHistory = await getFactoryHistory();
+  const hasFactoryHistory =
+    factoryHistory !== null && factoryHistory.length > 0;
   const etas = new Map<string, Estimate | null>(
     snapshots.map((s, i) => [s.slug, estimateCompletion(s, histories[i])]),
   );
@@ -261,7 +265,20 @@ export default async function OverviewPage() {
         )}
       </section>
 
-      {/* 6 — The detail, kept out of the way until you want it. */}
+      {/* 6 — Factory KPI trends over time (Vercel KV; hides without it). */}
+      {hasFactoryHistory && (
+        <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 shadow-card">
+          <div className="mb-3 flex items-end justify-between">
+            <h2 className="text-sm font-semibold tracking-tight text-ink">
+              Factory trends
+            </h2>
+            <span className="text-xs text-muted">throughput · yield · lead time</span>
+          </div>
+          <FactoryTrends metrics={factoryHistory!} />
+        </section>
+      )}
+
+      {/* 7 — The detail, kept out of the way until you want it. */}
       {overnightCount > 0 && (
         <details className="group rounded-2xl border border-hairline bg-card shadow-card">
           <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3.5 text-sm font-medium text-ink">

@@ -12,8 +12,27 @@ export interface DailyMetric {
   ciPassRate: number | null;
 }
 
+/** Factory-wide daily KPIs (manufacturing-style), for trend charts. */
+export interface FactoryDailyMetric {
+  /** YYYY-MM-DD (UTC). */
+  date: string;
+  /** PRs merged across the factory in the last 24h (throughput). */
+  prs: number;
+  /** First-pass yield — CI pass rate, %. */
+  yieldPct: number | null;
+  /** Median open→merge lead time, hours. */
+  leadHours: number | null;
+  /** Rework rate — % of merges that are fixes. */
+  reworkPct: number | null;
+  /** Mean build progress across projects, %. */
+  progress: number | null;
+  /** Open PRs in flight (WIP). */
+  wip: number;
+}
+
 const MAX_DAYS = 60;
 const key = (slug: string) => `afd:hist:${slug}`;
+const FACTORY_KEY = "afd:hist:__factory";
 
 /**
  * Resolve KV REST credentials, accepting either the `@vercel/kv` names or the
@@ -72,6 +91,41 @@ export async function recordDailyMetric(
     return true;
   } catch (e) {
     console.error("KV recordDailyMetric failed:", e);
+    return false;
+  }
+}
+
+/** Read factory-wide daily KPI history (ascending by date). Null when disabled. */
+export async function getFactoryHistory(): Promise<FactoryDailyMetric[] | null> {
+  if (!isHistoryEnabled()) return null;
+  try {
+    const kv = await getKv();
+    const data = await kv.get<FactoryDailyMetric[]>(FACTORY_KEY);
+    if (!Array.isArray(data)) return [];
+    return [...data].sort((a, b) => a.date.localeCompare(b.date));
+  } catch (e) {
+    console.error("KV getFactoryHistory failed:", e);
+    return null;
+  }
+}
+
+/** Upsert today's factory-wide KPIs. Returns false when disabled/failed. */
+export async function recordFactoryMetric(
+  metric: FactoryDailyMetric,
+): Promise<boolean> {
+  if (!isHistoryEnabled()) return false;
+  try {
+    const kv = await getKv();
+    const existing = (await kv.get<FactoryDailyMetric[]>(FACTORY_KEY)) ?? [];
+    const byDate = new Map(existing.map((m) => [m.date, m]));
+    byDate.set(metric.date, metric);
+    const merged = [...byDate.values()]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(-MAX_DAYS);
+    await kv.set(FACTORY_KEY, merged);
+    return true;
+  } catch (e) {
+    console.error("KV recordFactoryMetric failed:", e);
     return false;
   }
 }
