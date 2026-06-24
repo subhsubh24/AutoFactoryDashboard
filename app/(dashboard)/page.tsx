@@ -1,8 +1,16 @@
 import Link from "next/link";
 import { getAllSnapshots } from "@/lib/github";
 import { buildOverview, humanAsksFor, type NeedEntry } from "@/lib/aggregate";
+import { getProjectBySlug } from "@/config/projects";
 import type { ProjectSnapshot } from "@/lib/types";
-import { cn, ciMeta, pluralize, statusMeta, toneClasses } from "@/lib/utils";
+import {
+  cn,
+  ciMeta,
+  kindLabel,
+  pluralize,
+  statusMeta,
+  toneClasses,
+} from "@/lib/utils";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { RelativeTime } from "@/components/RelativeTime";
 import { CalmCoda, Greeting } from "@/components/TimeAware";
@@ -89,16 +97,16 @@ export default async function OverviewPage() {
         </section>
       )}
 
-      {/* 3 — A calm one-line status per project. */}
+      {/* 3 — A tile per project: name opens the live app; "Dashboard" opens metrics. */}
       <section className="mb-6">
         <h2 className="mb-3 px-1 text-sm font-semibold tracking-tight text-ink">
           Projects
         </h2>
-        <ul className="overflow-hidden rounded-2xl border border-hairline bg-card shadow-card divide-y divide-hairline">
+        <div className="grid gap-4 sm:grid-cols-3">
           {snapshots.map((s) => (
-            <GlanceRow key={s.slug} snapshot={s} />
+            <ProjectTile key={s.slug} snapshot={s} />
           ))}
-        </ul>
+        </div>
       </section>
 
       {/* 4 — The detail, kept out of the way until you want it. */}
@@ -187,56 +195,91 @@ function AskRow({ need }: { need: NeedEntry }) {
   );
 }
 
-/** A calm, single-line project status. */
-function GlanceRow({ snapshot: s }: { snapshot: ProjectSnapshot }) {
+/**
+ * A project tile. The name is a direct link to the live product (one tap to see
+ * it), and a "Dashboard" link drops into the per-project metrics page.
+ */
+function ProjectTile({ snapshot: s }: { snapshot: ProjectSnapshot }) {
   const status = statusMeta(s.status);
   const ci = ciMeta(s.ci.status);
   const asks = humanAsksFor(s).length;
   const shipped = s.merged24h;
+  const appUrl = getProjectBySlug(s.slug)?.appUrl;
 
   return (
-    <li>
-      <Link
-        href={`/p/${s.slug}`}
-        className="group flex items-center gap-3 px-5 py-4 transition-colors hover:bg-bg/60"
-      >
+    <div className="card flex flex-col gap-3 p-5 shadow-card transition-shadow hover:shadow-lift">
+      <div className="flex items-start gap-2.5">
         <span
           className={cn(
-            "h-2.5 w-2.5 shrink-0 rounded-full",
+            "mt-2 h-2.5 w-2.5 shrink-0 rounded-full",
             toneClasses(status.tone).dot,
             status.live && "animate-pulse-soft",
           )}
+          aria-hidden
         />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate font-serif text-base font-medium text-ink">
-            {s.displayName}
-          </span>
-          <span className="text-xs text-muted">
-            {shipped > 0
-              ? `${shipped} shipped overnight`
-              : "nothing shipped overnight"}
-          </span>
-        </span>
+        <div className="min-w-0 flex-1">
+          {appUrl ? (
+            <a
+              href={appUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="group inline-flex max-w-full items-center gap-1.5 text-ink transition-colors hover:text-clay"
+            >
+              <span className="truncate font-serif text-lg font-medium leading-tight">
+                {s.displayName}
+              </span>
+              <ExternalLinkIcon className="h-3.5 w-3.5 shrink-0 text-muted transition-colors group-hover:text-clay" />
+            </a>
+          ) : (
+            <Link
+              href={`/p/${s.slug}`}
+              className="truncate font-serif text-lg font-medium leading-tight text-ink transition-colors hover:text-clay"
+            >
+              {s.displayName}
+            </Link>
+          )}
+          <p className="mt-0.5 text-xs text-muted">{kindLabel(s.kind)}</p>
+        </div>
+      </div>
 
+      <p className="text-sm text-ink">
+        {shipped > 0 ? (
+          <>
+            <span className="font-semibold tabular">{shipped}</span>{" "}
+            <span className="text-muted">shipped overnight</span>
+          </>
+        ) : (
+          <span className="text-muted">nothing shipped overnight</span>
+        )}
+      </p>
+
+      <div className="mt-auto flex items-center justify-between border-t border-hairline pt-3">
         {asks > 0 ? (
-          <span className="hidden shrink-0 rounded-full bg-clay-soft px-2 py-0.5 text-[11px] font-medium text-clay-strong sm:inline">
+          <span className="rounded-full bg-clay-soft px-2 py-0.5 text-[11px] font-medium text-clay-strong">
             needs you
           </span>
         ) : (
           <span
             className={cn(
-              "hidden shrink-0 items-center gap-1.5 text-xs sm:flex",
+              "flex items-center gap-1.5 text-xs",
               toneClasses(ci.tone).text,
             )}
           >
-            <span className={cn("h-1.5 w-1.5 rounded-full", toneClasses(ci.tone).dot)} />
+            <span
+              className={cn("h-1.5 w-1.5 rounded-full", toneClasses(ci.tone).dot)}
+            />
             CI {ci.label.toLowerCase()}
           </span>
         )}
-
-        <ArrowRightIcon className="h-4 w-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5 group-hover:text-clay" />
-      </Link>
-    </li>
+        <Link
+          href={`/p/${s.slug}`}
+          className="group flex items-center gap-1 text-xs font-medium text-muted transition-colors hover:text-clay"
+        >
+          Dashboard
+          <ArrowRightIcon className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+        </Link>
+      </div>
+    </div>
   );
 }
 

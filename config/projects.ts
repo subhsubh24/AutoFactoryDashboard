@@ -29,6 +29,8 @@ export interface ProjectConfig {
   branch?: string;
   /** What surface(s) the project ships to — drives a small badge. */
   kind: ProjectKind;
+  /** Live deployment URL for the product itself (optional). */
+  appUrl?: string;
 }
 
 export const PROJECTS: ProjectConfig[] = [
@@ -39,6 +41,7 @@ export const PROJECTS: ProjectConfig[] = [
     repo: "AptDesignerAI",
     branch: "claude/ai-apartment-design-app-iHAdb",
     kind: "web+mobile",
+    appUrl: "https://apt-designer-ai.vercel.app/",
   },
   {
     slug: "highlightmagic",
@@ -47,6 +50,7 @@ export const PROJECTS: ProjectConfig[] = [
     repo: "HighlightMagic",
     branch: "main",
     kind: "ios+web",
+    appUrl: "https://highlight-magic.vercel.app/",
   },
   {
     slug: "grocerymanager",
@@ -55,6 +59,7 @@ export const PROJECTS: ProjectConfig[] = [
     repo: "GroceryManager",
     // branch omitted → data layer uses the repo's default_branch
     kind: "web+mobile",
+    appUrl: "https://grocery-manager-web.vercel.app/",
   },
 ];
 
