@@ -2,11 +2,13 @@ import Link from "next/link";
 import { getAllSnapshots } from "@/lib/github";
 import { buildOverview, humanAsksFor, type NeedEntry } from "@/lib/aggregate";
 import { getNarrative, type Narrative } from "@/lib/narrative";
+import { getHistory } from "@/lib/kv";
 import { getProjectBySlug } from "@/config/projects";
 import type { ProjectSnapshot } from "@/lib/types";
 import {
   cn,
   ciMeta,
+  headlinePct,
   kindLabel,
   pluralize,
   statusMeta,
@@ -14,6 +16,7 @@ import {
 } from "@/lib/utils";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { WeekBars } from "@/components/WeekBars";
+import { ProgressTrend, type ProjectTrend } from "@/components/ProgressTrend";
 import { RelativeTime } from "@/components/RelativeTime";
 import { CalmCoda, Greeting } from "@/components/TimeAware";
 import {
@@ -49,6 +52,19 @@ export default async function OverviewPage() {
       ),
     ),
   );
+
+  // Optional KV history → "progress to launch over time". Each entry is null
+  // when KV isn't configured, so the whole section hides cleanly without it.
+  const HISTORY_DAYS = 21;
+  const histories = await Promise.all(snapshots.map((s) => getHistory(s.slug)));
+  const hasHistory = histories.some((h) => h !== null && h.length > 0);
+  const maxHistoryLen = Math.max(0, ...histories.map((h) => h?.length ?? 0));
+  const trends: ProjectTrend[] = snapshots.map((s, i) => ({
+    slug: s.slug,
+    name: s.displayName,
+    current: headlinePct(s),
+    values: (histories[i]?.slice(-HISTORY_DAYS) ?? []).map((m) => m.pct),
+  }));
 
   return (
     <div className="animate-fade-in mx-auto max-w-3xl">
@@ -126,7 +142,26 @@ export default async function OverviewPage() {
         </div>
       </section>
 
-      {/* 4 — Weekly shipping velocity (from data we already have; no setup). */}
+      {/* 4 — Progress to launch over time (Vercel KV history; hides without it). */}
+      {hasHistory && (
+        <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 shadow-card">
+          <div className="mb-2 flex items-end justify-between">
+            <h2 className="text-sm font-semibold tracking-tight text-ink">
+              Progress to launch
+            </h2>
+            <span className="text-xs text-muted">% to submission · over time</span>
+          </div>
+          <ProgressTrend trends={trends} />
+          {maxHistoryLen < 2 && (
+            <p className="mt-2 text-xs text-muted">
+              First snapshot recorded — the trend line fills in as the daily
+              snapshot runs.
+            </p>
+          )}
+        </section>
+      )}
+
+      {/* 5 — Weekly shipping velocity (from data we already have; no setup). */}
       <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 shadow-card">
         <div className="mb-1 flex items-end justify-between">
           <h2 className="text-sm font-semibold tracking-tight text-ink">
@@ -148,7 +183,7 @@ export default async function OverviewPage() {
         )}
       </section>
 
-      {/* 5 — The detail, kept out of the way until you want it. */}
+      {/* 6 — The detail, kept out of the way until you want it. */}
       {overnightCount > 0 && (
         <details className="group rounded-2xl border border-hairline bg-card shadow-card">
           <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3.5 text-sm font-medium text-ink">
