@@ -2,7 +2,7 @@ import { unstable_cache } from "next/cache";
 import type { ProjectSnapshot } from "@/lib/types";
 import { humanAsksFor } from "@/lib/aggregate";
 import { extractThemes, themeSummary } from "@/lib/themes";
-import { headlinePct, nextMilestone, pluralize } from "@/lib/utils";
+import { headlinePct, kindLabel, nextMilestone, pluralize } from "@/lib/utils";
 
 export interface Narrative {
   /** Punchy 3–7 word headline — the glanceable "what's the story". */
@@ -14,10 +14,25 @@ export interface Narrative {
 }
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-// Free, fast instruct model. Override with OPENROUTER_MODEL (free slugs rotate;
-// see https://openrouter.ai/models?max_price=0). An invalid/decommissioned slug
-// simply falls back to the templated summary — it never breaks the page.
-const DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+
+// Bump to invalidate cached narratives/briefings after a logic/format change
+// (unstable_cache entries can otherwise survive across deploys).
+const CACHE_VERSION = "v3";
+
+// Google Gemini free tier — reliable, generous quota. Preferred when set.
+const GEMINI_DEFAULT_MODEL = "gemini-2.0-flash";
+// OpenRouter free model (slugs rotate / get rate-limited; used as a fallback).
+const OPENROUTER_DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+
+/** The model label for the active provider — also used in cache keys. */
+function currentModel(): string {
+  if (process.env.GEMINI_API_KEY)
+    return process.env.GEMINI_MODEL || GEMINI_DEFAULT_MODEL;
+  if (process.env.OPENROUTER_API_KEY)
+    return process.env.OPENROUTER_MODEL || OPENROUTER_DEFAULT_MODEL;
+  return "template";
+}
 
 const SYSTEM_PROMPT =
   "You write a status update for an autonomous software project that a " +
@@ -179,7 +194,7 @@ async function callOpenRouter(
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return null;
 
-  const model = process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
+  const model = process.env.OPENROUTER_MODEL || OPENROUTER_DEFAULT_MODEL;
   try {
     const res = await fetch(OPENROUTER_URL, {
       method: "POST",
@@ -209,10 +224,64 @@ async function callOpenRouter(
   }
 }
 
+/** Single Google Gemini call (Generative Language REST API). */
+async function callGemini(
+  messages: ChatMessage[],
+  maxTokens: number,
+): Promise<{ text: string; model: string } | null> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+
+  const model = process.env.GEMINI_MODEL || GEMINI_DEFAULT_MODEL;
+  const system = messages.find((m) => m.role === "system")?.content;
+  const user = messages
+    .filter((m) => m.role === "user")
+    .map((m) => m.content)
+    .join("\n\n");
+  try {
+    const res = await fetch(`${GEMINI_BASE}/${model}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+      body: JSON.stringify({
+        ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+        contents: [{ role: "user", parts: [{ text: user }] }],
+        generationConfig: { maxOutputTokens: maxTokens, temperature: 0.4 },
+      }),
+      signal: AbortSignal.timeout(12_000),
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+    const text = data.candidates?.[0]?.content?.parts
+      ?.map((p) => p.text ?? "")
+      .join("")
+      .trim();
+    return text ? { text, model } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Provider-agnostic LLM call. Prefers Gemini (reliable free tier) when
+ * GEMINI_API_KEY is set, falls back to OpenRouter, then to null (→ template).
+ */
+async function callLLM(
+  messages: ChatMessage[],
+  maxTokens: number,
+): Promise<{ text: string; model: string } | null> {
+  return (
+    (await callGemini(messages, maxTokens)) ??
+    (await callOpenRouter(messages, maxTokens))
+  );
+}
+
 async function llmNarrative(
   s: ProjectSnapshot,
 ): Promise<{ headline?: string; text: string; model: string } | null> {
-  const res = await callOpenRouter(
+  const res = await callLLM(
     [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: `Write the update from these metrics:\n\n${llmContext(s)}` },
@@ -232,8 +301,9 @@ async function llmNarrative(
 export function getNarrative(s: ProjectSnapshot): Promise<Narrative> {
   const cacheKey = [
     "afd-narrative",
+    CACHE_VERSION,
     s.slug,
-    process.env.OPENROUTER_MODEL || DEFAULT_MODEL,
+    currentModel(),
     String(headlinePct(s)),
     String(s.merged24h),
     s.status,
@@ -326,7 +396,8 @@ export function getFactoryBriefing(
   const needs = snapshots.reduce((n, s) => n + humanAsksFor(s).length, 0);
   const cacheKey = [
     "afd-factory-briefing",
-    process.env.OPENROUTER_MODEL || DEFAULT_MODEL,
+    CACHE_VERSION,
+    currentModel(),
     String(totalMerged),
     String(needs),
     ...snapshots.map(
@@ -337,7 +408,7 @@ export function getFactoryBriefing(
 
   return unstable_cache(
     async (): Promise<FactoryBriefing> => {
-      const llm = await callOpenRouter(
+      const llm = await callLLM(
         [
           { role: "system", content: FACTORY_SYSTEM },
           {
@@ -351,6 +422,108 @@ export function getFactoryBriefing(
       );
       if (llm) return { text: llm.text, source: "llm" };
       return { text: templateBriefing(snapshots), source: "template" };
+    },
+    cacheKey,
+    { revalidate: 600 },
+  )();
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Launch summary — "what the factory built" (shown when ready for submission)
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface LaunchSummary {
+  /** 2–3 sentence overview of what the product is and who it's for. */
+  overview: string;
+  /** Concrete shipped features. */
+  features: string[];
+  source: "llm" | "template";
+}
+
+const LAUNCH_SYSTEM =
+  "An autonomous coding agent has finished building a product and flagged it " +
+  "ready to submit. Write a launch summary for the owner from the roadmap and " +
+  "shipped work. Respond in EXACTLY this format, nothing else:\n" +
+  "OVERVIEW: <2-3 sentences: what the product is, who it's for, what it does>\n" +
+  "FEATURES:\n- <shipped feature>\n- <shipped feature>\n" +
+  "(6-12 concrete feature bullets). Ground everything in the data provided; do " +
+  "not invent. Plain text, no markdown bold.";
+
+function launchContext(s: ProjectSnapshot): string {
+  const roadmap =
+    s.files.roadmap.available && s.files.roadmap.content
+      ? clip(s.files.roadmap.content, 3500)
+      : "";
+  const titles = s.merged7dItems
+    .slice(0, 40)
+    .map((p) => `- ${p.title}`)
+    .join("\n");
+  const tracks = s.progress.tracks
+    .map((t) => `${t.label}: ${t.done}/${t.total}`)
+    .join(", ");
+  return [
+    `Product: ${s.displayName} (${kindLabel(s.kind)})`,
+    tracks ? `Tracks: ${tracks}` : "",
+    titles ? `Recently shipped PRs:\n${titles}` : "",
+    roadmap ? `ROADMAP.md:\n${roadmap}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function parseLaunch(raw: string): { overview: string; features: string[] } {
+  const ovMatch = raw.match(/OVERVIEW:\s*([\s\S]*?)(?:\n\s*FEATURES:|$)/i);
+  const featMatch = raw.match(/FEATURES:\s*([\s\S]+)/i);
+  const overview = (ovMatch?.[1] ?? "").trim();
+  const features = (featMatch?.[1] ?? "")
+    .split("\n")
+    .map((l) => l.replace(/^\s*[-*•]\s*/, "").replace(/[*`]/g, "").trim())
+    .filter((l) => l.length > 2)
+    .slice(0, 14);
+  return { overview: overview || raw.trim(), features };
+}
+
+function templateLaunch(s: ProjectSnapshot): LaunchSummary {
+  const labels = s.progress.subtracks
+    .map((t) => t.label)
+    .filter((l) => l.length > 2);
+  const themeLabels = extractThemes(s.merged7dItems).map((t) => t.label);
+  const features = (labels.length ? labels : themeLabels).slice(0, 12);
+  return {
+    overview: `${s.displayName} is a ${kindLabel(s.kind)} product built end-to-end by the factory and flagged ready for submission.`,
+    features,
+    source: "template",
+  };
+}
+
+/**
+ * "What the factory built" — an overview + feature list for a completed project.
+ * Only meaningful when the project is ready for submission. LLM with a
+ * deterministic fallback; cached ~10 min.
+ */
+export function getLaunchSummary(s: ProjectSnapshot): Promise<LaunchSummary> {
+  const cacheKey = [
+    "afd-launch",
+    CACHE_VERSION,
+    s.slug,
+    currentModel(),
+    String(s.recentMerged[0]?.number ?? ""),
+  ];
+
+  return unstable_cache(
+    async (): Promise<LaunchSummary> => {
+      const llm = await callLLM(
+        [
+          { role: "system", content: LAUNCH_SYSTEM },
+          { role: "user", content: launchContext(s) },
+        ],
+        700,
+      );
+      if (llm) {
+        const { overview, features } = parseLaunch(llm.text);
+        if (features.length > 0) return { overview, features, source: "llm" };
+      }
+      return templateLaunch(s);
     },
     cacheKey,
     { revalidate: 600 },

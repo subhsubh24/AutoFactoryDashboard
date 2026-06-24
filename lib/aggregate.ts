@@ -51,9 +51,37 @@ export interface Overview {
   themes: ThemeCount[];
   /** Mean build progress across projects that report it, or null. */
   avgProgress: number | null;
+  /** Manufacturing-style performance KPIs across the whole factory. */
+  factory: FactoryMetrics;
   /** Oldest "fetchedAt" across snapshots — drives the "updated x ago" stamp. */
   oldestFetchedAt: string | null;
   anyPartial: boolean;
+}
+
+/**
+ * Manufacturing-style factory KPIs, mapped to a software factory:
+ *  - throughput  → PRs merged per day (units/day off the line)
+ *  - lead time   → median open→merge hours (cycle time per unit)
+ *  - first-pass yield → CI pass rate (units that pass QA first time)
+ *  - rework rate → share of merges that are fixes (scrap/rework)
+ *  - WIP         → open PRs in flight (and how many are stalled)
+ */
+export interface FactoryMetrics {
+  throughputPerDay: number;
+  leadTimeHours: number | null;
+  firstPassYield: number | null;
+  reworkRate: number | null;
+  wipOpen: number;
+  wipStuck: number;
+  activeProjects: number;
+  totalProjects: number;
+}
+
+function median(nums: number[]): number | null {
+  if (nums.length === 0) return null;
+  const s = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
 const KIND_PRIORITY: Record<NeedKind, number> = {
@@ -264,13 +292,43 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
   const velocity = weeklyVelocity(feed);
   const velocityTotal = velocity.reduce((n, d) => n + d.count, 0);
 
-  const themes = extractThemes(snapshots.flatMap((s) => s.merged7dItems));
+  const allMerged = snapshots.flatMap((s) => s.merged7dItems);
+  const themes = extractThemes(allMerged);
   const progresses = snapshots
     .map((s) => s.progress.percentToSubmission)
     .filter((n): n is number => n !== null);
   const avgProgress = progresses.length
     ? Math.round(progresses.reduce((a, b) => a + b, 0) / progresses.length)
     : null;
+
+  // Factory KPIs.
+  const cycles = allMerged
+    .map((p) => {
+      if (!p.createdAt || !p.mergedAt) return null;
+      const dt = Date.parse(p.mergedAt) - Date.parse(p.createdAt);
+      return Number.isNaN(dt) || dt < 0 ? null : dt / 3_600_000;
+    })
+    .filter((n): n is number => n !== null);
+  const passRates = snapshots
+    .map((s) => s.ci.passRate)
+    .filter((n): n is number => n !== null);
+  const fixes = themes.find((t) => t.key === "fix")?.count ?? 0;
+  const factory: FactoryMetrics = {
+    throughputPerDay: Math.round((velocityTotal / 7) * 10) / 10,
+    leadTimeHours: median(cycles),
+    firstPassYield: passRates.length
+      ? Math.round(passRates.reduce((a, b) => a + b, 0) / passRates.length)
+      : null,
+    reworkRate: allMerged.length
+      ? Math.round((fixes / allMerged.length) * 100)
+      : null,
+    wipOpen: snapshots.reduce((n, s) => n + s.openPRs.length, 0),
+    wipStuck: snapshots.reduce((n, s) => n + s.stuckPRs, 0),
+    activeProjects: snapshots.filter(
+      (s) => s.status === "building" || s.merged24h > 0,
+    ).length,
+    totalProjects: snapshots.length,
+  };
 
   const oldestFetchedAt = snapshots.reduce<string | null>((acc, s) => {
     if (!acc) return s.fetchedAt;
@@ -289,6 +347,7 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
     velocityTotal,
     themes,
     avgProgress,
+    factory,
     oldestFetchedAt,
     anyPartial: snapshots.some((s) => s.partial),
   };

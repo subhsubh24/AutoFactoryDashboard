@@ -163,21 +163,25 @@ browser never sees the plaintext, and the value never reaches client JS.
 
 ---
 
-## Optional: AI daily narrative (OpenRouter)
+## Optional: AI summaries (Gemini or OpenRouter)
 
-Set `OPENROUTER_API_KEY` (and optionally `OPENROUTER_MODEL`) to generate a 2–3
-sentence per-project digest server-side via [OpenRouter](https://openrouter.ai)
-— an OpenAI-compatible gateway with a **free tier** (no credit card; ~20 req/min).
+An LLM powers the **factory briefing**, per-project **did/now/next digests +
+headlines**, and the completed-project **"what was built"** summary. Provider
+preference: **Gemini first, then OpenRouter**, then deterministic templates.
 
-- Get a key at <https://openrouter.ai/keys>.
-- The default model is the free `meta-llama/llama-3.3-70b-instruct:free`. Free
-  model slugs rotate — browse current ones at
-  <https://openrouter.ai/models?max_price=0> and set `OPENROUTER_MODEL` to any of
-  them (the `:free` suffix marks the free ones).
-- It runs with a short timeout and **never blocks the page** — any failure (no
+- **Gemini (recommended — reliable free tier):** set `GEMINI_API_KEY`. Get one
+  at <https://aistudio.google.com/apikey> (no card). Default model
+  `gemini-2.0-flash`; override with `GEMINI_MODEL`.
+- **OpenRouter (fallback):** set `OPENROUTER_API_KEY` (<https://openrouter.ai/keys>).
+  Default `meta-llama/llama-3.3-70b-instruct:free`; override with
+  `OPENROUTER_MODEL`. Free slugs rotate and **rate-limit aggressively**, which is
+  why Gemini is preferred. If both keys are set, Gemini is tried first and
+  OpenRouter is the automatic fallback.
+- Every call has a short timeout and **never blocks the page** — any failure (no
   key, bad/decommissioned model, rate limit, timeout) silently falls back to the
-  templated summary. The digest card shows an **AI digest** vs **Summary** chip so
-  you always know which you're seeing.
+  templated summary. Cards show an **AI digest** vs **Summary** chip so you always
+  know which you're seeing. If you see **Summary** everywhere, the key isn't set
+  in your deploy's environment (or the model is rate-limited).
 
 ---
 

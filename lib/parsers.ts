@@ -111,6 +111,15 @@ const SUBTRACK_LINE_RE =
 
 const TRACK_CODE_RE = /\b((?:P[0-9])|(?:[A-E][0-9]{1,2}))\b/g;
 
+/** Sort track codes naturally: P-phases first, then A1, A2, …, B1, … */
+function compareCodes(a: string, b: string): number {
+  const pa = a.startsWith("P");
+  const pb = b.startsWith("P");
+  if (pa !== pb) return pa ? -1 : 1;
+  if (a[0] !== b[0]) return a[0] < b[0] ? -1 : 1;
+  return (parseInt(a.slice(1), 10) || 0) - (parseInt(b.slice(1), 10) || 0);
+}
+
 /** All distinct track codes (A1, B2, D3, P0…) referenced in a blob of text. */
 export function extractTrackCodes(text: string): string[] {
   const out = new Set<string>();
@@ -159,9 +168,12 @@ export function parseRoadmap(md: string | null | undefined): ProgressInfo {
   const dod = findSection(md, (t) => /definition of done/i.test(t));
   const gate = dod ? countCheckboxes(dod.body) : { done: 0, total: 0 };
 
-  // Sub-tracks: coded lines (A1, B2, D3, P0…). First occurrence per code wins.
-  const subtracks: SubTrack[] = [];
-  const seen = new Set<string>();
+  // Sub-tracks: prefer coded lines that also give us a label (A1, B2…). But some
+  // roadmaps don't use a parseable bullet format, yet still reference the codes
+  // (in track text, the DoD, or annotations) — so we fold in EVERY code that
+  // appears anywhere as the universe. This keeps progress from reading 0% just
+  // because the bullet style differs across repos.
+  const labels = new Map<string, string>();
   let inFence = false;
   for (const line of ls) {
     if (/^\s*(```|~~~)/.test(line)) {
@@ -172,15 +184,18 @@ export function parseRoadmap(md: string | null | undefined): ProgressInfo {
     const m = SUBTRACK_LINE_RE.exec(line);
     if (!m) continue;
     const code = m[1].toUpperCase();
-    if (seen.has(code)) continue;
-    seen.add(code);
-    subtracks.push({
-      code,
-      track: code.startsWith("P") ? code : code[0],
-      label: cleanHeading(m[2]).replace(/\s*\*\*.*$/, "").trim(),
-      done: false,
-    });
+    if (!labels.has(code)) {
+      labels.set(code, cleanHeading(m[2]).replace(/\s*\*\*.*$/, "").trim());
+    }
   }
+  const codes = [...new Set([...labels.keys(), ...extractTrackCodes(md)])];
+  codes.sort(compareCodes);
+  const subtracks: SubTrack[] = codes.map((code) => ({
+    code,
+    track: code.startsWith("P") ? code : code[0],
+    label: labels.get(code) ?? "",
+    done: false,
+  }));
 
   // Whole-file checkbox % (fallback when there are no coded sub-tracks).
   const overall = countCheckboxes(ls);

@@ -8,6 +8,7 @@ import {
 } from "@/lib/narrative";
 import { getHistory } from "@/lib/kv";
 import { estimateCompletion, formatEtaDate, formatHorizon, type Estimate } from "@/lib/estimate";
+import { formatCycle } from "@/lib/quality";
 import { getProjectBySlug } from "@/config/projects";
 import type { ProjectSnapshot } from "@/lib/types";
 import {
@@ -118,27 +119,74 @@ export default async function OverviewPage() {
         <Verdict count={asks.length} />
       </section>
 
-      {/* 1b — Top monitoring metrics (signal only). */}
-      <div className="mb-6 grid grid-cols-3 gap-3">
-        <MetricTile
-          label="This week"
-          value={String(overview.velocityTotal)}
-          sub={`${pluralize(overview.velocityTotal, "PR")} merged`}
-        />
-        <MetricTile
-          label="Build progress"
-          value={overview.avgProgress === null ? "—" : `${overview.avgProgress}%`}
-          sub="avg across factory"
-        />
-        <MetricTile
-          label="CI health"
-          value={
-            overview.ci.total === 0 ? "—" : `${overview.ci.passing}/${overview.ci.total}`
-          }
-          sub={overview.ci.anyFailing ? `${overview.ci.failingNames.join(", ")} red` : "all green"}
-          tone={overview.ci.anyFailing ? "clay" : "sage"}
-        />
-      </div>
+      {/* 1b — Factory performance: manufacturing-style KPIs across the floor. */}
+      <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 shadow-card">
+        <div className="mb-4 flex items-end justify-between">
+          <h2 className="text-sm font-semibold tracking-tight text-ink">
+            Factory performance
+          </h2>
+          <span className="text-xs text-muted">
+            {overview.factory.activeProjects}/{overview.factory.totalProjects} lines
+            active · 7-day
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3">
+          <FactoryStat
+            label="Throughput"
+            value={String(overview.factory.throughputPerDay)}
+            unit="PRs / day"
+          />
+          <FactoryStat
+            label="Lead time"
+            value={formatCycle(overview.factory.leadTimeHours)}
+            unit="open → merge"
+          />
+          <FactoryStat
+            label="First-pass yield"
+            value={
+              overview.factory.firstPassYield === null
+                ? "—"
+                : `${overview.factory.firstPassYield}%`
+            }
+            unit="CI pass rate"
+            tone={
+              overview.factory.firstPassYield !== null &&
+              overview.factory.firstPassYield < 80
+                ? "clay"
+                : "sage"
+            }
+          />
+          <FactoryStat
+            label="Rework"
+            value={
+              overview.factory.reworkRate === null
+                ? "—"
+                : `${overview.factory.reworkRate}%`
+            }
+            unit="fix PRs"
+            tone={
+              overview.factory.reworkRate !== null && overview.factory.reworkRate > 40
+                ? "clay"
+                : "muted"
+            }
+          />
+          <FactoryStat
+            label="WIP"
+            value={String(overview.factory.wipOpen)}
+            unit={
+              overview.factory.wipStuck > 0
+                ? `open · ${overview.factory.wipStuck} stuck`
+                : "open PRs"
+            }
+            tone={overview.factory.wipStuck > 0 ? "clay" : "muted"}
+          />
+          <FactoryStat
+            label="Build progress"
+            value={overview.avgProgress === null ? "—" : `${overview.avgProgress}%`}
+            unit="avg to launch"
+          />
+        </div>
+      </section>
 
       {/* 2 — Only the things that genuinely need you. */}
       {asks.length > 0 && (
@@ -232,29 +280,29 @@ export default async function OverviewPage() {
   );
 }
 
-/** A compact top-of-dashboard metric. */
-function MetricTile({
+/** A single factory-performance KPI cell. */
+function FactoryStat({
   label,
   value,
-  sub,
+  unit,
   tone = "muted",
 }: {
   label: string;
   value: string;
-  sub: string;
+  unit: string;
   tone?: "sage" | "clay" | "muted";
 }) {
-  const valueColor =
-    tone === "clay" ? "text-clay-strong" : tone === "sage" ? "text-ink" : "text-ink";
+  const color =
+    tone === "clay" ? "text-clay-strong" : tone === "sage" ? "text-sage-strong" : "text-ink";
   return (
-    <div className="rounded-xl border border-hairline bg-card p-3.5 shadow-card">
+    <div>
       <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
         {label}
       </p>
-      <p className={cn("mt-1 font-serif text-2xl font-medium tabular", valueColor)}>
+      <p className={cn("mt-1 font-serif text-2xl font-medium leading-none tabular", color)}>
         {value}
       </p>
-      <p className="mt-0.5 truncate text-[11px] text-muted">{sub}</p>
+      <p className="mt-1 truncate text-[11px] text-muted">{unit}</p>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PROJECTS, getProjectBySlug } from "@/config/projects";
 import { getProjectSnapshot } from "@/lib/github";
-import { getNarrative } from "@/lib/narrative";
+import { getNarrative, getLaunchSummary } from "@/lib/narrative";
 import { getHistory } from "@/lib/kv";
 import type { FeedEntry, ProjectSnapshot } from "@/lib/types";
 import {
@@ -31,6 +31,7 @@ import { HistoryCharts } from "@/components/HistoryCharts";
 import { RelativeTime } from "@/components/RelativeTime";
 import {
   ArrowLeftIcon,
+  CheckIcon,
   ExternalLinkIcon,
   GitCommitIcon,
   MergeIcon,
@@ -72,6 +73,10 @@ export default async function ProjectPage({
     getNarrative(snapshot),
     getHistory(slug),
   ]);
+  // "What the factory built" — only meaningful once flagged ready to submit.
+  const launch = snapshot.readyForSubmission
+    ? await getLaunchSummary(snapshot)
+    : null;
 
   const pct = headlinePct(snapshot);
   // Progress is positive by default; only a blocked project gets the clay ring.
@@ -183,6 +188,41 @@ export default async function ProjectPage({
               </a>
             )}
           </div>
+        </div>
+      )}
+
+      {/* What the factory built — completed-project summary */}
+      {launch && (
+        <div className="mb-6">
+          <SectionCard
+            title="What the factory built"
+            subtitle="Overview & shipped features"
+            aside={
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
+                  launch.source === "llm"
+                    ? "bg-clay-soft text-clay-strong"
+                    : "bg-bg text-muted",
+                )}
+              >
+                <SparkleIcon className="h-3 w-3" />
+                {launch.source === "llm" ? "AI summary" : "Summary"}
+              </span>
+            }
+          >
+            <p className="text-[15px] leading-relaxed text-ink">{launch.overview}</p>
+            {launch.features.length > 0 && (
+              <ul className="mt-4 grid gap-x-5 gap-y-2 sm:grid-cols-2">
+                {launch.features.map((f, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm text-ink">
+                    <CheckIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sage" />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </SectionCard>
         </div>
       )}
 

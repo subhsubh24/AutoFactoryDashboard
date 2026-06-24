@@ -559,13 +559,26 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
   ]) {
     if (definedCodes.has(c)) doneCodes.add(c);
   }
-  const progress = finalizeProgress(progressBase, doneCodes);
+
+  const readyForSubmission = Boolean(issues?.readyIssue);
+
+  // The factory's explicit "FACTORY: ready for submission" issue is
+  // authoritative: when it's open the agent has met its Definition of Done, so
+  // show 100% rather than the (necessarily lower) coverage estimate.
+  let progress = finalizeProgress(progressBase, doneCodes);
+  if (readyForSubmission && progress.available) {
+    progress = {
+      ...progress,
+      percentToSubmission: 100,
+      subtracks: progress.subtracks.map((s) => ({ ...s, done: true })),
+      tracks: progress.tracks.map((t) => ({ ...t, done: t.total, pct: 100 })),
+    };
+  }
 
   const actionItems = parsePendingOps(
     pendingFile.available ? pendingFile.content : null,
   );
 
-  const readyForSubmission = Boolean(issues?.readyIssue);
   const ready = {
     ready: readyForSubmission,
     url: issues?.readyIssue?.url,
