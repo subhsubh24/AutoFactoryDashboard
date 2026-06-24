@@ -5,6 +5,7 @@ import type { ProjectSnapshot } from "@/lib/types";
 import { cn, ciMeta, pluralize, statusMeta, toneClasses } from "@/lib/utils";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { RelativeTime } from "@/components/RelativeTime";
+import { CalmCoda, Greeting } from "@/components/TimeAware";
 import {
   ArrowRightIcon,
   CheckIcon,
@@ -129,7 +130,7 @@ function Verdict({ count }: { count: number }) {
     return (
       <div className="mt-4 flex items-center gap-2 rounded-xl bg-sage-soft/60 px-3.5 py-2.5 text-sm font-medium text-sage-strong">
         <CheckIcon className="h-4 w-4 shrink-0" />
-        Nothing needs you — enjoy your coffee.
+        <CalmCoda />
       </div>
     );
   }
@@ -247,7 +248,7 @@ function Header({ fetchedAt }: { fetchedAt: string | null }) {
           Autonomous product factory
         </p>
         <h1 className="mt-1 font-serif text-3xl font-medium tracking-tight text-ink sm:text-4xl">
-          Good morning
+          <Greeting />
         </h1>
       </div>
       <p className="text-xs text-muted">
