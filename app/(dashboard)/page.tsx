@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getAllSnapshots } from "@/lib/github";
 import { buildOverview, humanAsksFor, type NeedEntry } from "@/lib/aggregate";
+import { getNarrative, type Narrative } from "@/lib/narrative";
 import { getProjectBySlug } from "@/config/projects";
 import type { ProjectSnapshot } from "@/lib/types";
 import {
@@ -12,6 +13,7 @@ import {
   toneClasses,
 } from "@/lib/utils";
 import { ActivityFeed } from "@/components/ActivityFeed";
+import { WeekBars } from "@/components/WeekBars";
 import { RelativeTime } from "@/components/RelativeTime";
 import { CalmCoda, Greeting } from "@/components/TimeAware";
 import {
@@ -19,6 +21,7 @@ import {
   CheckIcon,
   ExternalLinkIcon,
   RocketIcon,
+  SparkleIcon,
 } from "@/components/icons";
 
 // Near-real-time without hammering the GitHub API.
@@ -37,6 +40,15 @@ export default async function OverviewPage() {
   const shipped = overview.totalMerged24h;
   const asks = overview.needs;
   const overnightCount = overview.overnightFeed.length;
+
+  // One short LLM (or templated) briefing per project, for the tiles.
+  const narratives = new Map<string, Narrative>(
+    await Promise.all(
+      snapshots.map(
+        async (s) => [s.slug, await getNarrative(s)] as const,
+      ),
+    ),
+  );
 
   return (
     <div className="animate-fade-in mx-auto max-w-3xl">
@@ -97,19 +109,46 @@ export default async function OverviewPage() {
         </section>
       )}
 
-      {/* 3 — A tile per project: name opens the live app; "Dashboard" opens metrics. */}
+      {/* 3 — A briefing tile per project: name opens the live app, plus a
+          2-sentence "did / now / next" summary and a Dashboard link. */}
       <section className="mb-6">
         <h2 className="mb-3 px-1 text-sm font-semibold tracking-tight text-ink">
           Projects
         </h2>
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="space-y-4">
           {snapshots.map((s) => (
-            <ProjectTile key={s.slug} snapshot={s} />
+            <ProjectTile
+              key={s.slug}
+              snapshot={s}
+              narrative={narratives.get(s.slug)}
+            />
           ))}
         </div>
       </section>
 
-      {/* 4 — The detail, kept out of the way until you want it. */}
+      {/* 4 — Weekly shipping velocity (from data we already have; no setup). */}
+      <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 shadow-card">
+        <div className="mb-1 flex items-end justify-between">
+          <h2 className="text-sm font-semibold tracking-tight text-ink">
+            Shipping this week
+          </h2>
+          <span className="text-xs text-muted">
+            {overview.velocityTotal} {pluralize(overview.velocityTotal, "PR")} ·
+            last 7 days
+          </span>
+        </div>
+        {overview.velocityTotal > 0 ? (
+          <div className="mt-4">
+            <WeekBars days={overview.velocity} />
+          </div>
+        ) : (
+          <p className="py-4 text-sm text-muted">
+            Nothing merged in the last 7 days yet.
+          </p>
+        )}
+      </section>
+
+      {/* 5 — The detail, kept out of the way until you want it. */}
       {overnightCount > 0 && (
         <details className="group rounded-2xl border border-hairline bg-card shadow-card">
           <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3.5 text-sm font-medium text-ink">
@@ -196,10 +235,17 @@ function AskRow({ need }: { need: NeedEntry }) {
 }
 
 /**
- * A project tile. The name is a direct link to the live product (one tap to see
- * it), and a "Dashboard" link drops into the per-project metrics page.
+ * A project briefing tile. The name links straight to the live product; a short
+ * did/now/next summary gives the state at a glance; "Dashboard" opens the
+ * per-project metrics page.
  */
-function ProjectTile({ snapshot: s }: { snapshot: ProjectSnapshot }) {
+function ProjectTile({
+  snapshot: s,
+  narrative,
+}: {
+  snapshot: ProjectSnapshot;
+  narrative?: Narrative;
+}) {
   const status = statusMeta(s.status);
   const ci = ciMeta(s.ci.status);
   const asks = humanAsksFor(s).length;
@@ -208,60 +254,53 @@ function ProjectTile({ snapshot: s }: { snapshot: ProjectSnapshot }) {
 
   return (
     <div className="card flex flex-col gap-3 p-5 shadow-card transition-shadow hover:shadow-lift">
-      <div className="flex items-start gap-2.5">
-        <span
-          className={cn(
-            "mt-2 h-2.5 w-2.5 shrink-0 rounded-full",
-            toneClasses(status.tone).dot,
-            status.live && "animate-pulse-soft",
-          )}
-          aria-hidden
-        />
-        <div className="min-w-0 flex-1">
-          {appUrl ? (
-            <a
-              href={appUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="group inline-flex max-w-full items-center gap-1.5 text-ink transition-colors hover:text-clay"
-            >
-              <span className="truncate font-serif text-lg font-medium leading-tight">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <span
+            className={cn(
+              "mt-2 h-2.5 w-2.5 shrink-0 rounded-full",
+              toneClasses(status.tone).dot,
+              status.live && "animate-pulse-soft",
+            )}
+            aria-hidden
+          />
+          <div className="min-w-0">
+            {appUrl ? (
+              <a
+                href={appUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="group inline-flex max-w-full items-center gap-1.5 text-ink transition-colors hover:text-clay"
+              >
+                <span className="truncate font-serif text-lg font-medium leading-tight">
+                  {s.displayName}
+                </span>
+                <ExternalLinkIcon className="h-3.5 w-3.5 shrink-0 text-muted transition-colors group-hover:text-clay" />
+              </a>
+            ) : (
+              <Link
+                href={`/p/${s.slug}`}
+                className="truncate font-serif text-lg font-medium leading-tight text-ink transition-colors hover:text-clay"
+              >
                 {s.displayName}
-              </span>
-              <ExternalLinkIcon className="h-3.5 w-3.5 shrink-0 text-muted transition-colors group-hover:text-clay" />
-            </a>
-          ) : (
-            <Link
-              href={`/p/${s.slug}`}
-              className="truncate font-serif text-lg font-medium leading-tight text-ink transition-colors hover:text-clay"
-            >
-              {s.displayName}
-            </Link>
-          )}
-          <p className="mt-0.5 text-xs text-muted">{kindLabel(s.kind)}</p>
+              </Link>
+            )}
+            <p className="mt-0.5 text-xs text-muted">
+              {kindLabel(s.kind)} ·{" "}
+              {shipped > 0
+                ? `${shipped} shipped overnight`
+                : "nothing shipped overnight"}
+            </p>
+          </div>
         </div>
-      </div>
-
-      <p className="text-sm text-ink">
-        {shipped > 0 ? (
-          <>
-            <span className="font-semibold tabular">{shipped}</span>{" "}
-            <span className="text-muted">shipped overnight</span>
-          </>
-        ) : (
-          <span className="text-muted">nothing shipped overnight</span>
-        )}
-      </p>
-
-      <div className="mt-auto flex items-center justify-between border-t border-hairline pt-3">
         {asks > 0 ? (
-          <span className="rounded-full bg-clay-soft px-2 py-0.5 text-[11px] font-medium text-clay-strong">
+          <span className="shrink-0 rounded-full bg-clay-soft px-2 py-0.5 text-[11px] font-medium text-clay-strong">
             needs you
           </span>
         ) : (
           <span
             className={cn(
-              "flex items-center gap-1.5 text-xs",
+              "flex shrink-0 items-center gap-1.5 text-xs",
               toneClasses(ci.tone).text,
             )}
           >
@@ -271,6 +310,17 @@ function ProjectTile({ snapshot: s }: { snapshot: ProjectSnapshot }) {
             CI {ci.label.toLowerCase()}
           </span>
         )}
+      </div>
+
+      {narrative && (
+        <p className="text-sm leading-relaxed text-ink/90">{narrative.text}</p>
+      )}
+
+      <div className="mt-auto flex items-center justify-between border-t border-hairline pt-3">
+        <span className="flex items-center gap-1 text-[11px] text-muted">
+          <SparkleIcon className="h-3 w-3" />
+          {narrative?.source === "llm" ? "AI digest" : "Summary"}
+        </span>
         <Link
           href={`/p/${s.slug}`}
           className="group flex items-center gap-1 text-xs font-medium text-muted transition-colors hover:text-clay"

@@ -42,6 +42,10 @@ export interface Overview {
   feed: FeedEntry[];
   /** Merged PRs in the last ~24h, newest first — the "what shipped overnight" view. */
   overnightFeed: FeedEntry[];
+  /** PRs merged per calendar day over the last 7 days (oldest → newest). */
+  velocity: VelocityDay[];
+  /** Total PRs merged across the velocity window. */
+  velocityTotal: number;
   /** Oldest "fetchedAt" across snapshots — drives the "updated x ago" stamp. */
   oldestFetchedAt: string | null;
   anyPartial: boolean;
@@ -75,6 +79,39 @@ export function humanAsksFor(s: ProjectSnapshot): NeedEntry[] {
 }
 
 const OVERNIGHT_MS = 24 * 60 * 60 * 1000;
+
+export interface VelocityDay {
+  /** YYYY-MM-DD (UTC). */
+  key: string;
+  /** Two-letter weekday label, e.g. "Mo". */
+  weekday: string;
+  count: number;
+}
+
+const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
+/** Bucket merged PRs into the last 7 UTC calendar days (oldest → newest). */
+function weeklyVelocity(feed: FeedEntry[]): VelocityDay[] {
+  const now = new Date();
+  const days: VelocityDay[] = [];
+  const index = new Map<string, number>();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i),
+    );
+    const key = d.toISOString().slice(0, 10);
+    index.set(key, days.length);
+    days.push({ key, weekday: WEEKDAYS[d.getUTCDay()], count: 0 });
+  }
+  for (const e of feed) {
+    const t = Date.parse(e.mergedAt ?? "");
+    if (Number.isNaN(t)) continue;
+    const key = new Date(t).toISOString().slice(0, 10);
+    const i = index.get(key);
+    if (i !== undefined) days[i].count += 1;
+  }
+  return days;
+}
 
 /** Build the cross-project "what needs you" list for one snapshot. */
 export function needsFor(s: ProjectSnapshot): NeedEntry[] {
@@ -219,6 +256,9 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
     return !Number.isNaN(t) && t >= cutoff;
   });
 
+  const velocity = weeklyVelocity(feed);
+  const velocityTotal = velocity.reduce((n, d) => n + d.count, 0);
+
   const oldestFetchedAt = snapshots.reduce<string | null>((acc, s) => {
     if (!acc) return s.fetchedAt;
     return Date.parse(s.fetchedAt) < Date.parse(acc) ? s.fetchedAt : acc;
@@ -232,6 +272,8 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
     ci: summarizeCI(snapshots),
     feed,
     overnightFeed,
+    velocity,
+    velocityTotal,
     oldestFetchedAt,
     anyPartial: snapshots.some((s) => s.partial),
   };

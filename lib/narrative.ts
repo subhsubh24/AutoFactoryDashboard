@@ -17,10 +17,18 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
 
 const SYSTEM_PROMPT =
-  "You write a 2-3 sentence status digest for an autonomous software project " +
-  "being shipped by a scheduled coding agent. Be factual, specific, and warm " +
-  "but concise. Plain prose only — no markdown, no lists, no preamble. Lead " +
-  "with momentum, then what's notable, then what (if anything) needs the human.";
+  "You write a tight 2-sentence status briefing for an autonomous software " +
+  "project that a scheduled coding agent ships to. Sentence one: what shipped " +
+  "in the last 24 hours and where the project stands now. Sentence two: what's " +
+  "coming next — the next milestone or concrete next steps. Be specific and " +
+  "grounded only in the data given; do not invent features. Warm but concise. " +
+  "Plain prose only — no markdown, no lists, no preamble, no 'the project'. If " +
+  "nothing shipped in 24h, say so plainly and focus on current state and next.";
+
+function clip(text: string, n: number): string {
+  const t = text.trim();
+  return t.length > n ? `${t.slice(0, n)}…` : t;
+}
 
 /** Deterministic, always-available summary built from the snapshot. */
 export function templateNarrative(s: ProjectSnapshot): string {
@@ -65,9 +73,37 @@ export function templateNarrative(s: ProjectSnapshot): string {
   return parts.join(" ");
 }
 
-/** Compact factual context handed to the LLM. */
+/** Compact factual context handed to the LLM — metrics + curated factory files. */
 function llmContext(s: ProjectSnapshot): string {
   const pct = headlinePct(s);
+  const milestone = nextMilestone(s);
+
+  const shippedTitles = s.merged7dItems
+    .filter((p) => {
+      const t = Date.parse(p.mergedAt ?? "");
+      return !Number.isNaN(t) && Date.now() - t <= 24 * 60 * 60 * 1000;
+    })
+    .slice(0, 8)
+    .map((p) => `- ${p.title}`)
+    .join("\n");
+  const openTop = s.openPRs
+    .slice(0, 5)
+    .map((p) => `- #${p.number} ${p.title}${p.stuck ? " (stuck)" : ""}`)
+    .join("\n");
+  const queued = s.actionItems.items
+    .slice(0, 6)
+    .map((i) => `- ${i.text}`)
+    .join("\n");
+
+  const roadmap =
+    s.files.roadmap.available && s.files.roadmap.content
+      ? clip(s.files.roadmap.content, 1400)
+      : "";
+  const improvementLog =
+    s.files.improvementLog.available && s.files.improvementLog.content
+      ? clip(s.files.improvementLog.content, 600)
+      : "";
+
   const lines = [
     `Project: ${s.displayName} (${s.kind})`,
     `Working branch: ${s.workingBranch}`,
@@ -77,15 +113,16 @@ function llmContext(s: ProjectSnapshot): string {
     `Commits in last ~25h: ${s.commitsToday ?? "unknown"}`,
     `Open PRs: ${s.openPRs.length} (${s.stuckPRs} stuck > 12h)`,
     `CI: ${s.ci.status}${s.ci.passRate !== null ? ` (${s.ci.passRate}% pass)` : ""}`,
-    `Action items waiting on human: ${s.actionItems.items.length}`,
-    `Attention issues: ${s.attentionIssues.length}`,
     s.readyForSubmission ? `READY FOR SUBMISSION` : "",
     s.progress.tracks.length
       ? `Tracks: ${s.progress.tracks.map((t) => `${t.label} ${t.pct}%`).join(", ")}`
       : "",
-    s.recentMerged.length
-      ? `Recently shipped: ${s.recentMerged.slice(0, 5).map((p) => p.title).join("; ")}`
-      : "",
+    milestone ? `Next milestone (lowest-complete track): ${milestone}` : "",
+    shippedTitles ? `Shipped in last 24h:\n${shippedTitles}` : "",
+    openTop ? `Open PRs in flight:\n${openTop}` : "",
+    queued ? `Queued ops / action items:\n${queued}` : "",
+    roadmap ? `ROADMAP.md (excerpt):\n${roadmap}` : "",
+    improvementLog ? `IMPROVEMENT_LOG.md (recent excerpt):\n${improvementLog}` : "",
   ];
   return lines.filter(Boolean).join("\n");
 }
@@ -151,6 +188,8 @@ export function getNarrative(s: ProjectSnapshot): Promise<Narrative> {
     s.ci.status,
     String(s.actionItems.items.length),
     String(s.readyForSubmission),
+    // Bust when something new ships, even if the counts above are unchanged.
+    String(s.recentMerged[0]?.number ?? ""),
   ];
 
   return unstable_cache(
