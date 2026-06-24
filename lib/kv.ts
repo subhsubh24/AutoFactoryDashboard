@@ -15,17 +15,29 @@ export interface DailyMetric {
 const MAX_DAYS = 60;
 const key = (slug: string) => `afd:hist:${slug}`;
 
-/** True when Vercel KV credentials are present. */
+/**
+ * Resolve KV REST credentials, accepting either the `@vercel/kv` names or the
+ * `UPSTASH_REDIS_REST_*` names that the Upstash marketplace integration injects.
+ * Returns null when neither pair is present.
+ */
+function kvCreds(): { url: string; token: string } | null {
+  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+  const token =
+    process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  return url && token ? { url, token } : null;
+}
+
+/** True when KV credentials are present (under either naming scheme). */
 export function isHistoryEnabled(): boolean {
-  return Boolean(
-    process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN,
-  );
+  return kvCreds() !== null;
 }
 
 // Imported lazily so @vercel/kv never initializes unless KV is configured.
 async function getKv() {
-  const { kv } = await import("@vercel/kv");
-  return kv;
+  const creds = kvCreds();
+  if (!creds) throw new Error("KV is not configured");
+  const { createClient } = await import("@vercel/kv");
+  return createClient(creds);
 }
 
 /** Read a project's daily history (ascending by date). Null when disabled. */
