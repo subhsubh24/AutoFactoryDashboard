@@ -25,6 +25,7 @@ and AI digests light up automatically when you configure them.
 - [Environment variables](#environment-variables)
 - [Create the GitHub token](#create-the-github-token)
 - [Deploy to Vercel](#deploy-to-vercel)
+- [The password gate (turn it on or off)](#the-password-gate-turn-it-on-or-off)
 - [Optional: AI daily narrative](#optional-ai-daily-narrative)
 - [Optional: history & trend charts (Vercel KV + cron)](#optional-history--trend-charts-vercel-kv--cron)
 - [Add a project (one line)](#add-a-project-one-line)
@@ -141,6 +142,27 @@ deploy (it's a no-op until you add KV — see below).
 
 ---
 
+## The password gate (turn it on or off)
+
+The dashboard is gated by a single shared password (`DASHBOARD_PASSWORD`). The
+gate is **enforced when that variable is set** and **disabled when it's unset** —
+no code change either way.
+
+**Turn it off (make the dashboard public):**
+
+1. Vercel → your project → **Settings → Environment Variables**.
+2. Remove **`DASHBOARD_PASSWORD`** (row's **⋯ → Remove**, for every environment).
+3. **Deployments → latest → ⋯ → Redeploy** — env-var changes only take effect on
+   a new deploy.
+
+The login prompt and the "Sign out" button disappear automatically.
+
+**Turn it on (or change it):** add `DASHBOARD_PASSWORD` back (any strong string)
+and redeploy. The password is hashed (SHA-256) into an httpOnly cookie — the
+browser never sees the plaintext, and the value never reaches client JS.
+
+---
+
 ## Optional: AI daily narrative (OpenRouter)
 
 Set `OPENROUTER_API_KEY` (and optionally `OPENROUTER_MODEL`) to generate a 2–3
@@ -162,24 +184,53 @@ sentence per-project digest server-side via [OpenRouter](https://openrouter.ai)
 ## Optional: history & trend charts (Vercel KV + cron)
 
 Trend sparklines (PRs/day, %-to-submission, CI pass%) are powered by a daily
-snapshot written to **Vercel KV**. This is entirely optional — without KV, the
-charts are hidden and the cron route returns a no-op.
+snapshot written to a **Vercel KV / Upstash Redis** store. Entirely optional —
+without it, the charts are hidden and the cron route is a silent no-op.
 
-To enable:
+**1 — Create & connect the store**
 
-1. Vercel → your project → **Storage → Create Database → KV** → connect it.
-   Vercel injects `KV_REST_API_URL` / `KV_REST_API_TOKEN` automatically.
-2. *(Recommended)* add a `CRON_SECRET` env var to protect the snapshot route.
-3. Redeploy. The cron in `vercel.json` runs daily:
+1. Vercel → your project → **Storage → Create Database**.
+2. Choose **Redis** (listed as *Upstash for Redis* / "KV"). Name it
+   `afd-history`, pick a nearby region, create it.
+3. **Connect to Project** → select this project and all environments. Vercel
+   injects the REST credentials automatically — no copy/paste. The app accepts
+   either `KV_REST_API_URL` / `KV_REST_API_TOKEN` **or** the
+   `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` names, so whichever the
+   integration sets will work.
+4. **Redeploy** so the new vars take effect.
 
-   ```json
-   { "crons": [{ "path": "/api/cron/snapshot", "schedule": "0 7 * * *" }] }
-   ```
+**2 — Seed the first data point**
 
-   (`0 7 * * *` = 07:00 UTC daily.) Each run records `{ prs, pct, ciPassRate }`
-   per project keyed by `project + date`. Sparklines appear after a couple of
-   days of history. You can also hit `/api/cron/snapshot` manually to backfill
-   today (include the `Authorization: Bearer <CRON_SECRET>` header if set).
+Visit the snapshot route once in your browser:
+
+```
+https://<your-app>.vercel.app/api/cron/snapshot
+```
+
+It returns `{ "ok": true, "recorded": [...] }` and writes one point per project
+(`{ prs, pct, ciPassRate }`, keyed by `project + date`).
+
+**3 — Let the cron take over**
+
+The cron in [`vercel.json`](./vercel.json) runs daily and appends a point:
+
+```json
+{ "crons": [{ "path": "/api/cron/snapshot", "schedule": "0 7 * * *" }] }
+```
+
+(`0 7 * * *` = 07:00 UTC.) The sparklines appear on each project's detail page
+(`/p/[slug]`) once there are 2–3 days of history — a single point is just a dot.
+History is capped at the last 60 days.
+
+**Protecting the route (optional).** Set a `CRON_SECRET` env var and the route
+requires `Authorization: Bearer <secret>` (Vercel's cron sends it automatically).
+Without it the route is open but harmless — it only records current metrics. With
+it set, seed manually via:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  https://<your-app>.vercel.app/api/cron/snapshot
+```
 
 ---
 
