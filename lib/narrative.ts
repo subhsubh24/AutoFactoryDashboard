@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache";
 import type { ProjectSnapshot } from "@/lib/types";
-import { needsFor } from "@/lib/aggregate";
+import { humanAsksFor } from "@/lib/aggregate";
 import { headlinePct, nextMilestone, pluralize } from "@/lib/utils";
 
 export interface Narrative {
@@ -51,7 +51,7 @@ export function templateNarrative(s: ProjectSnapshot): string {
     parts.push(`${milestone} is the next milestone.`);
   }
 
-  const needs = needsFor(s).length;
+  const needs = humanAsksFor(s).length;
   if (s.readyForSubmission) {
     parts.push("It's ready for submission — your sign-off is the last step.");
   } else if (needs > 0) {

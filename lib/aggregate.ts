@@ -33,9 +33,15 @@ export interface CIHealthSummary {
 export interface Overview {
   totalMergedToday: number;
   totalMerged24h: number;
+  /** Number of distinct projects that shipped at least one PR in the last 24h. */
+  projectsShippedOvernight: number;
+  /** Only the things that genuinely require the human (see HUMAN_ASK_KINDS). */
   needs: NeedEntry[];
   ci: CIHealthSummary;
+  /** All merged PRs in the last 7 days, newest first. */
   feed: FeedEntry[];
+  /** Merged PRs in the last ~24h, newest first — the "what shipped overnight" view. */
+  overnightFeed: FeedEntry[];
   /** Oldest "fetchedAt" across snapshots — drives the "updated x ago" stamp. */
   oldestFetchedAt: string | null;
   anyPartial: boolean;
@@ -50,6 +56,25 @@ const KIND_PRIORITY: Record<NeedKind, number> = {
   action: 5,
   fyi: 6,
 };
+
+/**
+ * The kinds that genuinely require a human: sign-off to ship, a hard blocker,
+ * or red CI. Everything else (the agent's own queued ops, harness proposals,
+ * FYIs, routine stuck PRs) is noise for a morning glance and is filtered out of
+ * the overview. The full list still lives on each project's detail page.
+ */
+const HUMAN_ASK_KINDS = new Set<NeedKind>(["ready", "blocker", "ci"]);
+
+export function isHumanAsk(n: NeedEntry): boolean {
+  return HUMAN_ASK_KINDS.has(n.kind);
+}
+
+/** Only the true human asks for one project (sign-off / blocker / red CI). */
+export function humanAsksFor(s: ProjectSnapshot): NeedEntry[] {
+  return needsFor(s).filter(isHumanAsk);
+}
+
+const OVERNIGHT_MS = 24 * 60 * 60 * 1000;
 
 /** Build the cross-project "what needs you" list for one snapshot. */
 export function needsFor(s: ProjectSnapshot): NeedEntry[] {
@@ -166,8 +191,11 @@ function summarizeCI(snapshots: ProjectSnapshot[]): CIHealthSummary {
 }
 
 export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
+  // Only the true human asks make it to the overview — the rest is noise for a
+  // morning glance and stays on the per-project pages.
   const needs = snapshots
     .flatMap(needsFor)
+    .filter(isHumanAsk)
     .sort((a, b) =>
       a.priority !== b.priority
         ? a.priority - b.priority
@@ -185,6 +213,12 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
     )
     .sort((a, b) => Date.parse(b.mergedAt ?? "") - Date.parse(a.mergedAt ?? ""));
 
+  const cutoff = Date.now() - OVERNIGHT_MS;
+  const overnightFeed = feed.filter((e) => {
+    const t = Date.parse(e.mergedAt ?? "");
+    return !Number.isNaN(t) && t >= cutoff;
+  });
+
   const oldestFetchedAt = snapshots.reduce<string | null>((acc, s) => {
     if (!acc) return s.fetchedAt;
     return Date.parse(s.fetchedAt) < Date.parse(acc) ? s.fetchedAt : acc;
@@ -193,9 +227,11 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
   return {
     totalMergedToday: snapshots.reduce((n, s) => n + s.mergedToday, 0),
     totalMerged24h: snapshots.reduce((n, s) => n + s.merged24h, 0),
+    projectsShippedOvernight: snapshots.filter((s) => s.merged24h > 0).length,
     needs,
     ci: summarizeCI(snapshots),
     feed,
+    overnightFeed,
     oldestFetchedAt,
     anyPartial: snapshots.some((s) => s.partial),
   };

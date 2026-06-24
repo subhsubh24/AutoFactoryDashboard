@@ -1,17 +1,15 @@
+import Link from "next/link";
 import { getAllSnapshots } from "@/lib/github";
-import { buildOverview } from "@/lib/aggregate";
-import { pluralize } from "@/lib/utils";
-import { StatCard } from "@/components/StatCard";
-import { ProjectCard } from "@/components/ProjectCard";
-import { WhatNeedsYou } from "@/components/WhatNeedsYou";
+import { buildOverview, humanAsksFor, type NeedEntry } from "@/lib/aggregate";
+import type { ProjectSnapshot } from "@/lib/types";
+import { cn, ciMeta, pluralize, statusMeta, toneClasses } from "@/lib/utils";
 import { ActivityFeed } from "@/components/ActivityFeed";
-import { SectionCard } from "@/components/Section";
 import { RelativeTime } from "@/components/RelativeTime";
 import {
-  AlertIcon,
+  ArrowRightIcon,
   CheckIcon,
+  ExternalLinkIcon,
   RocketIcon,
-  SparkleIcon,
 } from "@/components/icons";
 
 // Near-real-time without hammering the GitHub API.
@@ -21,145 +19,240 @@ export default async function OverviewPage() {
   const snapshots = await getAllSnapshots();
   const overview = buildOverview(snapshots);
   const tokenMissing = !process.env.GITHUB_TOKEN;
-  // Token present but rejected for every repo → likely invalid or missing access.
   const authError =
     !tokenMissing &&
     snapshots.length > 0 &&
     snapshots.every((s) => !s.repoMeta.available) &&
     snapshots.some((s) => s.errors.some((e) => /HTTP 40[13]/.test(e)));
-  const needCount = overview.needs.length;
+
+  const shipped = overview.totalMerged24h;
+  const asks = overview.needs;
+  const overnightCount = overview.overnightFeed.length;
 
   return (
-    <div className="animate-fade-in">
-      <PageHeader fetchedAt={overview.oldestFetchedAt} />
+    <div className="animate-fade-in mx-auto max-w-3xl">
+      <Header fetchedAt={overview.oldestFetchedAt} />
 
       {tokenMissing && (
         <div className="mb-6 rounded-xl border border-clay/30 bg-clay-soft px-4 py-3 text-sm text-clay-strong">
-          <strong className="font-semibold">No GITHUB_TOKEN set.</strong> The
-          dashboard is showing empty state. Add a read-only GitHub token to{" "}
+          <strong className="font-semibold">No GITHUB_TOKEN set.</strong> Add a
+          read-only GitHub token to{" "}
           <code className="font-mono text-xs">.env.local</code> (see the README)
           to load live data.
         </div>
       )}
-
       {authError && (
         <div className="mb-6 rounded-xl border border-amber/30 bg-amber-soft px-4 py-3 text-sm text-amber-strong">
           <strong className="font-semibold">GitHub rejected every request.</strong>{" "}
           Your <code className="font-mono text-xs">GITHUB_TOKEN</code> looks
-          invalid or is missing read access to these repos. Check the token&apos;s
-          repository permissions (Contents, Pull requests, Issues, Actions,
-          Metadata).
+          invalid or lacks read access to these repos.
         </div>
       )}
 
-      {/* Top stat strip */}
-      <div className="mb-8 grid gap-4 sm:grid-cols-3">
-        <StatCard
-          label="Shipped today"
-          value={overview.totalMergedToday}
-          sublabel={`${pluralize(overview.totalMergedToday, "PR")} merged across all projects`}
-          tone="sage"
-          icon={<RocketIcon className="h-4 w-4" />}
-        />
-        <StatCard
-          label="Needs you"
-          value={needCount}
-          sublabel={
-            needCount === 0
-              ? "nothing waiting on a human"
-              : `${pluralize(needCount, "item")} across the factory`
-          }
-          tone={needCount > 0 ? "clay" : "sage"}
-          icon={
-            needCount > 0 ? (
-              <AlertIcon className="h-4 w-4" />
-            ) : (
-              <SparkleIcon className="h-4 w-4" />
-            )
-          }
-        />
-        <StatCard
-          label="CI health"
-          value={overview.ci.total === 0 ? "—" : `${overview.ci.passing}/${overview.ci.total}`}
-          sublabel={
-            overview.ci.total === 0
-              ? "no CI configured yet"
-              : overview.ci.anyFailing
-                ? `${overview.ci.failingNames.join(", ")} failing`
-                : "all branches green"
-          }
-          tone={overview.ci.tone}
-          icon={<CheckIcon className="h-4 w-4" />}
-        />
-      </div>
-
-      {/* Main grid: projects + activity on the left, "what needs you" rail. */}
-      <div className="grid gap-6 lg:grid-cols-[1.7fr_1fr] lg:items-start">
-        <div className="order-2 space-y-6 lg:order-1">
-          <section>
-            <h2 className="mb-3 px-1 text-sm font-semibold tracking-tight text-ink">
-              Projects
-            </h2>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {snapshots.map((s) => (
-                <ProjectCard key={s.slug} snapshot={s} />
-              ))}
-            </div>
-          </section>
-
-          <SectionCard
-            title="Activity"
-            subtitle="Merged pull requests across all projects, newest first"
-            bodyClassName="py-2"
-          >
-            <ActivityFeed entries={overview.feed} showProject limit={24} />
-          </SectionCard>
+      {/* 1 — The one thing you came for: what shipped overnight. */}
+      <section className="mb-6 rounded-2xl border border-hairline bg-card p-6 shadow-card sm:p-8">
+        <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted">
+          <RocketIcon className="h-3.5 w-3.5 text-sage" />
+          Shipped overnight
         </div>
+        {shipped > 0 ? (
+          <p className="mt-2 font-serif text-3xl font-medium leading-tight tracking-tight text-ink sm:text-4xl">
+            {shipped} {pluralize(shipped, "PR")} shipped
+            <span className="text-muted">
+              {" "}
+              across {overview.projectsShippedOvernight}{" "}
+              {pluralize(overview.projectsShippedOvernight, "project")}
+            </span>
+          </p>
+        ) : (
+          <p className="mt-2 font-serif text-3xl font-medium leading-tight tracking-tight text-ink sm:text-4xl">
+            Quiet night
+            <span className="text-muted"> — nothing shipped in the last 24h</span>
+          </p>
+        )}
 
-        <aside className="order-1 lg:order-2 lg:sticky lg:top-20">
-          <SectionCard
-            title={
-              <span className="flex items-center gap-1.5">
-                <SparkleIcon className="h-4 w-4 text-clay" />
-                What needs you
-              </span>
-            }
-            subtitle="Prioritized across every project"
-            headerClassName="bg-clay-soft/40"
-            aside={
-              needCount > 0 ? (
-                <span className="grid h-6 min-w-6 place-items-center rounded-full bg-clay px-1.5 text-xs font-semibold text-white">
-                  {needCount}
-                </span>
-              ) : undefined
-            }
-            bodyClassName="max-h-[70vh] overflow-y-auto"
-          >
-            <WhatNeedsYou needs={overview.needs} />
-          </SectionCard>
-        </aside>
-      </div>
+        <Verdict count={asks.length} />
+      </section>
+
+      {/* 2 — Only the things that genuinely need you. */}
+      {asks.length > 0 && (
+        <section className="mb-6">
+          <h2 className="mb-3 px-1 text-sm font-semibold tracking-tight text-ink">
+            Needs you
+          </h2>
+          <ul className="space-y-2">
+            {asks.map((need) => (
+              <AskRow key={need.id} need={need} />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* 3 — A calm one-line status per project. */}
+      <section className="mb-6">
+        <h2 className="mb-3 px-1 text-sm font-semibold tracking-tight text-ink">
+          Projects
+        </h2>
+        <ul className="overflow-hidden rounded-2xl border border-hairline bg-card shadow-card divide-y divide-hairline">
+          {snapshots.map((s) => (
+            <GlanceRow key={s.slug} snapshot={s} />
+          ))}
+        </ul>
+      </section>
+
+      {/* 4 — The detail, kept out of the way until you want it. */}
+      {overnightCount > 0 && (
+        <details className="group rounded-2xl border border-hairline bg-card shadow-card">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3.5 text-sm font-medium text-ink">
+            <span>
+              What shipped overnight{" "}
+              <span className="text-muted">({overnightCount})</span>
+            </span>
+            <ArrowRightIcon className="h-4 w-4 text-muted transition-transform group-open:rotate-90" />
+          </summary>
+          <div className="border-t border-hairline px-5 py-2">
+            <ActivityFeed
+              entries={overview.overnightFeed}
+              showProject
+              limit={30}
+            />
+          </div>
+        </details>
+      )}
     </div>
   );
 }
 
-function PageHeader({ fetchedAt }: { fetchedAt: string | null }) {
+/** The single verdict line under the hero number. */
+function Verdict({ count }: { count: number }) {
+  if (count === 0) {
+    return (
+      <div className="mt-4 flex items-center gap-2 rounded-xl bg-sage-soft/60 px-3.5 py-2.5 text-sm font-medium text-sage-strong">
+        <CheckIcon className="h-4 w-4 shrink-0" />
+        Nothing needs you — enjoy your coffee.
+      </div>
+    );
+  }
   return (
-    <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+    <div className="mt-4 flex items-center gap-2 rounded-xl bg-clay-soft/70 px-3.5 py-2.5 text-sm font-medium text-clay-strong">
+      <span className="grid h-5 min-w-5 place-items-center rounded-full bg-clay px-1 text-xs font-semibold text-white">
+        {count}
+      </span>
+      {count === 1 ? "thing needs" : "things need"} your attention this morning.
+    </div>
+  );
+}
+
+/** One true human ask, phrased plainly. */
+function AskRow({ need }: { need: NeedEntry }) {
+  const isReady = need.kind === "ready";
+  return (
+    <li
+      className={cn(
+        "flex items-start gap-3 rounded-xl border p-3.5",
+        isReady ? "border-sage/30 bg-sage-soft/50" : "border-clay/20 bg-card",
+      )}
+    >
+      <span
+        className={cn(
+          "mt-1.5 h-2 w-2 shrink-0 rounded-full",
+          isReady ? "bg-sage" : "bg-clay",
+        )}
+      />
+      <div className="min-w-0 flex-1">
+        <Link
+          href={`/p/${need.projectSlug}`}
+          className="text-[11px] font-semibold uppercase tracking-wide text-muted transition-colors hover:text-clay"
+        >
+          {need.projectName}
+        </Link>
+        <p className="text-sm leading-snug text-ink">{need.text}</p>
+        {need.howTo && (
+          <p className="mt-0.5 text-xs text-muted">{need.howTo}</p>
+        )}
+      </div>
+      {need.url && (
+        <a
+          href={need.url}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Open on GitHub"
+          className="mt-0.5 shrink-0 text-muted transition-colors hover:text-clay"
+        >
+          <ExternalLinkIcon className="h-4 w-4" />
+        </a>
+      )}
+    </li>
+  );
+}
+
+/** A calm, single-line project status. */
+function GlanceRow({ snapshot: s }: { snapshot: ProjectSnapshot }) {
+  const status = statusMeta(s.status);
+  const ci = ciMeta(s.ci.status);
+  const asks = humanAsksFor(s).length;
+  const shipped = s.merged24h;
+
+  return (
+    <li>
+      <Link
+        href={`/p/${s.slug}`}
+        className="group flex items-center gap-3 px-5 py-4 transition-colors hover:bg-bg/60"
+      >
+        <span
+          className={cn(
+            "h-2.5 w-2.5 shrink-0 rounded-full",
+            toneClasses(status.tone).dot,
+            status.live && "animate-pulse-soft",
+          )}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-serif text-base font-medium text-ink">
+            {s.displayName}
+          </span>
+          <span className="text-xs text-muted">
+            {shipped > 0
+              ? `${shipped} shipped overnight`
+              : "nothing shipped overnight"}
+          </span>
+        </span>
+
+        {asks > 0 ? (
+          <span className="hidden shrink-0 rounded-full bg-clay-soft px-2 py-0.5 text-[11px] font-medium text-clay-strong sm:inline">
+            needs you
+          </span>
+        ) : (
+          <span
+            className={cn(
+              "hidden shrink-0 items-center gap-1.5 text-xs sm:flex",
+              toneClasses(ci.tone).text,
+            )}
+          >
+            <span className={cn("h-1.5 w-1.5 rounded-full", toneClasses(ci.tone).dot)} />
+            CI {ci.label.toLowerCase()}
+          </span>
+        )}
+
+        <ArrowRightIcon className="h-4 w-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5 group-hover:text-clay" />
+      </Link>
+    </li>
+  );
+}
+
+function Header({ fetchedAt }: { fetchedAt: string | null }) {
+  return (
+    <div className="mb-8 flex flex-wrap items-end justify-between gap-3">
       <div>
         <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">
           Autonomous product factory
         </p>
         <h1 className="mt-1 font-serif text-3xl font-medium tracking-tight text-ink sm:text-4xl">
-          Factory Floor
+          Good morning
         </h1>
       </div>
-      <div className="text-right text-xs text-muted">
-        <p>
-          <RelativeTime iso={fetchedAt} prefix="Updated " />
-        </p>
-        <p className="mt-0.5 opacity-70">Auto-refreshes every 10 min</p>
-      </div>
+      <p className="text-xs text-muted">
+        <RelativeTime iso={fetchedAt} prefix="Updated " /> · refreshes every 10m
+      </p>
     </div>
   );
 }
