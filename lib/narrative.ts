@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache";
 import type { ProjectSnapshot } from "@/lib/types";
 import { humanAsksFor } from "@/lib/aggregate";
+import { extractThemes, themeSummary } from "@/lib/themes";
 import { headlinePct, nextMilestone, pluralize } from "@/lib/utils";
 
 export interface Narrative {
@@ -30,44 +31,49 @@ function clip(text: string, n: number): string {
   return t.length > n ? `${t.slice(0, n)}…` : t;
 }
 
-/** Deterministic, always-available summary built from the snapshot. */
+/**
+ * Deterministic, always-available summary built from the snapshot — describes
+ * what shipped (themes), where it stands (%), and what's next (milestone), so
+ * the tiles are informative even without an OpenRouter key.
+ */
 export function templateNarrative(s: ProjectSnapshot): string {
   const parts: string[] = [];
   const pct = headlinePct(s);
+  const focus = themeSummary(extractThemes(s.merged7dItems));
+  const focusClause = focus
+    ? ` — ${focus.replace(/^Mostly /, "mostly ").replace(/\.$/, "")}`
+    : "";
 
   if (s.merged24h > 0) {
     parts.push(
-      `${s.displayName} merged ${s.merged24h} ${pluralize(s.merged24h, "PR")} in the last 24 hours` +
-        (pct !== null ? `, now at ${pct}% toward submission.` : "."),
+      `${s.displayName} shipped ${s.merged24h} ${pluralize(s.merged24h, "PR")} in the last 24h${focusClause}.`,
     );
-  } else if (pct !== null) {
+  } else if (s.merged7d > 0) {
     parts.push(
-      `${s.displayName} sits at ${pct}% toward submission with no merges in the last 24 hours.`,
+      `${s.displayName} had no merges in the last 24h but shipped ${s.merged7d} this week${focusClause}.`,
     );
   } else {
-    parts.push(`${s.displayName} has had no merge activity in the last day.`);
+    parts.push(`${s.displayName} has had no merge activity recently.`);
   }
 
+  const where =
+    pct !== null
+      ? `It's about ${pct}% of the way through its roadmap`
+      : "Roadmap progress is unmeasured";
   const milestone = nextMilestone(s);
-  if (s.ci.status === "failing") {
-    parts.push(`CI is currently failing on ${s.workingBranch}.`);
-  } else if (s.ci.status === "passing") {
-    parts.push(
-      milestone ? `CI is green; ${milestone} is the next milestone.` : "CI is green.",
-    );
-  } else if (milestone) {
-    parts.push(`${milestone} is the next milestone.`);
-  }
+  const ciClause =
+    s.ci.status === "failing"
+      ? ", but CI is failing"
+      : s.ci.status === "passing"
+        ? " with CI green"
+        : "";
 
-  const needs = humanAsksFor(s).length;
   if (s.readyForSubmission) {
-    parts.push("It's ready for submission — your sign-off is the last step.");
-  } else if (needs > 0) {
-    parts.push(
-      `${needs} ${pluralize(needs, "item")} ${needs === 1 ? "is" : "are"} waiting on you.`,
-    );
+    parts.push(`${where}${ciClause} — and it's ready for submission; your sign-off is the last step.`);
+  } else if (milestone) {
+    parts.push(`${where}${ciClause}; next up is ${milestone}.`);
   } else {
-    parts.push("Nothing is waiting on you right now.");
+    parts.push(`${where}${ciClause}.`);
   }
 
   return parts.join(" ");
@@ -127,39 +133,37 @@ function llmContext(s: ProjectSnapshot): string {
   return lines.filter(Boolean).join("\n");
 }
 
-async function llmNarrative(
-  s: ProjectSnapshot,
+interface ChatMessage {
+  role: "system" | "user";
+  content: string;
+}
+
+/** Single OpenRouter chat call. Returns null on any failure (caller falls back). */
+async function callOpenRouter(
+  messages: ChatMessage[],
+  maxTokens: number,
 ): Promise<{ text: string; model: string } | null> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return null;
 
   const model = process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
-
   try {
     const res = await fetch(OPENROUTER_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        // Optional attribution for the OpenRouter dashboard/leaderboard.
         "X-Title": "AutoFactoryDashboard",
       },
       body: JSON.stringify({
         model,
-        max_tokens: 220,
+        max_tokens: maxTokens,
         temperature: 0.4,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          {
-            role: "user",
-            content: `Write the digest from these metrics:\n\n${llmContext(s)}`,
-          },
-        ],
+        messages,
       }),
       signal: AbortSignal.timeout(12_000),
       cache: "no-store",
     });
-
     if (!res.ok) return null;
     const data = (await res.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
@@ -170,6 +174,18 @@ async function llmNarrative(
     // Any failure (no network, bad key, bad model, timeout) → templated.
     return null;
   }
+}
+
+function llmNarrative(
+  s: ProjectSnapshot,
+): Promise<{ text: string; model: string } | null> {
+  return callOpenRouter(
+    [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: `Write the digest from these metrics:\n\n${llmContext(s)}` },
+    ],
+    220,
+  );
 }
 
 /**
@@ -197,6 +213,97 @@ export function getNarrative(s: ProjectSnapshot): Promise<Narrative> {
       const llm = await llmNarrative(s);
       if (llm) return { text: llm.text, source: "llm", model: llm.model };
       return { text: templateNarrative(s), source: "template" };
+    },
+    cacheKey,
+    { revalidate: 600 },
+  )();
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Factory-wide briefing (the one-glance "good morning, here's the state")
+// ────────────────────────────────────────────────────────────────────────────
+
+const FACTORY_SYSTEM =
+  "You write a 2-sentence good-morning briefing for someone running several " +
+  "autonomous software projects shipped by scheduled coding agents. Sentence " +
+  "one: overall momentum across all projects (lead with what shipped and what " +
+  "it focused on). Sentence two: the one or two things most worth their " +
+  "attention (a blocker, red CI, something ready to ship) — or that nothing " +
+  "needs them. Specific, warm, concise. Plain prose only: no markdown, no " +
+  "lists, no preamble.";
+
+function factoryContext(snapshots: ProjectSnapshot[]): string {
+  return snapshots
+    .map((s) => {
+      const pct = headlinePct(s);
+      const focus = themeSummary(extractThemes(s.merged7dItems));
+      return (
+        `- ${s.displayName}: ${s.status}, ${s.merged24h} merged in 24h, ` +
+        `${pct ?? "?"}% through roadmap, CI ${s.ci.status}, ` +
+        `${humanAsksFor(s).length} needing you` +
+        (focus ? `; focus: ${focus}` : "")
+      );
+    })
+    .join("\n");
+}
+
+export interface FactoryBriefing {
+  text: string;
+  source: "llm" | "template";
+}
+
+function templateBriefing(snapshots: ProjectSnapshot[]): string {
+  const totalMerged = snapshots.reduce((n, s) => n + s.merged24h, 0);
+  const needs = snapshots.reduce((n, s) => n + humanAsksFor(s).length, 0);
+  const focus = themeSummary(extractThemes(snapshots.flatMap((s) => s.merged7dItems)));
+  const lead =
+    totalMerged > 0
+      ? `${totalMerged} ${pluralize(totalMerged, "PR")} shipped across the factory in the last 24h` +
+        (focus ? ` — ${focus.replace(/^Mostly /, "mostly ").replace(/\.$/, "")}` : "")
+      : "Quiet across the factory — nothing shipped in the last 24h";
+  const tail =
+    needs > 0
+      ? `${needs} ${pluralize(needs, "item")} ${needs === 1 ? "needs" : "need"} your attention.`
+      : "Nothing needs you right now.";
+  return `${lead}. ${tail}`;
+}
+
+/**
+ * One short cross-project briefing for the top of the dashboard. Uses the LLM
+ * when configured; always falls back to a deterministic summary.
+ */
+export function getFactoryBriefing(
+  snapshots: ProjectSnapshot[],
+): Promise<FactoryBriefing> {
+  const totalMerged = snapshots.reduce((n, s) => n + s.merged24h, 0);
+  const needs = snapshots.reduce((n, s) => n + humanAsksFor(s).length, 0);
+  const cacheKey = [
+    "afd-factory-briefing",
+    process.env.OPENROUTER_MODEL || DEFAULT_MODEL,
+    String(totalMerged),
+    String(needs),
+    ...snapshots.map(
+      (s) =>
+        `${s.slug}:${headlinePct(s)}:${s.status}:${s.ci.status}:${s.recentMerged[0]?.number ?? ""}`,
+    ),
+  ];
+
+  return unstable_cache(
+    async (): Promise<FactoryBriefing> => {
+      const llm = await callOpenRouter(
+        [
+          { role: "system", content: FACTORY_SYSTEM },
+          {
+            role: "user",
+            content:
+              `Projects:\n${factoryContext(snapshots)}\n\n` +
+              `Total merged in last 24h: ${totalMerged}. Items needing the human: ${needs}.`,
+          },
+        ],
+        200,
+      );
+      if (llm) return { text: llm.text, source: "llm" };
+      return { text: templateBriefing(snapshots), source: "template" };
     },
     cacheKey,
     { revalidate: 600 },

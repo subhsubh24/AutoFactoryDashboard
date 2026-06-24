@@ -43,6 +43,17 @@ export interface TrackProgress {
   pct: number;
 }
 
+/** A single roadmap sub-track (e.g. "B2"), with its completion state. */
+export interface SubTrack {
+  /** Code like "A1", "B2", "D3", or "P0". */
+  code: string;
+  /** Track letter the sub-track belongs to ("A".."E", or "P0"). */
+  track: string;
+  label: string;
+  /** Marked done via inline annotation or a merged PR referencing it. */
+  done: boolean;
+}
+
 export type ActionSource = "pending_ops" | "issue" | "human_core";
 
 export interface ActionItem {
@@ -67,11 +78,22 @@ export interface AttentionIssue {
 }
 
 export interface ProgressInfo extends Availability {
-  /** % from the "Definition of Done" section. */
+  /**
+   * Headline build progress, 0–100. Derived from roadmap sub-track *coverage*
+   * (sub-tracks shipped via PRs or marked done) rather than the all-or-nothing
+   * "Definition of Done" gate, which stays 0% until launch.
+   */
   percentToSubmission: number | null;
   /** Whole-file checkbox % fallback. */
   overallPct: number | null;
   tracks: TrackProgress[];
+  /** All parsed roadmap sub-tracks with completion state. */
+  subtracks: SubTrack[];
+  /** "Definition of Done" launch-gate boxes ticked / total. */
+  gateDone: number;
+  gateTotal: number;
+  /** How `percentToSubmission` was derived. */
+  method: "coverage" | "checkbox" | "none";
 }
 
 export interface CIInfo extends Availability {

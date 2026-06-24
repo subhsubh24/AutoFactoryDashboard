@@ -56,3 +56,16 @@ export function CalmCoda() {
     </>
   );
 }
+
+/** Time-aware phrase like "this morning" / "this evening" / "right now". */
+const WHEN: Record<Part, string> = {
+  morning: "this morning",
+  afternoon: "this afternoon",
+  evening: "this evening",
+  night: "right now",
+};
+
+export function TimeOfDay() {
+  const hour = useLocalHour();
+  return <>{hour === null ? "right now" : WHEN[partOfDay(hour)]}</>;
+}

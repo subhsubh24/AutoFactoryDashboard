@@ -1,5 +1,6 @@
 import type { FeedEntry, ProjectSnapshot } from "@/lib/types";
 import type { Tone } from "@/lib/utils";
+import { extractThemes, type ThemeCount } from "@/lib/themes";
 
 export type NeedKind =
   | "ready"
@@ -46,6 +47,10 @@ export interface Overview {
   velocity: VelocityDay[];
   /** Total PRs merged across the velocity window. */
   velocityTotal: number;
+  /** What this week's merged PRs focused on, across the whole factory. */
+  themes: ThemeCount[];
+  /** Mean build progress across projects that report it, or null. */
+  avgProgress: number | null;
   /** Oldest "fetchedAt" across snapshots — drives the "updated x ago" stamp. */
   oldestFetchedAt: string | null;
   anyPartial: boolean;
@@ -259,6 +264,14 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
   const velocity = weeklyVelocity(feed);
   const velocityTotal = velocity.reduce((n, d) => n + d.count, 0);
 
+  const themes = extractThemes(snapshots.flatMap((s) => s.merged7dItems));
+  const progresses = snapshots
+    .map((s) => s.progress.percentToSubmission)
+    .filter((n): n is number => n !== null);
+  const avgProgress = progresses.length
+    ? Math.round(progresses.reduce((a, b) => a + b, 0) / progresses.length)
+    : null;
+
   const oldestFetchedAt = snapshots.reduce<string | null>((acc, s) => {
     if (!acc) return s.fetchedAt;
     return Date.parse(s.fetchedAt) < Date.parse(acc) ? s.fetchedAt : acc;
@@ -274,6 +287,8 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
     overnightFeed,
     velocity,
     velocityTotal,
+    themes,
+    avgProgress,
     oldestFetchedAt,
     anyPartial: snapshots.some((s) => s.partial),
   };

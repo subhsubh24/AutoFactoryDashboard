@@ -3,6 +3,9 @@ import { unstable_cache } from "next/cache";
 import type { ProjectConfig } from "@/config/projects";
 import { PROJECTS } from "@/config/projects";
 import {
+  extractDoneAnnotations,
+  extractTrackCodes,
+  finalizeProgress,
   parsePendingOps,
   parseReadyChecklist,
   parseRoadmap,
@@ -109,6 +112,8 @@ interface PullsResult {
   stuckPRs: number;
   latestMergedAt: string | null;
   latestOpenUpdatedAt: string | null;
+  /** Distinct sub-track codes (A1, B2…) referenced across ALL merged PRs. */
+  mergedCodes: string[];
 }
 
 async function fetchPulls(
@@ -166,6 +171,15 @@ async function fetchPulls(
 
     const merged7dItems = merged.filter((m) => withinHours(m.mergedAt, 24 * 7));
 
+    // Codes from every merged PR (title + body) — drives sub-track coverage.
+    const mergedCodes = [
+      ...new Set(
+        collected
+          .filter((pr) => pr.merged_at)
+          .flatMap((pr) => extractTrackCodes(`${pr.title}\n${pr.body ?? ""}`)),
+      ),
+    ];
+
     return {
       mergedToday: merged.filter((m) => isTodayUtc(m.mergedAt)).length,
       merged24h: merged.filter((m) => withinHours(m.mergedAt, 24)).length,
@@ -176,6 +190,7 @@ async function fetchPulls(
       stuckPRs: open.filter((p) => p.stuck).length,
       latestMergedAt: merged[0]?.mergedAt ?? null,
       latestOpenUpdatedAt: open[0]?.updatedAt ?? null,
+      mergedCodes,
     };
   } catch (e) {
     errors.push(`pull requests: ${errorMessage(e)}`);
@@ -442,6 +457,10 @@ function degraded(
       percentToSubmission: null,
       overallPct: null,
       tracks: [],
+      subtracks: [],
+      gateDone: 0,
+      gateTotal: 0,
+      method: "none",
     },
     mergedToday: 0,
     merged24h: 0,
@@ -529,8 +548,19 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
       ]),
     ]);
 
-  // 3) Parse markdown.
-  const progress = parseRoadmap(roadmapFile.content);
+  // 3) Parse markdown. Progress is sub-track *coverage*: a sub-track counts as
+  //    done if the roadmap annotates it done OR a merged PR references its code.
+  const progressBase = parseRoadmap(roadmapFile.content);
+  const definedCodes = new Set(progressBase.subtracks.map((s) => s.code));
+  const doneCodes = new Set<string>();
+  for (const c of [
+    ...extractDoneAnnotations(roadmapFile.content),
+    ...(pulls?.mergedCodes ?? []),
+  ]) {
+    if (definedCodes.has(c)) doneCodes.add(c);
+  }
+  const progress = finalizeProgress(progressBase, doneCodes);
+
   const actionItems = parsePendingOps(
     pendingFile.available ? pendingFile.content : null,
   );

@@ -2,6 +2,7 @@ import type {
   ActionItem,
   ActionItemsInfo,
   ProgressInfo,
+  SubTrack,
   TrackProgress,
 } from "@/lib/types";
 
@@ -103,7 +104,38 @@ function pct(done: number, total: number): number {
 // ROADMAP.md → progress
 // ────────────────────────────────────────────────────────────────────────────
 
-const TRACK_HEADING_RE = /(?:Track\s+[A-Z]\b|^P0\b)/i;
+// A roadmap sub-track line: optional bullet/checkbox, then a code (A1, B2, D3,
+// P0…), then its label. Matches both "- [ ] A1. …" and plain "- A1. …".
+const SUBTRACK_LINE_RE =
+  /^\s*(?:[-*+]\s+)?(?:\[[ xX~/-]\]\s+)?((?:P[0-9])|(?:[A-E][0-9]{1,2}))[.):]?\s+(\S.*)$/;
+
+const TRACK_CODE_RE = /\b((?:P[0-9])|(?:[A-E][0-9]{1,2}))\b/g;
+
+/** All distinct track codes (A1, B2, D3, P0…) referenced in a blob of text. */
+export function extractTrackCodes(text: string): string[] {
+  const out = new Set<string>();
+  for (const m of text.matchAll(TRACK_CODE_RE)) out.add(m[1].toUpperCase());
+  return [...out];
+}
+
+const DONE_WORD_RE = /\b(done|complete[d]?|shipped|staged|live|landed|finished)\b/i;
+const NOT_DONE_RE =
+  /\b(pending|todo|to-do|in[\s-]?progress|wip|not\s+done|blocked|planned|upcoming|backlog)\b/i;
+
+/**
+ * Codes the roadmap *annotates* as done. The loop records progress in inline
+ * notes like "[B1 done; B3 done (PR #29); B4-B5 pending]" rather than ticking
+ * checkboxes, so we split into clauses and keep codes in any "done"-ish clause.
+ */
+export function extractDoneAnnotations(md: string | null | undefined): string[] {
+  if (!md) return [];
+  const out = new Set<string>();
+  for (const clause of md.split(/[;\n]/)) {
+    if (!DONE_WORD_RE.test(clause) || NOT_DONE_RE.test(clause)) continue;
+    for (const c of extractTrackCodes(clause)) out.add(c);
+  }
+  return [...out];
+}
 
 export function parseRoadmap(md: string | null | undefined): ProgressInfo {
   if (!md || !md.trim()) {
@@ -113,60 +145,118 @@ export function parseRoadmap(md: string | null | undefined): ProgressInfo {
       percentToSubmission: null,
       overallPct: null,
       tracks: [],
+      subtracks: [],
+      gateDone: 0,
+      gateTotal: 0,
+      method: "none",
     };
   }
 
-  // Definition of Done → percentToSubmission
-  const dod = findSection(md, (t) => /definition of done/i.test(t));
-  let percentToSubmission: number | null = null;
-  if (dod) {
-    const c = countCheckboxes(dod.body);
-    percentToSubmission = c.total > 0 ? pct(c.done, c.total) : null;
-  }
-
-  // Per-track headings → tracks[]
   const ls = lines(md);
-  const headings = parseHeadings(ls);
-  const tracks: TrackProgress[] = [];
-  for (let h = 0; h < headings.length; h++) {
-    if (!TRACK_HEADING_RE.test(headings[h].text)) continue;
-    const start = headings[h].line + 1;
-    let end = ls.length;
-    for (let n = h + 1; n < headings.length; n++) {
-      if (headings[n].level <= headings[h].level) {
-        end = headings[n].line;
-        break;
-      }
+
+  // Definition of Done → launch-gate box count (kept separate from progress;
+  // these stay all-unchecked until the very end, so they're a gate not a %).
+  const dod = findSection(md, (t) => /definition of done/i.test(t));
+  const gate = dod ? countCheckboxes(dod.body) : { done: 0, total: 0 };
+
+  // Sub-tracks: coded lines (A1, B2, D3, P0…). First occurrence per code wins.
+  const subtracks: SubTrack[] = [];
+  const seen = new Set<string>();
+  let inFence = false;
+  for (const line of ls) {
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      continue;
     }
-    const c = countCheckboxes(ls.slice(start, end));
-    // Only keep tracks that actually carry checkboxes.
-    if (c.total > 0) {
-      tracks.push({
-        label: cleanHeading(headings[h].text),
-        done: c.done,
-        total: c.total,
-        pct: pct(c.done, c.total),
-      });
-    }
+    if (inFence) continue;
+    const m = SUBTRACK_LINE_RE.exec(line);
+    if (!m) continue;
+    const code = m[1].toUpperCase();
+    if (seen.has(code)) continue;
+    seen.add(code);
+    subtracks.push({
+      code,
+      track: code.startsWith("P") ? code : code[0],
+      label: cleanHeading(m[2]).replace(/\s*\*\*.*$/, "").trim(),
+      done: false,
+    });
   }
 
-  // Whole-file fallback %
+  // Whole-file checkbox % (fallback when there are no coded sub-tracks).
   const overall = countCheckboxes(ls);
   const overallPct = overall.total > 0 ? pct(overall.done, overall.total) : null;
 
   return {
     available: true,
-    percentToSubmission,
+    percentToSubmission: null, // filled by finalizeProgress()
     overallPct,
-    tracks,
+    tracks: [],
+    subtracks,
+    gateDone: gate.done,
+    gateTotal: gate.total,
+    method: "none",
   };
 }
 
-/** Strip trailing checkbox counters / emojis from a heading for display. */
+/**
+ * Apply coverage: mark sub-tracks done (from annotations + merged-PR codes),
+ * compute per-track bars and the headline %. Falls back to the checkbox % when
+ * a roadmap has no coded sub-tracks.
+ */
+export function finalizeProgress(
+  base: ProgressInfo,
+  doneCodes: Set<string>,
+): ProgressInfo {
+  if (!base.available) return base;
+
+  if (base.subtracks.length === 0) {
+    return {
+      ...base,
+      percentToSubmission: base.overallPct,
+      method: base.overallPct !== null ? "checkbox" : "none",
+    };
+  }
+
+  const subtracks = base.subtracks.map((s) => ({
+    ...s,
+    done: doneCodes.has(s.code),
+  }));
+
+  const byTrack = new Map<string, SubTrack[]>();
+  for (const s of subtracks) {
+    const arr = byTrack.get(s.track) ?? [];
+    arr.push(s);
+    byTrack.set(s.track, arr);
+  }
+  const tracks: TrackProgress[] = [...byTrack.entries()]
+    .map(([track, arr]) => {
+      const done = arr.filter((s) => s.done).length;
+      return {
+        label: track.startsWith("P") ? track : `Track ${track}`,
+        done,
+        total: arr.length,
+        pct: pct(done, arr.length),
+      };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  const done = subtracks.filter((s) => s.done).length;
+
+  return {
+    ...base,
+    subtracks,
+    tracks,
+    percentToSubmission: pct(done, subtracks.length),
+    method: "coverage",
+  };
+}
+
+/** Strip trailing checkbox counters / emojis / "(added …)" from a heading. */
 function cleanHeading(text: string): string {
   return text
     .replace(/^#+\s*/, "")
     .replace(/\s*\(\d+\s*\/\s*\d+\)\s*$/, "")
+    .replace(/\s*\((?:added|applied)[^)]*\)\s*$/i, "")
     .replace(/\s*[—–-]\s*\d+%\s*$/, "")
     .trim();
 }
@@ -227,22 +317,66 @@ function isBullet(line: string): boolean {
   return /^\s*(?:[-*+]|\d+[.)])\s+/.test(line);
 }
 
-function makeItem(text: string, i: number, raw = false): ActionItem {
-  // Split an optional "— how to / via X" tail into the howTo slot.
-  let howTo: string | undefined;
-  let main = text.trim();
-  const sep = main.match(/\s+[—–]\s+(.+)$/);
-  if (sep && sep[1].length > 3) {
-    howTo = sep[1].trim();
-    main = main.slice(0, sep.index).trim();
-  }
+function makeItem(
+  text: string,
+  i: number,
+  howTo?: string,
+  raw = false,
+): ActionItem {
   return {
     id: `pending:${i}`,
-    text: main.replace(/\s+/g, " "),
-    howTo,
+    text: text.replace(/\s+/g, " ").trim(),
+    howTo: howTo?.trim() || undefined,
     source: "pending_ops",
     raw,
   };
+}
+
+function clip(s: string, n = 140): string {
+  const t = s.trim();
+  return t.length > n ? `${t.slice(0, n)}…` : t;
+}
+
+const EXCLUDED_SECTION_RE =
+  /^(applied|done|completed?|production notes|for context|archive|history|changelog|notes)\b/i;
+
+/** Line indices belonging to "Applied"/notes-style sections (to ignore). */
+function excludedRanges(ls: string[], headings: Heading[]): Set<number> {
+  const ex = new Set<number>();
+  for (let i = 0; i < headings.length; i++) {
+    if (!EXCLUDED_SECTION_RE.test(headings[i].text)) continue;
+    let end = ls.length;
+    for (let n = i + 1; n < headings.length; n++) {
+      if (headings[n].level <= headings[i].level) {
+        end = headings[n].line;
+        break;
+      }
+    }
+    for (let l = headings[i].line; l < end; l++) ex.add(l);
+  }
+  return ex;
+}
+
+/** First prose/bullet line beneath a heading → a "how to" hint. */
+function firstProseLine(ls: string[], from: number): string | undefined {
+  let inFence = false;
+  for (let i = from; i < ls.length; i++) {
+    const line = ls[i];
+    if (HEADING_RE.test(line)) break;
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    const t = line.trim();
+    if (!t) continue;
+    if (isBullet(t)) {
+      const b = stripMarkdown(stripBullet(t));
+      return b ? clip(b) : undefined;
+    }
+    return clip(stripMarkdown(t));
+  }
+  return undefined;
 }
 
 export function parsePendingOps(md: string | null | undefined): ActionItemsInfo {
@@ -258,33 +392,69 @@ export function parsePendingOps(md: string | null | undefined): ActionItemsInfo 
   }
 
   const ls = lines(md);
+  const headings = parseHeadings(ls);
 
-  // Prefer a "Pending" section; otherwise consider the whole file.
-  const pendingSection = findSection(ls.join("\n"), (t) => /pending/i.test(t));
-  const scopeLines = pendingSection ? pendingSection.body : ls;
+  // The real "Pending" section is a level-2+ heading starting with "pending" —
+  // NOT the document title "Pending Operations", and NOT "Applied"/notes. This
+  // is the fix for the title heading swallowing the whole file.
+  const pendingH = headings.find(
+    (h) =>
+      h.level >= 2 &&
+      /^pending\b/i.test(h.text) &&
+      !/^pending operations\b/i.test(h.text),
+  );
+
+  let scopeLines: string[];
+  let scopeHeadings: Heading[];
+  const minHeadingLevel = pendingH ? pendingH.level + 1 : 2;
+  if (pendingH) {
+    let end = ls.length;
+    for (const h of headings) {
+      if (h.line > pendingH.line && h.level <= pendingH.level) {
+        end = h.line;
+        break;
+      }
+    }
+    scopeLines = ls.slice(pendingH.line + 1, end);
+    scopeHeadings = headings.filter(
+      (h) => h.line > pendingH.line && h.line < end,
+    );
+  } else {
+    // No explicit Pending section: whole file MINUS done/notes sections.
+    const excluded = excludedRanges(ls, headings);
+    scopeLines = ls.filter((_, i) => !excluded.has(i));
+    scopeHeadings = headings.filter((h) => !EXCLUDED_SECTION_RE.test(h.text));
+  }
   const scopeText = scopeLines.join("\n");
 
-  // Explicit "none queued" wins.
   if (NONE_QUEUED_RE.test(scopeText)) {
     return { available: true, items: [], note: "none queued" };
   }
 
   const items: ActionItem[] = [];
   const seen = new Set<string>();
-  const push = (text: string, raw = false) => {
+  const push = (text: string, howTo?: string) => {
     const t = text.trim();
     if (!t || t.length < 3) return;
+    // Skip "applied/done" notes and pure file paths / code.
+    if (DONE_STATUS_RE.test(t) && !ACTION_VERB_RE.test(t)) return;
     const key = t.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
-    items.push(makeItem(t, items.length, raw));
+    items.push(makeItem(t, items.length, howTo));
   };
 
-  // 1) Tables anywhere in scope whose row status looks pending.
+  // 1) Sub-headings within scope are discrete pending ops (the dominant format:
+  //    "### Mobile env vars — Supabase", "### 017_waitlist.sql").
+  for (const h of scopeHeadings) {
+    if (h.level < minHeadingLevel) continue;
+    const title = cleanHeading(h.text);
+    if (title) push(stripMarkdown(title), firstProseLine(ls, h.line + 1));
+  }
+
+  // 2) Tables whose row status looks pending.
   for (const table of parseTables(scopeLines)) {
-    const statusIdx = table.headers.findIndex((h) =>
-      /status|state/i.test(h),
-    );
+    const statusIdx = table.headers.findIndex((h) => /status|state/i.test(h));
     const actionIdx = table.headers.findIndex((h) =>
       /action|item|task|op|description|detail|todo|what/i.test(h),
     );
@@ -294,7 +464,7 @@ export function parsePendingOps(md: string | null | undefined): ActionItemsInfo 
       const looksPending =
         statusIdx >= 0
           ? PENDING_STATUS_RE.test(status) && !DONE_STATUS_RE.test(status)
-          : true; // no status column → treat listed rows as actionable
+          : true;
       if (!looksPending) continue;
       const text =
         actionIdx >= 0 && row[actionIdx]
@@ -304,7 +474,7 @@ export function parsePendingOps(md: string | null | undefined): ActionItemsInfo 
     }
   }
 
-  // 2) Bullet / numbered list items in scope (skip completed checkboxes).
+  // 3) Bullet / numbered items (skip completed checkboxes and ✅ lines).
   let inFence = false;
   for (const line of scopeLines) {
     if (/^\s*(```|~~~)/.test(line)) {
@@ -312,39 +482,15 @@ export function parsePendingOps(md: string | null | undefined): ActionItemsInfo 
       continue;
     }
     if (inFence) continue;
-    if (CHECKED_RE.test(line)) continue; // already done
+    if (CHECKED_RE.test(line)) continue;
+    if (/✅|✔️|☑️/u.test(line)) continue;
     if (isBullet(line)) {
       const text = stripMarkdown(stripBullet(line));
       if (text) push(text);
     }
   }
 
-  // 3) Imperative "apply/set/create…" lines (only when nothing structured found
-  //    and we're scanning the whole file).
-  if (items.length === 0 && !pendingSection) {
-    for (const line of ls) {
-      const t = stripMarkdown(stripBullet(line));
-      if (ACTION_VERB_RE.test(t)) push(t);
-    }
-  }
-
-  if (items.length > 0) {
-    return { available: true, items };
-  }
-
-  // Nothing structured parsed. If there's a Pending section with prose, surface
-  // it raw rather than guessing.
-  if (pendingSection) {
-    const raw = pendingSection.body.join("\n").trim();
-    if (raw) {
-      return {
-        available: true,
-        items: [],
-        note: "Couldn't parse structured items — showing the raw Pending section.",
-        rawSection: raw,
-      };
-    }
-  }
+  if (items.length > 0) return { available: true, items };
 
   return { available: true, items: [], note: "No pending items detected." };
 }
@@ -352,7 +498,7 @@ export function parsePendingOps(md: string | null | undefined): ActionItemsInfo 
 function stripMarkdown(s: string): string {
   return s
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1") // links → text
-    .replace(/[`*_]/g, "")
+    .replace(/[`*]/g, "") // bold/italic/code markers — NOT underscores (snake_case)
     .replace(/^\s*[-—–]\s*/, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -408,17 +554,14 @@ export function parseReadyChecklist(
 // Track parsing from PR titles / bodies
 // ────────────────────────────────────────────────────────────────────────────
 
-const TRACK_IN_TEXT_RE = /\bTrack\s+([A-Z])\b/i;
-const P0_IN_TEXT_RE = /\bP0\b/;
-
-/** Best-effort: which ROADMAP track a PR belongs to, from its title/body. */
+/** Best-effort sub-track tag(s) for a PR from its title/body (e.g. "B2", "D2 · D3"). */
 export function parseTrackFromText(
   title: string,
   body?: string | null,
 ): string | null {
-  const hay = `${title}\n${body ?? ""}`;
-  const t = TRACK_IN_TEXT_RE.exec(hay);
+  const codes = extractTrackCodes(`${title}\n${body ?? ""}`);
+  if (codes.length > 0) return codes.slice(0, 2).join(" · ");
+  const t = /\bTrack\s+([A-Z])\b/i.exec(title);
   if (t) return `Track ${t[1].toUpperCase()}`;
-  if (P0_IN_TEXT_RE.test(hay)) return "P0";
   return null;
 }

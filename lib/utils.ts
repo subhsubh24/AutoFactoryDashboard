@@ -138,8 +138,13 @@ export function kindLabel(kind: ProjectKind): string {
   }
 }
 
-/** The lowest-completion incomplete track — the "next milestone". */
+/** The next thing to build — first undone sub-track, else lowest-% track. */
 export function nextMilestone(s: ProjectSnapshot): string | null {
+  const sub = s.progress.subtracks?.find((x) => !x.done);
+  if (sub) {
+    const label = sub.label ? `${sub.code}: ${sub.label}` : sub.code;
+    return label.length > 72 ? `${label.slice(0, 72)}…` : label;
+  }
   const incomplete = s.progress.tracks.filter((t) => t.pct < 100);
   if (incomplete.length === 0) return null;
   incomplete.sort((a, b) => a.pct - b.pct);

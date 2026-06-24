@@ -16,10 +16,14 @@ import {
   pluralize,
   toneClasses,
 } from "@/lib/utils";
+import { extractThemes, themeSummary } from "@/lib/themes";
+import { qualitySignals, formatCycle } from "@/lib/quality";
+import { estimateCompletion, formatEtaDate, formatHorizon } from "@/lib/estimate";
 import { SectionCard } from "@/components/Section";
 import { ProgressRing } from "@/components/ProgressRing";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TrackBars } from "@/components/TrackBars";
+import { ThemeChips } from "@/components/ThemeChips";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { ActionItemsPanel } from "@/components/ActionItemsPanel";
 import { CIHealth } from "@/components/CIHealth";
@@ -73,6 +77,11 @@ export default async function ProjectPage({
   const ringTone = snapshot.status === "ready" || pct === 100 ? "sage" : "clay";
   const milestone = nextMilestone(snapshot);
   const blockReason = describeBlock(snapshot);
+  const themes = extractThemes(snapshot.merged7dItems);
+  const focus = themeSummary(themes);
+  const quality = qualitySignals(snapshot.merged7dItems, snapshot.ci);
+  const eta = estimateCompletion(snapshot, history);
+  const { gateDone, gateTotal } = snapshot.progress;
 
   const projectFeed: FeedEntry[] = snapshot.merged7dItems.map((pr) => ({
     ...pr,
@@ -178,7 +187,7 @@ export default async function ProjectPage({
           size={156}
           stroke={13}
           tone={ringTone}
-          label="to submission"
+          label="complete"
         />
         <div className="flex-1">
           {!snapshot.progress.available && (
@@ -193,6 +202,21 @@ export default async function ProjectPage({
           <p className="mt-1 font-serif text-2xl text-ink">
             {milestone ?? (snapshot.progress.tracks.length ? "All tracks complete" : "—")}
           </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            {eta && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-sage-soft px-2.5 py-1 font-medium text-sage-strong">
+                Est. launch {formatEtaDate(eta.date)} · {formatHorizon(eta.daysRemaining)}
+                <span className="opacity-70">
+                  ({eta.basis === "history" ? "from trend" : "at current pace"})
+                </span>
+              </span>
+            )}
+            {gateTotal > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-bg px-2.5 py-1 text-muted">
+                Launch gate {gateDone}/{gateTotal}
+              </span>
+            )}
+          </div>
           {blockReason && (
             <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-clay-soft px-2.5 py-1 text-xs font-medium text-clay-strong">
               {blockReason}
@@ -252,6 +276,16 @@ export default async function ProjectPage({
               />
             </div>
           </SectionCard>
+
+          {themes.length > 0 && (
+            <SectionCard
+              title="What the work focused on"
+              subtitle="Themes across the last 7 days of merged PRs"
+            >
+              {focus && <p className="mb-3 text-sm text-ink">{focus}</p>}
+              <ThemeChips themes={themes} limit={8} />
+            </SectionCard>
+          )}
 
           <SectionCard title="Today (live)" subtitle="Right now on the working branch">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -340,19 +374,62 @@ export default async function ProjectPage({
           <SectionCard
             title="Roadmap tracks"
             subtitle={
-              snapshot.progress.percentToSubmission !== null
-                ? `${snapshot.progress.percentToSubmission}% of the Definition of Done complete`
+              snapshot.progress.method === "coverage"
+                ? "Sub-track coverage — shipped via PRs or marked done"
                 : "Per-track progress from ROADMAP.md"
             }
           >
-            {snapshot.progress.available ? (
+            {snapshot.progress.available && snapshot.progress.tracks.length > 0 ? (
               <TrackBars tracks={snapshot.progress.tracks} />
             ) : (
               <p className="text-sm text-muted">
                 {snapshot.progress.reason ??
-                  "ROADMAP.md not found — no track data."}
+                  "ROADMAP.md has no per-track checklist — progress is unmeasured."}
               </p>
             )}
+            {gateTotal > 0 && (
+              <p className="mt-4 border-t border-hairline pt-3 text-xs text-muted">
+                Launch gate (Definition of Done):{" "}
+                <span className="font-semibold text-ink">
+                  {gateDone}/{gateTotal}
+                </span>{" "}
+                criteria ticked. These stay unchecked until the very end — they
+                gate the launch, they don&apos;t track progress.
+              </p>
+            )}
+          </SectionCard>
+
+          <SectionCard
+            title="Quality signals"
+            subtitle="Speed and rework, not just volume"
+          >
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <QualityStat
+                label="CI pass rate"
+                value={quality.ciPassRate === null ? "—" : `${quality.ciPassRate}%`}
+                tone={
+                  quality.ciStatus === "failing"
+                    ? "clay"
+                    : quality.ciStatus === "passing"
+                      ? "sage"
+                      : "muted"
+                }
+              />
+              <QualityStat
+                label="Median merge time"
+                value={formatCycle(quality.medianCycleHours)}
+              />
+              <QualityStat
+                label="Fix rate"
+                value={quality.fixRate === null ? "—" : `${quality.fixRate}%`}
+                tone={quality.fixRate !== null && quality.fixRate > 40 ? "clay" : "muted"}
+              />
+              <QualityStat label="Reverts (7d)" value={String(quality.revertCount)} />
+            </div>
+            <p className="mt-3 text-xs text-muted">
+              From {quality.sampleSize} merged {pluralize(quality.sampleSize, "PR")} in
+              the last 7 days.
+            </p>
           </SectionCard>
 
           {history && history.length > 0 && (
@@ -439,6 +516,25 @@ function HeroStat({
     <div>
       <p className="text-2xl font-semibold tabular text-ink">{value}</p>
       <p className="text-xs text-muted">{label}</p>
+    </div>
+  );
+}
+
+function QualityStat({
+  label,
+  value,
+  tone = "muted",
+}: {
+  label: string;
+  value: string;
+  tone?: "sage" | "clay" | "muted";
+}) {
+  const color =
+    tone === "clay" ? "text-clay-strong" : tone === "sage" ? "text-sage-strong" : "text-ink";
+  return (
+    <div className="rounded-xl border border-hairline bg-bg px-3.5 py-3">
+      <p className={cn("text-xl font-semibold tabular", color)}>{value}</p>
+      <p className="mt-0.5 text-xs text-muted">{label}</p>
     </div>
   );
 }

@@ -1,8 +1,13 @@
 import Link from "next/link";
 import { getAllSnapshots } from "@/lib/github";
 import { buildOverview, humanAsksFor, type NeedEntry } from "@/lib/aggregate";
-import { getNarrative, type Narrative } from "@/lib/narrative";
+import {
+  getNarrative,
+  getFactoryBriefing,
+  type Narrative,
+} from "@/lib/narrative";
 import { getHistory } from "@/lib/kv";
+import { estimateCompletion, formatEtaDate, formatHorizon, type Estimate } from "@/lib/estimate";
 import { getProjectBySlug } from "@/config/projects";
 import type { ProjectSnapshot } from "@/lib/types";
 import {
@@ -18,7 +23,7 @@ import { ActivityFeed } from "@/components/ActivityFeed";
 import { WeekBars } from "@/components/WeekBars";
 import { ProgressTrend, type ProjectTrend } from "@/components/ProgressTrend";
 import { RelativeTime } from "@/components/RelativeTime";
-import { CalmCoda, Greeting } from "@/components/TimeAware";
+import { CalmCoda, Greeting, TimeOfDay } from "@/components/TimeAware";
 import {
   ArrowRightIcon,
   CheckIcon,
@@ -44,17 +49,7 @@ export default async function OverviewPage() {
   const asks = overview.needs;
   const overnightCount = overview.overnightFeed.length;
 
-  // One short LLM (or templated) briefing per project, for the tiles.
-  const narratives = new Map<string, Narrative>(
-    await Promise.all(
-      snapshots.map(
-        async (s) => [s.slug, await getNarrative(s)] as const,
-      ),
-    ),
-  );
-
-  // Optional KV history → "progress to launch over time". Each entry is null
-  // when KV isn't configured, so the whole section hides cleanly without it.
+  // KV history (per project) → progress trend + completion estimates.
   const HISTORY_DAYS = 21;
   const histories = await Promise.all(snapshots.map((s) => getHistory(s.slug)));
   const hasHistory = histories.some((h) => h !== null && h.length > 0);
@@ -65,6 +60,16 @@ export default async function OverviewPage() {
     current: headlinePct(s),
     values: (histories[i]?.slice(-HISTORY_DAYS) ?? []).map((m) => m.pct),
   }));
+  const etas = new Map<string, Estimate | null>(
+    snapshots.map((s, i) => [s.slug, estimateCompletion(s, histories[i])]),
+  );
+
+  // LLM where it's worth it: one factory briefing + one per-project digest.
+  const [briefing, narrativeEntries] = await Promise.all([
+    getFactoryBriefing(snapshots),
+    Promise.all(snapshots.map(async (s) => [s.slug, await getNarrative(s)] as const)),
+  ]);
+  const narratives = new Map<string, Narrative>(narrativeEntries);
 
   return (
     <div className="animate-fade-in mx-auto max-w-3xl">
@@ -86,8 +91,8 @@ export default async function OverviewPage() {
         </div>
       )}
 
-      {/* 1 — The one thing you came for: what shipped overnight. */}
-      <section className="mb-6 rounded-2xl border border-hairline bg-card p-6 shadow-card sm:p-8">
+      {/* 1 — The one-glance state: what shipped + a factory briefing + verdict. */}
+      <section className="mb-5 rounded-2xl border border-hairline bg-card p-6 shadow-card sm:p-8">
         <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted">
           <RocketIcon className="h-3.5 w-3.5 text-sage" />
           Shipped overnight
@@ -108,8 +113,32 @@ export default async function OverviewPage() {
           </p>
         )}
 
+        <p className="mt-3 text-sm leading-relaxed text-ink/90">{briefing.text}</p>
+
         <Verdict count={asks.length} />
       </section>
+
+      {/* 1b — Top monitoring metrics (signal only). */}
+      <div className="mb-6 grid grid-cols-3 gap-3">
+        <MetricTile
+          label="This week"
+          value={String(overview.velocityTotal)}
+          sub={`${pluralize(overview.velocityTotal, "PR")} merged`}
+        />
+        <MetricTile
+          label="Build progress"
+          value={overview.avgProgress === null ? "—" : `${overview.avgProgress}%`}
+          sub="avg across factory"
+        />
+        <MetricTile
+          label="CI health"
+          value={
+            overview.ci.total === 0 ? "—" : `${overview.ci.passing}/${overview.ci.total}`
+          }
+          sub={overview.ci.anyFailing ? `${overview.ci.failingNames.join(", ")} red` : "all green"}
+          tone={overview.ci.anyFailing ? "clay" : "sage"}
+        />
+      </div>
 
       {/* 2 — Only the things that genuinely need you. */}
       {asks.length > 0 && (
@@ -125,8 +154,8 @@ export default async function OverviewPage() {
         </section>
       )}
 
-      {/* 3 — A briefing tile per project: name opens the live app, plus a
-          2-sentence "did / now / next" summary and a Dashboard link. */}
+      {/* 3 — A briefing tile per project: name opens the live app; a did/now/next
+          summary; progress + ETA; Dashboard link. */}
       <section className="mb-6">
         <h2 className="mb-3 px-1 text-sm font-semibold tracking-tight text-ink">
           Projects
@@ -137,6 +166,7 @@ export default async function OverviewPage() {
               key={s.slug}
               snapshot={s}
               narrative={narratives.get(s.slug)}
+              eta={etas.get(s.slug) ?? null}
             />
           ))}
         </div>
@@ -149,7 +179,7 @@ export default async function OverviewPage() {
             <h2 className="text-sm font-semibold tracking-tight text-ink">
               Progress to launch
             </h2>
-            <span className="text-xs text-muted">% to submission · over time</span>
+            <span className="text-xs text-muted">% complete · over time</span>
           </div>
           <ProgressTrend trends={trends} />
           {maxHistoryLen < 2 && (
@@ -194,11 +224,7 @@ export default async function OverviewPage() {
             <ArrowRightIcon className="h-4 w-4 text-muted transition-transform group-open:rotate-90" />
           </summary>
           <div className="border-t border-hairline px-5 py-2">
-            <ActivityFeed
-              entries={overview.overnightFeed}
-              showProject
-              limit={30}
-            />
+            <ActivityFeed entries={overview.overnightFeed} showProject limit={30} />
           </div>
         </details>
       )}
@@ -206,7 +232,34 @@ export default async function OverviewPage() {
   );
 }
 
-/** The single verdict line under the hero number. */
+/** A compact top-of-dashboard metric. */
+function MetricTile({
+  label,
+  value,
+  sub,
+  tone = "muted",
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  tone?: "sage" | "clay" | "muted";
+}) {
+  const valueColor =
+    tone === "clay" ? "text-clay-strong" : tone === "sage" ? "text-ink" : "text-ink";
+  return (
+    <div className="rounded-xl border border-hairline bg-card p-3.5 shadow-card">
+      <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
+        {label}
+      </p>
+      <p className={cn("mt-1 font-serif text-2xl font-medium tabular", valueColor)}>
+        {value}
+      </p>
+      <p className="mt-0.5 truncate text-[11px] text-muted">{sub}</p>
+    </div>
+  );
+}
+
+/** The single verdict line under the hero — time-aware. */
 function Verdict({ count }: { count: number }) {
   if (count === 0) {
     return (
@@ -221,7 +274,9 @@ function Verdict({ count }: { count: number }) {
       <span className="grid h-5 min-w-5 place-items-center rounded-full bg-clay px-1 text-xs font-semibold text-white">
         {count}
       </span>
-      {count === 1 ? "thing needs" : "things need"} your attention this morning.
+      <span>
+        {count === 1 ? "thing needs" : "things need"} your attention <TimeOfDay />.
+      </span>
     </div>
   );
 }
@@ -250,9 +305,7 @@ function AskRow({ need }: { need: NeedEntry }) {
           {need.projectName}
         </Link>
         <p className="text-sm leading-snug text-ink">{need.text}</p>
-        {need.howTo && (
-          <p className="mt-0.5 text-xs text-muted">{need.howTo}</p>
-        )}
+        {need.howTo && <p className="mt-0.5 text-xs text-muted">{need.howTo}</p>}
       </div>
       {need.url && (
         <a
@@ -270,22 +323,23 @@ function AskRow({ need }: { need: NeedEntry }) {
 }
 
 /**
- * A project briefing tile. The name links straight to the live product; a short
- * did/now/next summary gives the state at a glance; "Dashboard" opens the
- * per-project metrics page.
+ * A project briefing tile: name → live app, a did/now/next summary, a progress
+ * bar + completion estimate, and a Dashboard link.
  */
 function ProjectTile({
   snapshot: s,
   narrative,
+  eta,
 }: {
   snapshot: ProjectSnapshot;
   narrative?: Narrative;
+  eta: Estimate | null;
 }) {
   const status = statusMeta(s.status);
   const ci = ciMeta(s.ci.status);
   const asks = humanAsksFor(s).length;
-  const shipped = s.merged24h;
   const appUrl = getProjectBySlug(s.slug)?.appUrl;
+  const pct = headlinePct(s);
 
   return (
     <div className="card flex flex-col gap-3 p-5 shadow-card transition-shadow hover:shadow-lift">
@@ -322,8 +376,8 @@ function ProjectTile({
             )}
             <p className="mt-0.5 text-xs text-muted">
               {kindLabel(s.kind)} ·{" "}
-              {shipped > 0
-                ? `${shipped} shipped overnight`
+              {s.merged24h > 0
+                ? `${s.merged24h} shipped overnight`
                 : "nothing shipped overnight"}
             </p>
           </div>
@@ -339,9 +393,7 @@ function ProjectTile({
               toneClasses(ci.tone).text,
             )}
           >
-            <span
-              className={cn("h-1.5 w-1.5 rounded-full", toneClasses(ci.tone).dot)}
-            />
+            <span className={cn("h-1.5 w-1.5 rounded-full", toneClasses(ci.tone).dot)} />
             CI {ci.label.toLowerCase()}
           </span>
         )}
@@ -350,6 +402,29 @@ function ProjectTile({
       {narrative && (
         <p className="text-sm leading-relaxed text-ink/90">{narrative.text}</p>
       )}
+
+      {/* Progress + estimate */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
+        {pct !== null && (
+          <span className="flex items-center gap-2">
+            <span className="h-1.5 w-20 overflow-hidden rounded-full bg-hairline">
+              <span
+                className="block h-full rounded-full bg-sage"
+                style={{ width: `${pct}%` }}
+              />
+            </span>
+            <span className="tabular font-semibold text-ink">{pct}%</span>
+            <span className="text-muted">complete</span>
+          </span>
+        )}
+        {eta && (
+          <span className="text-muted">
+            · est. launch{" "}
+            <span className="font-medium text-ink">{formatEtaDate(eta.date)}</span>{" "}
+            <span className="opacity-70">({formatHorizon(eta.daysRemaining)})</span>
+          </span>
+        )}
+      </div>
 
       <div className="mt-auto flex items-center justify-between border-t border-hairline pt-3">
         <span className="flex items-center gap-1 text-[11px] text-muted">
