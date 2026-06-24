@@ -74,7 +74,8 @@ export default async function ProjectPage({
   ]);
 
   const pct = headlinePct(snapshot);
-  const ringTone = snapshot.status === "ready" || pct === 100 ? "sage" : "clay";
+  // Progress is positive by default; only a blocked project gets the clay ring.
+  const ringTone = snapshot.status === "blocked" ? "clay" : "sage";
   const milestone = nextMilestone(snapshot);
   const blockReason = describeBlock(snapshot);
   const themes = extractThemes(snapshot.merged7dItems);
@@ -114,6 +115,11 @@ export default async function ProjectPage({
               </h1>
               <StatusBadge status={snapshot.status} />
             </div>
+            {narrative.headline && (
+              <p className="mt-1.5 font-serif text-lg italic text-muted">
+                {narrative.headline}
+              </p>
+            )}
             <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
               <span>{kindLabel(snapshot.kind)}</span>
               <span aria-hidden>·</span>

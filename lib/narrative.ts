@@ -5,6 +5,8 @@ import { extractThemes, themeSummary } from "@/lib/themes";
 import { headlinePct, nextMilestone, pluralize } from "@/lib/utils";
 
 export interface Narrative {
+  /** Punchy 3–7 word headline — the glanceable "what's the story". */
+  headline: string;
   text: string;
   source: "llm" | "template";
   /** Model used when source === "llm". */
@@ -18,13 +20,29 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
 
 const SYSTEM_PROMPT =
-  "You write a tight 2-sentence status briefing for an autonomous software " +
-  "project that a scheduled coding agent ships to. Sentence one: what shipped " +
-  "in the last 24 hours and where the project stands now. Sentence two: what's " +
-  "coming next — the next milestone or concrete next steps. Be specific and " +
-  "grounded only in the data given; do not invent features. Warm but concise. " +
-  "Plain prose only — no markdown, no lists, no preamble, no 'the project'. If " +
-  "nothing shipped in 24h, say so plainly and focus on current state and next.";
+  "You write a status update for an autonomous software project that a " +
+  "scheduled coding agent ships to. Respond in EXACTLY this format, nothing " +
+  "else:\n" +
+  "HEADLINE: <a punchy 3-7 word headline, no trailing period>\n" +
+  "DIGEST: <2 sentences — what shipped in the last 24h and where it stands; " +
+  "then what's coming next>\n" +
+  "Be specific and grounded only in the data given; do not invent features. " +
+  "Warm but concise. Plain prose, no markdown or lists. If nothing shipped in " +
+  "24h, say so plainly and focus on current state and next.";
+
+/** Split the model's "HEADLINE: …\nDIGEST: …" reply; tolerant of stray text. */
+function parseHeadlineDigest(raw: string): { headline?: string; text: string } {
+  const hl = raw.match(/HEADLINE:\s*(.+)/i);
+  const dg = raw.match(/DIGEST:\s*([\s\S]+)/i);
+  const headline = hl?.[1]
+    ?.trim()
+    .replace(/^["'"]|["'"]$/g, "")
+    .replace(/[.\s]+$/, "");
+  if (dg) return { headline, text: dg[1].trim() };
+  // No DIGEST label — drop any stray HEADLINE line, keep the rest as the digest.
+  const text = raw.replace(/^\s*HEADLINE:.*$/im, "").trim();
+  return { headline, text: text || headline || raw.trim() };
+}
 
 function clip(text: string, n: number): string {
   const t = text.trim();
@@ -77,6 +95,21 @@ export function templateNarrative(s: ProjectSnapshot): string {
   }
 
   return parts.join(" ");
+}
+
+/** Deterministic headline fallback (and what we show without an LLM key). */
+export function templateHeadline(s: ProjectSnapshot): string {
+  if (s.readyForSubmission) return "Ready to ship";
+  if (s.ci.status === "failing") return "CI red — needs a look";
+  const top = extractThemes(s.merged7dItems)[0]?.label;
+  if (s.merged24h > 0 && top) {
+    const t = top.replace(/ work$/, "").replace(/ & evals$/, "");
+    return `Shipping ${t}`;
+  }
+  if (s.merged24h > 0) return `${s.merged24h} ${pluralize(s.merged24h, "PR")} overnight`;
+  const pct = headlinePct(s);
+  if (pct !== null) return `~${pct}% to launch`;
+  return "Quiet right now";
 }
 
 /** Compact factual context handed to the LLM — metrics + curated factory files. */
@@ -176,16 +209,19 @@ async function callOpenRouter(
   }
 }
 
-function llmNarrative(
+async function llmNarrative(
   s: ProjectSnapshot,
-): Promise<{ text: string; model: string } | null> {
-  return callOpenRouter(
+): Promise<{ headline?: string; text: string; model: string } | null> {
+  const res = await callOpenRouter(
     [
       { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: `Write the digest from these metrics:\n\n${llmContext(s)}` },
+      { role: "user", content: `Write the update from these metrics:\n\n${llmContext(s)}` },
     ],
-    220,
+    240,
   );
+  if (!res) return null;
+  const { headline, text } = parseHeadlineDigest(res.text);
+  return { headline, text, model: res.model };
 }
 
 /**
@@ -211,8 +247,19 @@ export function getNarrative(s: ProjectSnapshot): Promise<Narrative> {
   return unstable_cache(
     async (): Promise<Narrative> => {
       const llm = await llmNarrative(s);
-      if (llm) return { text: llm.text, source: "llm", model: llm.model };
-      return { text: templateNarrative(s), source: "template" };
+      if (llm) {
+        return {
+          headline: llm.headline || templateHeadline(s),
+          text: llm.text,
+          source: "llm",
+          model: llm.model,
+        };
+      }
+      return {
+        headline: templateHeadline(s),
+        text: templateNarrative(s),
+        source: "template",
+      };
     },
     cacheKey,
     { revalidate: 600 },

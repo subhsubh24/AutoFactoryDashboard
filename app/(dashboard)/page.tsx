@@ -374,12 +374,7 @@ function ProjectTile({
                 {s.displayName}
               </Link>
             )}
-            <p className="mt-0.5 text-xs text-muted">
-              {kindLabel(s.kind)} ·{" "}
-              {s.merged24h > 0
-                ? `${s.merged24h} shipped overnight`
-                : "nothing shipped overnight"}
-            </p>
+            <p className="mt-0.5 text-xs text-muted">{kindLabel(s.kind)}</p>
           </div>
         </div>
         {asks > 0 ? (
@@ -400,11 +395,16 @@ function ProjectTile({
       </div>
 
       {narrative && (
-        <p className="text-sm leading-relaxed text-ink/90">{narrative.text}</p>
+        <div className="space-y-1">
+          <p className="text-[15px] font-semibold leading-snug text-ink">
+            {narrative.headline}
+          </p>
+          <p className="text-sm leading-relaxed text-muted">{narrative.text}</p>
+        </div>
       )}
 
-      {/* Progress + estimate */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
+      {/* Facts: progress · shipped · estimate */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
         {pct !== null && (
           <span className="flex items-center gap-2">
             <span className="h-1.5 w-20 overflow-hidden rounded-full bg-hairline">
@@ -414,9 +414,12 @@ function ProjectTile({
               />
             </span>
             <span className="tabular font-semibold text-ink">{pct}%</span>
-            <span className="text-muted">complete</span>
           </span>
         )}
+        <span className="text-muted">
+          {pct !== null && "· "}
+          {s.merged24h > 0 ? `${s.merged24h} shipped overnight` : "quiet overnight"}
+        </span>
         {eta && (
           <span className="text-muted">
             · est. launch{" "}
