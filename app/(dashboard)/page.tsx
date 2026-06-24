@@ -21,6 +21,12 @@ export default async function OverviewPage() {
   const snapshots = await getAllSnapshots();
   const overview = buildOverview(snapshots);
   const tokenMissing = !process.env.GITHUB_TOKEN;
+  // Token present but rejected for every repo → likely invalid or missing access.
+  const authError =
+    !tokenMissing &&
+    snapshots.length > 0 &&
+    snapshots.every((s) => !s.repoMeta.available) &&
+    snapshots.some((s) => s.errors.some((e) => /HTTP 40[13]/.test(e)));
   const needCount = overview.needs.length;
 
   return (
@@ -28,11 +34,21 @@ export default async function OverviewPage() {
       <PageHeader fetchedAt={overview.oldestFetchedAt} />
 
       {tokenMissing && (
-        <div className="mb-6 rounded-xl border border-clay/30 bg-clay-soft px-4 py-3 text-sm text-clay">
+        <div className="mb-6 rounded-xl border border-clay/30 bg-clay-soft px-4 py-3 text-sm text-clay-strong">
           <strong className="font-semibold">No GITHUB_TOKEN set.</strong> The
           dashboard is showing empty state. Add a read-only GitHub token to{" "}
           <code className="font-mono text-xs">.env.local</code> (see the README)
           to load live data.
+        </div>
+      )}
+
+      {authError && (
+        <div className="mb-6 rounded-xl border border-amber/30 bg-amber-soft px-4 py-3 text-sm text-amber-strong">
+          <strong className="font-semibold">GitHub rejected every request.</strong>{" "}
+          Your <code className="font-mono text-xs">GITHUB_TOKEN</code> looks
+          invalid or is missing read access to these repos. Check the token&apos;s
+          repository permissions (Contents, Pull requests, Issues, Actions,
+          Metadata).
         </div>
       )}
 

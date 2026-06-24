@@ -55,14 +55,14 @@ export default async function LoginPage({
           {hasError && (
             <p
               role="alert"
-              className="mt-3 rounded-lg bg-clay-soft px-3 py-2 text-sm text-clay"
+              className="mt-3 rounded-lg bg-clay-soft px-3 py-2 text-sm text-clay-strong"
             >
               Incorrect password. Try again.
             </p>
           )}
 
           {!configured && (
-            <p className="mt-3 rounded-lg bg-amber-soft px-3 py-2 text-xs text-amber">
+            <p className="mt-3 rounded-lg bg-amber-soft px-3 py-2 text-xs text-amber-strong">
               No <code className="font-mono">DASHBOARD_PASSWORD</code> is set, so
               the gate is currently disabled — any value signs you in.
             </p>

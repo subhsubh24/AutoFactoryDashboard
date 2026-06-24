@@ -53,11 +53,11 @@ export interface ToneClasses {
 export function toneClasses(tone: Tone): ToneClasses {
   switch (tone) {
     case "sage":
-      return { text: "text-sage", badge: "bg-sage-soft text-sage", dot: "bg-sage" };
+      return { text: "text-sage-strong", badge: "bg-sage-soft text-sage-strong", dot: "bg-sage" };
     case "amber":
-      return { text: "text-amber", badge: "bg-amber-soft text-amber", dot: "bg-amber" };
+      return { text: "text-amber-strong", badge: "bg-amber-soft text-amber-strong", dot: "bg-amber" };
     case "clay":
-      return { text: "text-clay", badge: "bg-clay-soft text-clay", dot: "bg-clay" };
+      return { text: "text-clay-strong", badge: "bg-clay-soft text-clay-strong", dot: "bg-clay" };
     default:
       return {
         text: "text-muted",

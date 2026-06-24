@@ -8,7 +8,7 @@ import { ExternalLinkIcon, MergeIcon } from "@/components/icons";
 export function TrackChip({ track }: { track?: string | null }) {
   if (!track) return null;
   return (
-    <span className="shrink-0 rounded-md bg-clay-soft px-1.5 py-0.5 text-[10px] font-medium text-clay">
+    <span className="shrink-0 rounded-md bg-clay-soft px-1.5 py-0.5 text-[10px] font-medium text-clay-strong">
       {track}
     </span>
   );

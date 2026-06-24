@@ -67,7 +67,7 @@ export function ProjectCard({ snapshot }: { snapshot: ProjectSnapshot }) {
                 "grid h-4 min-w-4 place-items-center rounded-full px-1 text-[10px] font-semibold",
                 needCount > 0
                   ? "bg-clay text-white"
-                  : "bg-sage-soft text-sage",
+                  : "bg-sage-soft text-sage-strong",
               )}
             >
               {needCount}

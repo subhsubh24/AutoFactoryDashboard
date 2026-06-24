@@ -162,7 +162,7 @@ export default async function ProjectPage({
                 href={snapshot.ready.url}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1.5 text-sm font-medium text-sage hover:underline"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-sage-strong hover:underline"
               >
                 Open the submission issue <ExternalLinkIcon className="h-3.5 w-3.5" />
               </a>
@@ -194,7 +194,7 @@ export default async function ProjectPage({
             {milestone ?? (snapshot.progress.tracks.length ? "All tracks complete" : "—")}
           </p>
           {blockReason && (
-            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-clay-soft px-2.5 py-1 text-xs font-medium text-clay">
+            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-clay-soft px-2.5 py-1 text-xs font-medium text-clay-strong">
               {blockReason}
             </p>
           )}
@@ -223,7 +223,7 @@ export default async function ProjectPage({
                 className={cn(
                   "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
                   narrative.source === "llm"
-                    ? "bg-clay-soft text-clay"
+                    ? "bg-clay-soft text-clay-strong"
                     : "bg-bg text-muted",
                 )}
                 title={
@@ -315,7 +315,7 @@ export default async function ProjectPage({
                         className={cn(
                           "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium tabular",
                           pr.stuck
-                            ? "bg-clay-soft text-clay"
+                            ? "bg-clay-soft text-clay-strong"
                             : "bg-bg text-muted",
                         )}
                       >
@@ -486,7 +486,7 @@ function LoopHealth({ snapshot }: { snapshot: ProjectSnapshot }) {
       <div
         className={cn(
           "rounded-xl px-3 py-2.5 text-sm",
-          shipping ? "bg-sage-soft text-sage" : "bg-bg text-muted",
+          shipping ? "bg-sage-soft text-sage-strong" : "bg-bg text-muted",
         )}
       >
         {shipping
@@ -579,7 +579,7 @@ function FileRow({
             view
           </a>
         ) : (
-          <span className="text-xs text-sage">found</span>
+          <span className="text-xs text-sage-strong">found</span>
         )
       ) : (
         <span className="text-xs text-muted">absent</span>

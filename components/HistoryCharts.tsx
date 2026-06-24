@@ -24,9 +24,9 @@ function Mini({
 }) {
   const latest = lastDefined(values);
   const toneText: Record<Tone, string> = {
-    sage: "text-sage",
-    amber: "text-amber",
-    clay: "text-clay",
+    sage: "text-sage-strong",
+    amber: "text-amber-strong",
+    clay: "text-clay-strong",
     muted: "text-muted",
   };
   return (

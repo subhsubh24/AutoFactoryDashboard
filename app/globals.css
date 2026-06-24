@@ -21,6 +21,11 @@
   --amber: #b8860b;
   --amber-soft: #f4ecd6;
 
+  /* Darker accent shades for small text on soft/white backgrounds (WCAG AA). */
+  --clay-strong: #a8512c;
+  --sage-strong: #3d6340;
+  --amber-strong: #856107;
+
   --ring-track: #ece7e0;
   --selection: #f6e8df;
 
@@ -41,6 +46,11 @@
   --sage-soft: #20301f;
   --amber: #d9aa3c;
   --amber-soft: #322a16;
+
+  /* On dark soft backgrounds the bright accents already contrast well. */
+  --clay-strong: #e3a07d;
+  --sage-strong: #9cc09f;
+  --amber-strong: #e6bd55;
 
   --ring-track: #332d24;
   --selection: #38271c;

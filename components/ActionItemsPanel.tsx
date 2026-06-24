@@ -28,8 +28,8 @@ export function ActionItemsPanel({
   if (info.items.length === 0) {
     return (
       <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2 text-sm text-sage">
-          <span className="grid h-5 w-5 place-items-center rounded-full bg-sage-soft text-sage">
+        <div className="flex items-center gap-2 text-sm text-sage-strong">
+          <span className="grid h-5 w-5 place-items-center rounded-full bg-sage-soft text-sage-strong">
             <CheckIcon className="h-3 w-3" />
           </span>
           {info.note && /none queued/i.test(info.note)
@@ -78,7 +78,7 @@ export function ActionItemsPanel({
         })}
       </ul>
       {hydrated && remaining === 0 && (
-        <p className="mt-3 text-xs text-sage">All items checked off. ✨</p>
+        <p className="mt-3 text-xs text-sage-strong">All items checked off. ✨</p>
       )}
     </div>
   );

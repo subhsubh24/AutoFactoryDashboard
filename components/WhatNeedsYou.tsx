@@ -17,9 +17,9 @@ const KIND_CHIP: Record<NeedKind, { label: string; tone: Tone }> = {
 };
 
 const CHIP_CLASS: Record<Tone, string> = {
-  sage: "bg-sage-soft text-sage",
-  amber: "bg-amber-soft text-amber",
-  clay: "bg-clay-soft text-clay",
+  sage: "bg-sage-soft text-sage-strong",
+  amber: "bg-amber-soft text-amber-strong",
+  clay: "bg-clay-soft text-clay-strong",
   muted: "bg-bg text-muted",
 };
 

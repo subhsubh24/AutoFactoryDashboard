@@ -27,14 +27,17 @@ const config: Config = {
         clay: {
           DEFAULT: "var(--clay)",
           soft: "var(--clay-soft)",
+          strong: "var(--clay-strong)",
         },
         sage: {
           DEFAULT: "var(--sage)",
           soft: "var(--sage-soft)",
+          strong: "var(--sage-strong)",
         },
         amber: {
           DEFAULT: "var(--amber)",
           soft: "var(--amber-soft)",
+          strong: "var(--amber-strong)",
         },
       },
       borderRadius: {
