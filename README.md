@@ -88,8 +88,8 @@ npm run lint    # eslint
 | -------- | :------: | ------- |
 | `GITHUB_TOKEN` | ✅ | Fine-grained PAT, **read-only**, for the factory repos. Server-side only. |
 | `DASHBOARD_PASSWORD` | ✅¹ | Single shared password for the auth gate. |
-| `ANTHROPIC_API_KEY` | — | Enables AI daily digests (`claude-sonnet-4-6`). Without it, digests are templated. |
-| `ANTHROPIC_MODEL` | — | Override the digest model (default `claude-sonnet-4-6`). |
+| `OPENROUTER_API_KEY` | — | Enables AI daily digests via OpenRouter (OpenAI-compatible; free tier). Without it, digests are templated. |
+| `OPENROUTER_MODEL` | — | Override the digest model (default `meta-llama/llama-3.3-70b-instruct:free`). |
 | `KV_REST_API_URL` / `KV_REST_API_TOKEN` | — | Vercel KV — enables daily history + trend sparklines. Auto-injected by Vercel. |
 | `CRON_SECRET` | — | If set, the daily snapshot route requires it (Vercel sends it automatically). |
 
@@ -133,7 +133,7 @@ factory repos.
 3. **Settings → Environment Variables** — add at minimum:
    - `GITHUB_TOKEN`
    - `DASHBOARD_PASSWORD`
-   - *(optional)* `ANTHROPIC_API_KEY`, `CRON_SECRET`
+   - *(optional)* `OPENROUTER_API_KEY`, `CRON_SECRET`
 4. **Deploy.** That's it — the MVP is live and gated.
 
 The daily cron in [`vercel.json`](./vercel.json) is registered automatically on
@@ -141,13 +141,21 @@ deploy (it's a no-op until you add KV — see below).
 
 ---
 
-## Optional: AI daily narrative
+## Optional: AI daily narrative (OpenRouter)
 
-Set `ANTHROPIC_API_KEY` (and optionally `ANTHROPIC_MODEL`) to generate a 2–3
-sentence per-project digest server-side with the Anthropic SDK
-(`claude-sonnet-4-6`). It runs with a short timeout and **never blocks the page**
-— any failure falls back to the templated summary. The per-project digest card
-shows an **AI digest** vs **Summary** chip so you always know which you're seeing.
+Set `OPENROUTER_API_KEY` (and optionally `OPENROUTER_MODEL`) to generate a 2–3
+sentence per-project digest server-side via [OpenRouter](https://openrouter.ai)
+— an OpenAI-compatible gateway with a **free tier** (no credit card; ~20 req/min).
+
+- Get a key at <https://openrouter.ai/keys>.
+- The default model is the free `meta-llama/llama-3.3-70b-instruct:free`. Free
+  model slugs rotate — browse current ones at
+  <https://openrouter.ai/models?max_price=0> and set `OPENROUTER_MODEL` to any of
+  them (the `:free` suffix marks the free ones).
+- It runs with a short timeout and **never blocks the page** — any failure (no
+  key, bad/decommissioned model, rate limit, timeout) silently falls back to the
+  templated summary. The digest card shows an **AI digest** vs **Summary** chip so
+  you always know which you're seeing.
 
 ---
 

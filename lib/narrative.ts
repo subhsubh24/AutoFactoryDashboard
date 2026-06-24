@@ -6,9 +6,21 @@ import { headlinePct, nextMilestone, pluralize } from "@/lib/utils";
 export interface Narrative {
   text: string;
   source: "llm" | "template";
+  /** Model used when source === "llm". */
+  model?: string;
 }
 
-const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+// Free, fast instruct model. Override with OPENROUTER_MODEL (free slugs rotate;
+// see https://openrouter.ai/models?max_price=0). An invalid/decommissioned slug
+// simply falls back to the templated summary — it never breaks the page.
+const DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+
+const SYSTEM_PROMPT =
+  "You write a 2-3 sentence status digest for an autonomous software project " +
+  "being shipped by a scheduled coding agent. Be factual, specific, and warm " +
+  "but concise. Plain prose only — no markdown, no lists, no preamble. Lead " +
+  "with momentum, then what's notable, then what (if anything) needs the human.";
 
 /** Deterministic, always-available summary built from the snapshot. */
 export function templateNarrative(s: ProjectSnapshot): string {
@@ -78,49 +90,53 @@ function llmContext(s: ProjectSnapshot): string {
   return lines.filter(Boolean).join("\n");
 }
 
-async function llmNarrative(s: ProjectSnapshot): Promise<string | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+async function llmNarrative(
+  s: ProjectSnapshot,
+): Promise<{ text: string; model: string } | null> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return null;
 
-  try {
-    // Imported lazily so the SDK never loads unless a key is configured.
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    const client = new Anthropic({ apiKey });
+  const model = process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
 
-    const message = await client.messages.create(
-      {
-        model: MODEL,
-        max_tokens: 200,
-        system:
-          "You write a 2-3 sentence status digest for an autonomous software " +
-          "project being shipped by a scheduled coding agent. Be factual, " +
-          "specific, and warm but concise. Plain prose only — no markdown, no " +
-          "lists, no preamble. Lead with momentum, then what's notable, then " +
-          "what (if anything) needs the human.",
+  try {
+    const res = await fetch(OPENROUTER_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        // Optional attribution for the OpenRouter dashboard/leaderboard.
+        "X-Title": "AutoFactoryDashboard",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 220,
+        temperature: 0.4,
         messages: [
+          { role: "system", content: SYSTEM_PROMPT },
           {
             role: "user",
             content: `Write the digest from these metrics:\n\n${llmContext(s)}`,
           },
         ],
-      },
-      { timeout: 12_000 },
-    );
+      }),
+      signal: AbortSignal.timeout(12_000),
+      cache: "no-store",
+    });
 
-    const text = message.content
-      .map((b) => (b.type === "text" ? b.text : ""))
-      .join(" ")
-      .trim();
-
-    return text || null;
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const text = data.choices?.[0]?.message?.content?.trim();
+    return text ? { text, model } : null;
   } catch {
-    // Any failure (no network, bad key, timeout) → fall back to the template.
+    // Any failure (no network, bad key, bad model, timeout) → templated.
     return null;
   }
 }
 
 /**
- * Per-project narrative. Uses the Anthropic SDK when ANTHROPIC_API_KEY is set,
+ * Per-project narrative. Uses OpenRouter when OPENROUTER_API_KEY is set,
  * otherwise a templated summary. Never throws; never blocks the page beyond a
  * short timeout. Cached ~10 min, keyed on the metrics that would change it.
  */
@@ -128,6 +144,7 @@ export function getNarrative(s: ProjectSnapshot): Promise<Narrative> {
   const cacheKey = [
     "afd-narrative",
     s.slug,
+    process.env.OPENROUTER_MODEL || DEFAULT_MODEL,
     String(headlinePct(s)),
     String(s.merged24h),
     s.status,
@@ -139,7 +156,7 @@ export function getNarrative(s: ProjectSnapshot): Promise<Narrative> {
   return unstable_cache(
     async (): Promise<Narrative> => {
       const llm = await llmNarrative(s);
-      if (llm) return { text: llm, source: "llm" };
+      if (llm) return { text: llm.text, source: "llm", model: llm.model };
       return { text: templateNarrative(s), source: "template" };
     },
     cacheKey,

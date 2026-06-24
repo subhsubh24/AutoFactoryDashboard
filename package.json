@@ -10,7 +10,6 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
     "@octokit/rest": "^21.0.2",
     "@vercel/kv": "^3.0.0",
     "next": "^15.1.6",
