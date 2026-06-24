@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Warm-editorial palette.
+ * Light is the default; `.dark` on <html> swaps the same tokens.
+ */
+:root {
+  --bg: #faf8f5;
+  --card: #ffffff;
+  --elevated: #ffffff;
+  --text: #2b2724;
+  --muted: #8a8178;
+  --hairline: #ece7e0;
+
+  --clay: #c2683f;
+  --clay-soft: #f6e8df;
+  --sage: #4f7a52;
+  --sage-soft: #e6efe5;
+  --amber: #b8860b;
+  --amber-soft: #f4ecd6;
+
+  --ring-track: #ece7e0;
+  --selection: #f6e8df;
+
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #17140f;
+  --card: #211d17;
+  --elevated: #2a251d;
+  --text: #f1ece3;
+  --muted: #a59b8c;
+  --hairline: #332d24;
+
+  --clay: #db8a5f;
+  --clay-soft: #38271c;
+  --sage: #83aa86;
+  --sage-soft: #20301f;
+  --amber: #d9aa3c;
+  --amber-soft: #322a16;
+
+  --ring-track: #332d24;
+  --selection: #38271c;
+
+  color-scheme: dark;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--text);
+    font-feature-settings: "kern", "liga", "calt";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: var(--selection);
+  }
+
+  /* Visible, accessible focus rings everywhere. */
+  :focus-visible {
+    outline: 2px solid var(--clay);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Tabular figures keep metric columns from jittering. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  .card {
+    background-color: var(--card);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+  }
+
+  /* Subtle paper grain on the page background for editorial warmth. */
+  .grain::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.5;
+    background-image: radial-gradient(
+      circle at 1px 1px,
+      rgba(138, 129, 120, 0.08) 1px,
+      transparent 0
+    );
+    background-size: 4px 4px;
+  }
+}
+
+/* Respect reduced-motion preferences. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
