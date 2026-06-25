@@ -51,8 +51,10 @@ export interface Overview {
   velocityTotal: number;
   /** What this week's merged PRs focused on, across the whole factory. */
   themes: ThemeCount[];
-  /** Mean build progress across projects that report it, or null. */
+  /** Mean build completeness across projects that report it, or null. */
   avgProgress: number | null;
+  /** Mean submission readiness (Definition of Done) across projects, or null. */
+  avgReady: number | null;
   /** Manufacturing-style performance KPIs across the whole factory. */
   factory: FactoryMetrics;
   /** Oldest "fetchedAt" across snapshots — drives the "updated x ago" stamp. */
@@ -289,12 +291,18 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
 
   const allMerged = snapshots.flatMap((s) => s.merged7dItems);
   const themes = extractThemes(allMerged);
-  const progresses = snapshots
-    .map((s) => s.progress.percentToSubmission)
-    .filter((n): n is number => n !== null);
-  const avgProgress = progresses.length
-    ? Math.round(progresses.reduce((a, b) => a + b, 0) / progresses.length)
-    : null;
+  const mean = (xs: number[]): number | null =>
+    xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null;
+  const avgReady = mean(
+    snapshots
+      .map((s) => s.progress.percentToSubmission)
+      .filter((n): n is number => n !== null),
+  );
+  const avgBuild = mean(
+    snapshots.map((s) => s.progress.buildPct).filter((n): n is number => n !== null),
+  );
+  // "Build progress" KPI uses build completeness; readiness is shown elsewhere.
+  const avgProgress = avgBuild;
 
   // Factory KPIs.
   const cycles = allMerged
@@ -342,6 +350,7 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
     velocityTotal,
     themes,
     avgProgress,
+    avgReady,
     factory,
     oldestFetchedAt,
     anyPartial: snapshots.some((s) => s.partial),

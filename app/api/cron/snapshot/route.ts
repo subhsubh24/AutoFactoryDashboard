@@ -49,6 +49,8 @@ export async function GET(req: Request) {
         date,
         prs: s.merged24h,
         pct: headlinePct(s),
+        buildPct: s.progress.buildPct,
+        submissionTotal: s.progress.submissionTotal,
         ciPassRate: s.ci.passRate,
       };
       const written = await recordDailyMetric(s.slug, metric);

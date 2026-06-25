@@ -60,12 +60,16 @@ export default async function OverviewPage() {
   const histories = await Promise.all(snapshots.map((s) => getHistory(s.slug)));
   const hasHistory = histories.some((h) => h !== null && h.length > 0);
   const maxHistoryLen = Math.max(0, ...histories.map((h) => h?.length ?? 0));
-  const trends: ProjectTrend[] = snapshots.map((s, i) => ({
-    slug: s.slug,
-    name: s.displayName,
-    current: headlinePct(s),
-    values: (histories[i]?.slice(-HISTORY_DAYS) ?? []).map((m) => m.pct),
-  }));
+  const trends: ProjectTrend[] = snapshots.map((s, i) => {
+    const recent = histories[i]?.slice(-HISTORY_DAYS) ?? [];
+    return {
+      slug: s.slug,
+      name: s.displayName,
+      current: headlinePct(s),
+      values: recent.map((m) => m.pct),
+      totals: recent.map((m) => m.submissionTotal),
+    };
+  });
   const factoryHistory = await getFactoryHistory();
   const hasFactoryHistory =
     factoryHistory !== null && factoryHistory.length > 0;
@@ -237,7 +241,7 @@ export default async function OverviewPage() {
             Progress to launch
           </h2>
           <span className="text-xs text-muted">
-            % complete{hasHistory ? " · trend over time" : ""}
+            % to submission-ready{hasHistory ? " · over time" : ""}
           </span>
         </div>
         <ProgressTrend trends={trends} />
@@ -449,7 +453,8 @@ function ProjectTile({
   const ci = ciMeta(s.ci.status);
   const asks = humanAsksFor(s).length;
   const appUrl = getProjectBySlug(s.slug)?.appUrl;
-  const pct = headlinePct(s);
+  const pct = headlinePct(s); // submission readiness (headline)
+  const build = s.progress.buildPct; // build completeness (secondary)
 
   return (
     <div className="card flex flex-col gap-3 p-5 shadow-card transition-shadow hover:shadow-lift">
@@ -513,9 +518,9 @@ function ProjectTile({
         </div>
       )}
 
-      {/* Facts: progress · shipped · estimate */}
+      {/* Facts: readiness (headline) · build · shipped · estimate */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
-        {pct !== null && (
+        {pct !== null ? (
           <span className="flex items-center gap-2">
             <span className="h-1.5 w-20 overflow-hidden rounded-full bg-hairline">
               <span
@@ -524,11 +529,16 @@ function ProjectTile({
               />
             </span>
             <span className="tabular font-semibold text-ink">{pct}%</span>
+            <span className="text-muted">ready</span>
           </span>
+        ) : (
+          <span className="text-muted">readiness unmeasured</span>
+        )}
+        {build !== null && (
+          <span className="text-muted">· build {build}%</span>
         )}
         <span className="text-muted">
-          {pct !== null && "· "}
-          {s.merged24h > 0 ? `${s.merged24h} shipped overnight` : "quiet overnight"}
+          · {s.merged24h > 0 ? `${s.merged24h} shipped overnight` : "quiet overnight"}
         </span>
         {eta && (
           <span className="text-muted">

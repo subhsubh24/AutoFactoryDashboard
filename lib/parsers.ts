@@ -2,7 +2,6 @@ import type {
   ActionItem,
   ActionItemsInfo,
   ProgressInfo,
-  SubTrack,
   TrackProgress,
 } from "@/lib/types";
 
@@ -104,21 +103,7 @@ function pct(done: number, total: number): number {
 // ROADMAP.md → progress
 // ────────────────────────────────────────────────────────────────────────────
 
-// A roadmap sub-track line: optional bullet/checkbox, then a code (A1, B2, D3,
-// P0…), then its label. Matches both "- [ ] A1. …" and plain "- A1. …".
-const SUBTRACK_LINE_RE =
-  /^\s*(?:[-*+]\s+)?(?:\[[ xX~/-]\]\s+)?((?:P[0-9])|(?:[A-E][0-9]{1,2}))[.):]?\s+(\S.*)$/;
-
 const TRACK_CODE_RE = /\b((?:P[0-9])|(?:[A-E][0-9]{1,2}))\b/g;
-
-/** Sort track codes naturally: P-phases first, then A1, A2, …, B1, … */
-function compareCodes(a: string, b: string): number {
-  const pa = a.startsWith("P");
-  const pb = b.startsWith("P");
-  if (pa !== pb) return pa ? -1 : 1;
-  if (a[0] !== b[0]) return a[0] < b[0] ? -1 : 1;
-  return (parseInt(a.slice(1), 10) || 0) - (parseInt(b.slice(1), 10) || 0);
-}
 
 /** All distinct track codes (A1, B2, D3, P0…) referenced in a blob of text. */
 export function extractTrackCodes(text: string): string[] {
@@ -127,68 +112,20 @@ export function extractTrackCodes(text: string): string[] {
   return [...out];
 }
 
-const DONE_WORD_RE = /\b(done|complete[d]?|shipped|staged|live|landed|finished)\b/i;
-const NOT_DONE_RE =
-  /\b(pending|todo|to-do|in[\s-]?progress|wip|not\s+done|blocked|planned|upcoming|backlog)\b/i;
+// Track/phase section headings: "Track A — …", "Track B", "P0 — …".
+const TRACK_HEADING_RE = /\btrack\s+[a-z0-9]\b|\bp[0-9]\b/i;
 
-/**
- * Codes the roadmap *annotates* as done. The loop records progress in inline
- * notes like "[B1 done; B3 done (PR #29); B4-B5 pending]" rather than ticking
- * checkboxes, so we split into clauses and keep codes in any "done"-ish clause.
- */
-export function extractDoneAnnotations(md: string | null | undefined): string[] {
-  if (!md) return [];
-  const out = new Set<string>();
-  for (const clause of md.split(/[;\n]/)) {
-    if (!DONE_WORD_RE.test(clause) || NOT_DONE_RE.test(clause)) continue;
-    for (const c of extractTrackCodes(clause)) out.add(c);
-  }
-  return [...out];
+/** Text of a checkbox line with the "- [ ]" marker and emphasis stripped. */
+function checkboxText(line: string): string {
+  return line
+    .replace(/^\s*(?:[-*+]|\d+[.)])\s+\[[ xX~/-]\]\s*/, "")
+    .replace(/[`*]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-/**
- * Codes the roadmap explicitly annotates as NOT done ("B4-B5 pending", "C1 in
- * progress"). Used to keep a merely-PR-touched sub-track from counting as done
- * when the agent says it isn't — improves accuracy of the headline %.
- */
-export function extractPendingAnnotations(md: string | null | undefined): string[] {
-  if (!md) return [];
-  const out = new Set<string>();
-  for (const clause of md.split(/[;\n]/)) {
-    if (!NOT_DONE_RE.test(clause) || DONE_WORD_RE.test(clause)) continue;
-    for (const c of extractTrackCodes(clause)) out.add(c);
-  }
-  return [...out];
-}
-
-export function parseRoadmap(md: string | null | undefined): ProgressInfo {
-  if (!md || !md.trim()) {
-    return {
-      available: false,
-      reason: "ROADMAP.md not found",
-      percentToSubmission: null,
-      overallPct: null,
-      tracks: [],
-      subtracks: [],
-      gateDone: 0,
-      gateTotal: 0,
-      method: "none",
-    };
-  }
-
-  const ls = lines(md);
-
-  // Definition of Done → launch-gate box count (kept separate from progress;
-  // these stay all-unchecked until the very end, so they're a gate not a %).
-  const dod = findSection(md, (t) => /definition of done/i.test(t));
-  const gate = dod ? countCheckboxes(dod.body) : { done: 0, total: 0 };
-
-  // Sub-tracks: prefer coded lines that also give us a label (A1, B2…). But some
-  // roadmaps don't use a parseable bullet format, yet still reference the codes
-  // (in track text, the DoD, or annotations) — so we fold in EVERY code that
-  // appears anywhere as the universe. This keeps progress from reading 0% just
-  // because the bullet style differs across repos.
-  const labels = new Map<string, string>();
+/** First unchecked checkbox item in a set of lines (skips code fences). */
+function firstUnchecked(ls: string[]): string | null {
   let inFence = false;
   for (const line of ls) {
     if (/^\s*(```|~~~)/.test(line)) {
@@ -196,88 +133,102 @@ export function parseRoadmap(md: string | null | undefined): ProgressInfo {
       continue;
     }
     if (inFence) continue;
-    const m = SUBTRACK_LINE_RE.exec(line);
-    if (!m) continue;
-    const code = m[1].toUpperCase();
-    if (!labels.has(code)) {
-      labels.set(code, cleanHeading(m[2]).replace(/\s*\*\*.*$/, "").trim());
+    if (UNCHECKED_RE.test(line)) {
+      const t = checkboxText(line);
+      if (t) return t.length > 80 ? `${t.slice(0, 80)}…` : t;
     }
   }
-  const codes = [...new Set([...labels.keys(), ...extractTrackCodes(md)])];
-  codes.sort(compareCodes);
-  const subtracks: SubTrack[] = codes.map((code) => ({
-    code,
-    track: code.startsWith("P") ? code : code[0],
-    label: labels.get(code) ?? "",
-    done: false,
-  }));
+  return null;
+}
 
-  // Whole-file checkbox % (fallback when there are no coded sub-tracks).
-  const overall = countCheckboxes(ls);
-  const overallPct = overall.total > 0 ? pct(overall.done, overall.total) : null;
-
-  return {
-    available: true,
-    percentToSubmission: null, // filled by finalizeProgress()
-    overallPct,
-    tracks: [],
-    subtracks,
-    gateDone: gate.done,
-    gateTotal: gate.total,
-    method: "none",
-  };
+/** Body lines of the heading at index h, up to the next same-or-higher heading. */
+function sectionBody(ls: string[], headings: Heading[], h: number): string[] {
+  const start = headings[h].line + 1;
+  let end = ls.length;
+  for (let n = h + 1; n < headings.length; n++) {
+    if (headings[n].level <= headings[h].level) {
+      end = headings[n].line;
+      break;
+    }
+  }
+  return ls.slice(start, end);
 }
 
 /**
- * Apply coverage: mark sub-tracks done (from annotations + merged-PR codes),
- * compute per-track bars and the headline %. Falls back to the checkbox % when
- * a roadmap has no coded sub-tracks.
+ * Parse ROADMAP.md into the two completeness axes, counting checkboxes ONLY
+ * within the relevant headed sections — never blanket-counting the whole file.
+ *
+ *  - submission readiness ← the "Definition of Done" section (the stop gate)
+ *  - build completeness   ← the Track sections (+ a P0 section), per-track bars
+ *
+ * A missing/empty section yields an "unavailable" axis rather than a guess.
  */
-export function finalizeProgress(
-  base: ProgressInfo,
-  doneCodes: Set<string>,
-): ProgressInfo {
-  if (!base.available) return base;
-
-  if (base.subtracks.length === 0) {
+export function parseRoadmap(md: string | null | undefined): ProgressInfo {
+  if (!md || !md.trim()) {
     return {
-      ...base,
-      percentToSubmission: base.overallPct,
-      method: base.overallPct !== null ? "checkbox" : "none",
+      available: false,
+      reason: "ROADMAP.md not found",
+      percentToSubmission: null,
+      submissionDone: 0,
+      submissionTotal: 0,
+      submissionAvailable: false,
+      buildPct: null,
+      buildDone: 0,
+      buildTotal: 0,
+      buildAvailable: false,
+      tracks: [],
+      nextItem: null,
     };
   }
 
-  const subtracks = base.subtracks.map((s) => ({
-    ...s,
-    done: doneCodes.has(s.code),
-  }));
+  const ls = lines(md);
+  const headings = parseHeadings(ls);
 
-  const byTrack = new Map<string, SubTrack[]>();
-  for (const s of subtracks) {
-    const arr = byTrack.get(s.track) ?? [];
-    arr.push(s);
-    byTrack.set(s.track, arr);
+  // ── Axis 1: Definition of Done section → submission readiness. ──────────────
+  const dod = findSection(md, (t) => /definition of done/i.test(t));
+  const dodCounts = dod ? countCheckboxes(dod.body) : { done: 0, total: 0 };
+  const submissionAvailable = Boolean(dod) && dodCounts.total > 0;
+  const percentToSubmission = submissionAvailable
+    ? pct(dodCounts.done, dodCounts.total)
+    : null;
+
+  // ── Axis 2: Track/P0 sections → build completeness + per-track bars. ────────
+  const tracks: TrackProgress[] = [];
+  let buildDone = 0;
+  let buildTotal = 0;
+  let nextItem: string | null = null;
+  for (let h = 0; h < headings.length; h++) {
+    if (!TRACK_HEADING_RE.test(headings[h].text)) continue;
+    const body = sectionBody(ls, headings, h);
+    const c = countCheckboxes(body);
+    if (c.total === 0) continue; // no checkboxes here → not a measurable track
+    const m = headings[h].text.match(/\b(track\s+[a-z0-9]|p[0-9])\b/i);
+    const label = m
+      ? m[1].replace(/track\s+/i, "Track ").replace(/^p/i, "P")
+      : cleanHeading(headings[h].text);
+    tracks.push({ label, done: c.done, total: c.total, pct: pct(c.done, c.total) });
+    buildDone += c.done;
+    buildTotal += c.total;
+    if (!nextItem) nextItem = firstUnchecked(body);
   }
-  const tracks: TrackProgress[] = [...byTrack.entries()]
-    .map(([track, arr]) => {
-      const done = arr.filter((s) => s.done).length;
-      return {
-        label: track.startsWith("P") ? track : `Track ${track}`,
-        done,
-        total: arr.length,
-        pct: pct(done, arr.length),
-      };
-    })
-    .sort((a, b) => a.label.localeCompare(b.label));
+  const buildAvailable = buildTotal > 0;
+  const buildPct = buildAvailable ? pct(buildDone, buildTotal) : null;
 
-  const done = subtracks.filter((s) => s.done).length;
+  // Next concrete thing: prefer a build item, else a DoD item.
+  if (!nextItem && dod) nextItem = firstUnchecked(dod.body);
 
   return {
-    ...base,
-    subtracks,
+    available: true,
+    percentToSubmission,
+    submissionDone: dodCounts.done,
+    submissionTotal: dodCounts.total,
+    submissionAvailable,
+    buildPct,
+    buildDone,
+    buildTotal,
+    buildAvailable,
     tracks,
-    percentToSubmission: pct(done, subtracks.length),
-    method: "coverage",
+    nextItem,
   };
 }
 

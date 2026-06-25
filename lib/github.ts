@@ -3,10 +3,6 @@ import { unstable_cache } from "next/cache";
 import type { ProjectConfig } from "@/config/projects";
 import { PROJECTS } from "@/config/projects";
 import {
-  extractDoneAnnotations,
-  extractPendingAnnotations,
-  extractTrackCodes,
-  finalizeProgress,
   parsePendingOps,
   parseReadyChecklist,
   parseRoadmap,
@@ -113,8 +109,6 @@ interface PullsResult {
   stuckPRs: number;
   latestMergedAt: string | null;
   latestOpenUpdatedAt: string | null;
-  /** Distinct sub-track codes (A1, B2…) referenced across ALL merged PRs. */
-  mergedCodes: string[];
 }
 
 async function fetchPulls(
@@ -172,15 +166,6 @@ async function fetchPulls(
 
     const merged7dItems = merged.filter((m) => withinHours(m.mergedAt, 24 * 7));
 
-    // Codes from every merged PR (title + body) — drives sub-track coverage.
-    const mergedCodes = [
-      ...new Set(
-        collected
-          .filter((pr) => pr.merged_at)
-          .flatMap((pr) => extractTrackCodes(`${pr.title}\n${pr.body ?? ""}`)),
-      ),
-    ];
-
     return {
       mergedToday: merged.filter((m) => isTodayUtc(m.mergedAt)).length,
       merged24h: merged.filter((m) => withinHours(m.mergedAt, 24)).length,
@@ -191,7 +176,6 @@ async function fetchPulls(
       stuckPRs: open.filter((p) => p.stuck).length,
       latestMergedAt: merged[0]?.mergedAt ?? null,
       latestOpenUpdatedAt: open[0]?.updatedAt ?? null,
-      mergedCodes,
     };
   } catch (e) {
     errors.push(`pull requests: ${errorMessage(e)}`);
@@ -486,12 +470,15 @@ function degraded(
       available: false,
       reason: "Data unavailable.",
       percentToSubmission: null,
-      overallPct: null,
+      submissionDone: 0,
+      submissionTotal: 0,
+      submissionAvailable: false,
+      buildPct: null,
+      buildDone: 0,
+      buildTotal: 0,
+      buildAvailable: false,
       tracks: [],
-      subtracks: [],
-      gateDone: 0,
-      gateTotal: 0,
-      method: "none",
+      nextItem: null,
     },
     mergedToday: 0,
     merged24h: 0,
@@ -590,32 +577,24 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     fetchFileWithHistory(octokit, owner, repo, workingBranch, "docs/BUSINESS_CASE.md"),
   ]);
 
-  // 3) Parse markdown. Progress is sub-track *coverage*: a sub-track counts as
-  //    done if the roadmap annotates it done OR a merged PR references its code.
-  const progressBase = parseRoadmap(roadmapFile.content);
-  const definedCodes = new Set(progressBase.subtracks.map((s) => s.code));
-  const annoDone = new Set(extractDoneAnnotations(roadmapFile.content));
-  const annoPending = new Set(extractPendingAnnotations(roadmapFile.content));
-  const doneCodes = new Set<string>();
-  for (const c of [...annoDone, ...(pulls?.mergedCodes ?? [])]) {
-    if (!definedCodes.has(c)) continue;
-    // Explicit "pending" annotation overrides a mere PR-touch (but not an
-    // explicit "done" annotation) — keeps the % honest.
-    if (annoPending.has(c) && !annoDone.has(c)) continue;
-    doneCodes.add(c);
-  }
+  // 3) Parse markdown. Completeness is two separate axes, both from checkboxes
+  //    inside their headed sections (DoD = readiness; Tracks = build progress).
+  let progress = parseRoadmap(roadmapFile.content);
 
   const readyForSubmission = Boolean(issues?.readyIssue);
 
   // The factory's explicit "FACTORY: ready for submission" issue is
-  // authoritative: when it's open the agent has met its Definition of Done, so
-  // show 100% rather than the (necessarily lower) coverage estimate.
-  let progress = finalizeProgress(progressBase, doneCodes);
+  // authoritative: when it's open the agent has declared the Definition of Done
+  // met, so both axes read 100% regardless of whether the checkboxes were ticked.
   if (readyForSubmission && progress.available) {
     progress = {
       ...progress,
       percentToSubmission: 100,
-      subtracks: progress.subtracks.map((s) => ({ ...s, done: true })),
+      submissionAvailable: true,
+      submissionDone: progress.submissionTotal,
+      buildPct: 100,
+      buildAvailable: true,
+      buildDone: progress.buildTotal,
       tracks: progress.tracks.map((t) => ({ ...t, done: t.total, pct: 100 })),
     };
   }

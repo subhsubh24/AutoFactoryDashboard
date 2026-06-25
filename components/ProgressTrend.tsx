@@ -4,14 +4,23 @@ import { cn } from "@/lib/utils";
 export interface ProjectTrend {
   slug: string;
   name: string;
-  /** Live current % to launch (null when there's no roadmap %). */
+  /** Live current % to submission-ready (null when unmeasured). */
   current: number | null;
   /** Historical % series, oldest → newest (gaps allowed). */
   values: Array<number | null>;
+  /** Historical total-checkbox series — a rise means the loop added scope. */
+  totals?: Array<number | undefined>;
 }
 
 function definedValues(values: Array<number | null>): number[] {
   return values.filter((v): v is number => v !== null);
+}
+
+/** True when the checkbox total grew over the window (scope added, not regressed). */
+function scopeExpanded(totals?: Array<number | undefined>): boolean {
+  if (!totals) return false;
+  const nums = totals.filter((n): n is number => typeof n === "number");
+  return nums.length >= 2 && nums[nums.length - 1] > nums[0];
 }
 
 /**
@@ -26,6 +35,7 @@ export function ProgressTrend({ trends }: { trends: ProjectTrend[] }) {
         const defined = definedValues(t.values);
         const delta =
           defined.length >= 2 ? defined[defined.length - 1] - defined[0] : null;
+        const expanded = scopeExpanded(t.totals);
         const pct = t.current ?? 0;
 
         return (
@@ -38,15 +48,22 @@ export function ProgressTrend({ trends }: { trends: ProjectTrend[] }) {
                 <span className="font-serif text-2xl font-medium leading-none tabular text-ink">
                   {t.current === null ? "—" : `${t.current}%`}
                 </span>
-                {delta !== null && delta !== 0 && (
-                  <span
-                    className={cn(
-                      "text-xs font-medium tabular",
-                      delta > 0 ? "text-sage-strong" : "text-clay-strong",
-                    )}
-                  >
-                    {delta > 0 ? `▲${delta}` : `▼${Math.abs(delta)}`}
+                {expanded ? (
+                  <span className="rounded-full bg-amber-soft px-1.5 py-0.5 text-[10px] font-medium text-amber-strong">
+                    scope expanded
                   </span>
+                ) : (
+                  delta !== null &&
+                  delta !== 0 && (
+                    <span
+                      className={cn(
+                        "text-xs font-medium tabular",
+                        delta > 0 ? "text-sage-strong" : "text-clay-strong",
+                      )}
+                    >
+                      {delta > 0 ? `▲${delta}` : `▼${Math.abs(delta)}`}
+                    </span>
+                  )
                 )}
               </span>
             </div>

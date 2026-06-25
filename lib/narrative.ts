@@ -94,8 +94,10 @@ export function templateNarrative(s: ProjectSnapshot): string {
 
   const where =
     pct !== null
-      ? `It's about ${pct}% of the way through its roadmap`
-      : "Roadmap progress is unmeasured";
+      ? `It's ${pct}% to submission-ready`
+      : s.progress.buildPct !== null
+        ? `Build is ${s.progress.buildPct}% complete`
+        : "Roadmap progress is unmeasured";
   const milestone = nextMilestone(s);
   const ciClause =
     s.ci.status === "failing"
@@ -165,7 +167,12 @@ function llmContext(s: ProjectSnapshot): string {
     `Project: ${s.displayName} (${s.kind})`,
     `Working branch: ${s.workingBranch}`,
     `Status: ${s.status}`,
-    pct !== null ? `Progress to submission: ${pct}%` : `Progress: unknown`,
+    pct !== null
+      ? `Submission readiness (Definition of Done): ${pct}%`
+      : `Submission readiness: not measured`,
+    s.progress.buildPct !== null
+      ? `Build completeness (track checkboxes): ${s.progress.buildPct}%`
+      : "",
     `Merged PRs — today: ${s.mergedToday}, last 24h: ${s.merged24h}, last 7d: ${s.merged7d}`,
     `Commits in last ~25h: ${s.commitsToday ?? "unknown"}`,
     `Open PRs: ${s.openPRs.length} (${s.stuckPRs} stuck > 12h)`,
@@ -487,11 +494,9 @@ function parseLaunch(raw: string): { overview: string; features: string[] } {
 }
 
 function templateLaunch(s: ProjectSnapshot): LaunchSummary {
-  const labels = s.progress.subtracks
-    .map((t) => t.label)
-    .filter((l) => l.length > 2);
+  const trackLabels = s.progress.tracks.map((t) => t.label).filter((l) => l.length > 2);
   const themeLabels = extractThemes(s.merged7dItems).map((t) => t.label);
-  const features = (labels.length ? labels : themeLabels).slice(0, 12);
+  const features = (themeLabels.length ? themeLabels : trackLabels).slice(0, 12);
   return {
     overview: `${s.displayName} is a ${kindLabel(s.kind)} product built end-to-end by the factory and flagged ready for submission.`,
     features,

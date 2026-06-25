@@ -43,17 +43,6 @@ export interface TrackProgress {
   pct: number;
 }
 
-/** A single roadmap sub-track (e.g. "B2"), with its completion state. */
-export interface SubTrack {
-  /** Code like "A1", "B2", "D3", or "P0". */
-  code: string;
-  /** Track letter the sub-track belongs to ("A".."E", or "P0"). */
-  track: string;
-  label: string;
-  /** Marked done via inline annotation or a merged PR referencing it. */
-  done: boolean;
-}
-
 export type ActionSource = "pending_ops" | "issue" | "human_core";
 
 export interface ActionItem {
@@ -77,23 +66,32 @@ export interface AttentionIssue {
   updatedAt?: string;
 }
 
+/**
+ * Completeness and readiness are TWO separate axes — never collapse them into
+ * one number (worth/ARR is a third axis, lives elsewhere).
+ */
 export interface ProgressInfo extends Availability {
+  // ── Axis 1: submission readiness (the real stop gate) ──────────────────────
   /**
-   * Headline build progress, 0–100. Derived from roadmap sub-track *coverage*
-   * (sub-tracks shipped via PRs or marked done) rather than the all-or-nothing
-   * "Definition of Done" gate, which stays 0% until launch.
+   * Headline "% to submission-ready" — checked/total checkboxes found ONLY in
+   * the "Definition of Done" section. null when that section is absent/empty.
    */
   percentToSubmission: number | null;
-  /** Whole-file checkbox % fallback. */
-  overallPct: number | null;
+  submissionDone: number;
+  submissionTotal: number;
+  submissionAvailable: boolean;
+
+  // ── Axis 2: build completeness (granular progress) ─────────────────────────
+  /** Checked/total across the Track sections (+ a P0 section). null when none. */
+  buildPct: number | null;
+  buildDone: number;
+  buildTotal: number;
+  buildAvailable: boolean;
+
+  /** Per-track bars from the Track/P0 sections. */
   tracks: TrackProgress[];
-  /** All parsed roadmap sub-tracks with completion state. */
-  subtracks: SubTrack[];
-  /** "Definition of Done" launch-gate boxes ticked / total. */
-  gateDone: number;
-  gateTotal: number;
-  /** How `percentToSubmission` was derived. */
-  method: "coverage" | "checkbox" | "none";
+  /** First unchecked checkbox item — the next concrete thing to do. */
+  nextItem: string | null;
 }
 
 export interface CIInfo extends Availability {

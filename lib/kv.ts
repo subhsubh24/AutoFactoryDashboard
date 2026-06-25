@@ -8,7 +8,12 @@ export interface DailyMetric {
   /** YYYY-MM-DD (UTC). */
   date: string;
   prs: number;
+  /** Submission readiness % (Definition of Done) — the headline axis. */
   pct: number | null;
+  /** Build completeness % (Track sections) — the incremental axis. */
+  buildPct?: number | null;
+  /** Total Definition-of-Done checkboxes — grows when the loop adds scope. */
+  submissionTotal?: number;
   ciPassRate: number | null;
 }
 

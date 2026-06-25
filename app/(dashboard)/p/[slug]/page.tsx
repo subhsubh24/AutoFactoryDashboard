@@ -90,7 +90,7 @@ export default async function ProjectPage({
   const focus = themeSummary(themes);
   const quality = qualitySignals(snapshot.merged7dItems, snapshot.ci);
   const eta = estimateCompletion(snapshot, history);
-  const { gateDone, gateTotal } = snapshot.progress;
+  const prog = snapshot.progress;
 
   const projectFeed: FeedEntry[] = snapshot.merged7dItems.map((pr) => ({
     ...pr,
@@ -236,44 +236,59 @@ export default async function ProjectPage({
           size={156}
           stroke={13}
           tone={ringTone}
-          label="complete"
+          label="to submission-ready"
         />
         <div className="flex-1">
-          {!snapshot.progress.available && (
+          {!prog.available ? (
             <p className="mb-3 text-sm text-muted">
-              {snapshot.progress.reason ?? "ROADMAP.md not found"} — progress is
-              estimated from available data.
+              {prog.reason ?? "ROADMAP.md not found"}.
             </p>
+          ) : (
+            !prog.submissionAvailable && (
+              <p className="mb-3 text-sm text-muted">
+                No &ldquo;Definition of Done&rdquo; checkboxes found — submission
+                readiness isn&apos;t measurable yet.
+              </p>
+            )
           )}
           <p className="text-xs font-medium uppercase tracking-wide text-muted">
             Next milestone
           </p>
           <p className="mt-1 font-serif text-2xl text-ink">
-            {milestone ?? (snapshot.progress.tracks.length ? "All tracks complete" : "—")}
+            {milestone ?? (prog.tracks.length ? "All tracks complete" : "—")}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-            {eta && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-sage-soft px-2.5 py-1 font-medium text-sage-strong">
-                Est. launch {formatEtaDate(eta.date)} · {formatHorizon(eta.daysRemaining)}
+            {prog.buildAvailable && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-bg px-2.5 py-1 text-muted">
+                Build {prog.buildPct}%{" "}
                 <span className="opacity-70">
-                  ({eta.basis === "history" ? "from trend" : "at current pace"})
+                  ({prog.buildDone}/{prog.buildTotal})
                 </span>
               </span>
             )}
-            {gateTotal > 0 && (
+            {prog.submissionAvailable && (
               <span className="inline-flex items-center gap-1 rounded-full bg-bg px-2.5 py-1 text-muted">
-                Launch gate {gateDone}/{gateTotal}
+                Definition of Done {prog.submissionDone}/{prog.submissionTotal}
+              </span>
+            )}
+            {eta && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-sage-soft px-2.5 py-1 font-medium text-sage-strong">
+                Est. launch {formatEtaDate(eta.date)} · {formatHorizon(eta.daysRemaining)}
               </span>
             )}
           </div>
           {valuation.arrExpected > 0 && (
-            <div className="mt-2">
+            <div className="mt-3">
               <ValuationView v={valuation} />
               {valuation.rationale && (
                 <p className="mt-1 text-xs italic text-muted">{valuation.rationale}</p>
               )}
             </div>
           )}
+          <p className="mt-3 border-t border-hairline pt-3 text-xs leading-relaxed text-muted">
+            Completeness and readiness measure how much is built; the ARR estimate
+            measures potential revenue — they are different axes.
+          </p>
           {blockReason && (
             <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-clay-soft px-2.5 py-1 text-xs font-medium text-clay-strong">
               {blockReason}
@@ -429,31 +444,27 @@ export default async function ProjectPage({
           </SectionCard>
 
           <SectionCard
-            title="Roadmap tracks"
+            title="Build progress"
             subtitle={
-              snapshot.progress.method === "coverage"
-                ? "Sub-track coverage — shipped via PRs or marked done"
-                : "Per-track progress from ROADMAP.md"
+              prog.buildAvailable
+                ? `${prog.buildPct}% of track checkboxes done (${prog.buildDone}/${prog.buildTotal}) — distinct from submission readiness`
+                : "Per-track checkboxes from the ROADMAP Track sections"
             }
           >
-            {snapshot.progress.available && snapshot.progress.tracks.length > 0 ? (
-              <TrackBars tracks={snapshot.progress.tracks} />
+            {prog.buildAvailable && prog.tracks.length > 0 ? (
+              <TrackBars tracks={prog.tracks} />
             ) : (
               <p className="text-sm text-muted">
-                {snapshot.progress.reason ??
-                  "ROADMAP.md has no per-track checklist — progress is unmeasured."}
+                The ROADMAP Track sections have no checkboxes — build completeness
+                isn&apos;t measurable. (Readiness is tracked separately, from the
+                Definition of Done section.)
               </p>
             )}
-            {gateTotal > 0 && (
-              <p className="mt-4 border-t border-hairline pt-3 text-xs text-muted">
-                Launch gate (Definition of Done):{" "}
-                <span className="font-semibold text-ink">
-                  {gateDone}/{gateTotal}
-                </span>{" "}
-                criteria ticked. These stay unchecked until the very end — they
-                gate the launch, they don&apos;t track progress.
-              </p>
-            )}
+            <p className="mt-4 border-t border-hairline pt-3 text-xs leading-relaxed text-muted">
+              Build completeness (above) is how much is built; submission
+              readiness ({prog.submissionAvailable ? `${pct}%` : "unmeasured"}) is
+              the Definition-of-Done stop gate. They are not the same number.
+            </p>
           </SectionCard>
 
           <SectionCard

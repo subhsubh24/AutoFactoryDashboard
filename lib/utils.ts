@@ -146,21 +146,21 @@ export function kindLabel(kind: ProjectKind): string {
   }
 }
 
-/** The next thing to build — first undone sub-track, else lowest-% track. */
+/** The next concrete thing — first unchecked item, else the lowest-% track. */
 export function nextMilestone(s: ProjectSnapshot): string | null {
-  const sub = s.progress.subtracks?.find((x) => !x.done);
-  if (sub) {
-    const label = sub.label ? `${sub.code}: ${sub.label}` : sub.code;
-    return label.length > 72 ? `${label.slice(0, 72)}…` : label;
-  }
+  if (s.progress.nextItem) return s.progress.nextItem;
   const incomplete = s.progress.tracks.filter((t) => t.pct < 100);
   if (incomplete.length === 0) return null;
   incomplete.sort((a, b) => a.pct - b.pct);
   return incomplete[0].label;
 }
 
-/** Best single % to show for a project (DoD first, then overall). */
+/** Headline % = submission readiness (Definition of Done), or null if unmeasured. */
 export function headlinePct(s: ProjectSnapshot): number | null {
-  if (s.progress.percentToSubmission !== null) return s.progress.percentToSubmission;
-  return s.progress.overallPct;
+  return s.progress.percentToSubmission;
+}
+
+/** Secondary % = build completeness (Track sections), or null if unmeasured. */
+export function buildPct(s: ProjectSnapshot): number | null {
+  return s.progress.buildPct;
 }
