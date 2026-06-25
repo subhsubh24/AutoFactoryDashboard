@@ -2,7 +2,10 @@ import { unstable_cache } from "next/cache";
 import type { ProjectSnapshot } from "@/lib/types";
 import { humanAsksFor } from "@/lib/aggregate";
 import { extractThemes, themeSummary } from "@/lib/themes";
+import { parseBusinessCase, type Valuation } from "@/lib/businesscase";
 import { headlinePct, kindLabel, nextMilestone, pluralize } from "@/lib/utils";
+
+export type { Valuation };
 
 export interface Narrative {
   /** Punchy 3–7 word headline — the glanceable "what's the story". */
@@ -531,16 +534,8 @@ export function getLaunchSummary(s: ProjectSnapshot): Promise<LaunchSummary> {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Valuation — rough estimated annual revenue (clearly speculative)
+// Valuation — primary: docs/BUSINESS_CASE.md; fallback: rough heuristic
 // ────────────────────────────────────────────────────────────────────────────
-
-export interface Valuation {
-  arrLow: number;
-  arrExpected: number;
-  arrHigh: number;
-  rationale: string;
-  source: "llm" | "template";
-}
 
 const VALUATION_SYSTEM =
   "You are a pragmatic indie-SaaS analyst. Given a product built by an " +
@@ -623,10 +618,15 @@ function templateValuation(s: ProjectSnapshot): Valuation {
 }
 
 /**
- * A deliberately rough estimated annual revenue for a project. LLM-backed with
- * a pricing-derived fallback. Clearly speculative — surfaced as an estimate.
+ * Estimated annual revenue for a project.
+ *
+ *  1. PRIMARY — the project's own bottoms-up model in docs/BUSINESS_CASE.md
+ *     (source: "business_case"). No LLM call needed when present.
+ *  2. FALLBACK — the rough heuristic: LLM estimate, then a pricing×adoption
+ *     formula (source: "llm" / "template" — shown as "rough heuristic").
  */
 export function getValuation(s: ProjectSnapshot): Promise<Valuation> {
+  const bc = s.files.businessCase;
   const cacheKey = [
     "afd-valuation",
     CACHE_VERSION,
@@ -634,9 +634,19 @@ export function getValuation(s: ProjectSnapshot): Promise<Valuation> {
     currentModel(),
     String(headlinePct(s)),
     String(s.readyForSubmission),
+    // A new business case (new commit) busts the cache.
+    bc?.lastCommitSha ?? bc?.lastCommitDate ?? "no-bc",
   ];
   return unstable_cache(
     async (): Promise<Valuation> => {
+      // 1) Business case is authoritative — and free (no LLM).
+      if (bc?.available && bc.content) {
+        const sourceUrl = `${s.repoUrl}/blob/${s.workingBranch}/${bc.path ?? "docs/BUSINESS_CASE.md"}`;
+        const parsed = parseBusinessCase(bc.content, sourceUrl, bc.lastCommitDate);
+        if (parsed) return parsed;
+      }
+
+      // 2) Heuristic fallback.
       const llm = await callLLM(
         [
           { role: "system", content: VALUATION_SYSTEM },

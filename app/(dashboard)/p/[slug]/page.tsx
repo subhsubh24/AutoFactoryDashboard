@@ -10,7 +10,6 @@ import {
   cn,
   describeBlock,
   formatAge,
-  formatMoney,
   headlinePct,
   kindLabel,
   nextMilestone,
@@ -25,6 +24,7 @@ import { ProgressRing } from "@/components/ProgressRing";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TrackBars } from "@/components/TrackBars";
 import { ThemeChips } from "@/components/ThemeChips";
+import { ValuationView } from "@/components/ValuationView";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { ActionItemsPanel } from "@/components/ActionItemsPanel";
 import { CIHealth } from "@/components/CIHealth";
@@ -265,15 +265,15 @@ export default async function ProjectPage({
                 Launch gate {gateDone}/{gateTotal}
               </span>
             )}
-            {valuation.arrExpected > 0 && (
-              <span
-                title={valuation.rationale || "Rough estimate"}
-                className="inline-flex items-center gap-1 rounded-full bg-sage-soft px-2.5 py-1 font-medium text-sage-strong"
-              >
-                ~{formatMoney(valuation.arrExpected)}/yr est. value
-              </span>
-            )}
           </div>
+          {valuation.arrExpected > 0 && (
+            <div className="mt-2">
+              <ValuationView v={valuation} />
+              {valuation.rationale && (
+                <p className="mt-1 text-xs italic text-muted">{valuation.rationale}</p>
+              )}
+            </div>
+          )}
           {blockReason && (
             <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-clay-soft px-2.5 py-1 text-xs font-medium text-clay-strong">
               {blockReason}

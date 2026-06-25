@@ -123,6 +123,10 @@ export interface ReadyInfo {
 export interface RawFile extends Availability {
   path?: string;
   content?: string;
+  /** ISO date of the file's last commit (when fetched with history). */
+  lastCommitDate?: string;
+  /** SHA of the file's last commit (used to bust caches when it changes). */
+  lastCommitSha?: string;
 }
 
 export interface RepoMeta extends Availability {
@@ -184,6 +188,8 @@ export interface ProjectSnapshot {
     pendingOps: RawFile;
     improvementLog: RawFile;
     loopMemory: RawFile;
+    /** docs/BUSINESS_CASE.md — the project's bottoms-up revenue model. */
+    businessCase: RawFile;
   };
 
   // freshness

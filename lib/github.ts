@@ -393,6 +393,36 @@ async function fetchFile(
   }
 }
 
+/** Fetch a file's content plus its last-commit date/SHA (for cache-busting). */
+async function fetchFileWithHistory(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  ref: string,
+  path: string,
+): Promise<RawFile> {
+  const file = await fetchFile(octokit, owner, repo, ref, path);
+  if (!file.available) return file;
+  try {
+    const { data } = await octokit.rest.repos.listCommits({
+      owner,
+      repo,
+      sha: ref,
+      path,
+      per_page: 1,
+    });
+    const c = data[0];
+    return {
+      ...file,
+      lastCommitDate:
+        c?.commit?.committer?.date ?? c?.commit?.author?.date ?? undefined,
+      lastCommitSha: c?.sha ?? undefined,
+    };
+  } catch {
+    return file; // last-commit metadata is best-effort
+  }
+}
+
 /** Try several candidate paths; return the first that exists. */
 async function fetchFirstFile(
   octokit: Octokit,
@@ -479,6 +509,7 @@ function degraded(
       pendingOps: { available: false },
       improvementLog: { available: false },
       loopMemory: { available: false },
+      businessCase: { available: false },
     },
     lastActivityAt: repoMeta.pushedAt ?? null,
     fetchedAt,
@@ -534,20 +565,30 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
   const { owner, repo } = project;
 
   // 2) Everything else in parallel.
-  const [pulls, commits, issues, ci, roadmapFile, pendingFile, improvementFile, loopMemoryFile] =
-    await Promise.all([
-      fetchPulls(octokit, owner, repo, errors),
-      fetchCommits(octokit, owner, repo, workingBranch, errors),
-      fetchIssues(octokit, owner, repo, errors),
-      fetchCI(octokit, owner, repo, workingBranch, repoUrl, errors),
-      fetchFile(octokit, owner, repo, workingBranch, "ROADMAP.md"),
-      fetchFile(octokit, owner, repo, workingBranch, "PENDING_OPS.md"),
-      fetchFile(octokit, owner, repo, workingBranch, "IMPROVEMENT_LOG.md"),
-      fetchFirstFile(octokit, owner, repo, workingBranch, [
-        "docs/loop-memory.md",
-        "docs/autonomous-loop/LOOP_MEMORY.md",
-      ]),
-    ]);
+  const [
+    pulls,
+    commits,
+    issues,
+    ci,
+    roadmapFile,
+    pendingFile,
+    improvementFile,
+    loopMemoryFile,
+    businessCaseFile,
+  ] = await Promise.all([
+    fetchPulls(octokit, owner, repo, errors),
+    fetchCommits(octokit, owner, repo, workingBranch, errors),
+    fetchIssues(octokit, owner, repo, errors),
+    fetchCI(octokit, owner, repo, workingBranch, repoUrl, errors),
+    fetchFile(octokit, owner, repo, workingBranch, "ROADMAP.md"),
+    fetchFile(octokit, owner, repo, workingBranch, "PENDING_OPS.md"),
+    fetchFile(octokit, owner, repo, workingBranch, "IMPROVEMENT_LOG.md"),
+    fetchFirstFile(octokit, owner, repo, workingBranch, [
+      "docs/loop-memory.md",
+      "docs/autonomous-loop/LOOP_MEMORY.md",
+    ]),
+    fetchFileWithHistory(octokit, owner, repo, workingBranch, "docs/BUSINESS_CASE.md"),
+  ]);
 
   // 3) Parse markdown. Progress is sub-track *coverage*: a sub-track counts as
   //    done if the roadmap annotates it done OR a merged PR references its code.
@@ -652,6 +693,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
       pendingOps: pendingFile,
       improvementLog: improvementFile,
       loopMemory: loopMemoryFile,
+      businessCase: businessCaseFile,
     },
     lastActivityAt,
     fetchedAt,

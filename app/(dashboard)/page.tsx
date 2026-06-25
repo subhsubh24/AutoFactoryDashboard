@@ -27,6 +27,7 @@ import { ActivityFeed } from "@/components/ActivityFeed";
 import { WeekBars } from "@/components/WeekBars";
 import { ProgressTrend, type ProjectTrend } from "@/components/ProgressTrend";
 import { FactoryTrends } from "@/components/FactoryTrends";
+import { ValuationView } from "@/components/ValuationView";
 import { RelativeTime } from "@/components/RelativeTime";
 import { CalmCoda, Greeting, TimeOfDay } from "@/components/TimeAware";
 import {
@@ -81,8 +82,12 @@ export default async function OverviewPage() {
   const narratives = new Map<string, Narrative>(narrativeEntries);
   const valuations = new Map<string, Valuation>(valuationEntries);
 
-  // Factory-level rollups: estimated annual value + average time-to-launch.
-  const factoryArr = valuationEntries.reduce((n, [, v]) => n + v.arrExpected, 0);
+  // Factory value rollups — keep business-case and heuristic subtotals separate.
+  const bcVals = valuationEntries.filter(([, v]) => v.source === "business_case");
+  const heurVals = valuationEntries.filter(([, v]) => v.source !== "business_case");
+  const bcArr = bcVals.reduce((n, [, v]) => n + v.arrExpected, 0);
+  const heurArr = heurVals.reduce((n, [, v]) => n + v.arrExpected, 0);
+  const factoryArr = bcArr + heurArr;
   const launchDays = snapshots
     .map((s) => etas.get(s.slug)?.daysRemaining)
     .filter((d): d is number => typeof d === "number");
@@ -206,8 +211,8 @@ export default async function OverviewPage() {
           <FactoryStat
             label="Est. value"
             value={formatMoney(factoryArr)}
-            unit="ARR · rough"
-            tone="sage"
+            unit="est. ARR · see note"
+            tone={bcVals.length > 0 ? "sage" : "muted"}
           />
           <FactoryStat
             label="Time to launch"
@@ -215,6 +220,14 @@ export default async function OverviewPage() {
             unit="avg estimate"
           />
         </div>
+        <p className="mt-4 border-t border-hairline pt-3 text-[11px] leading-relaxed text-muted">
+          Estimated annual value {formatMoney(factoryArr)} ={" "}
+          <span className="text-sage-strong">{formatMoney(bcArr)}</span> from{" "}
+          {bcVals.length} business {pluralize(bcVals.length, "case")} +{" "}
+          <span className="text-amber-strong">{formatMoney(heurArr)}</span> rough
+          heuristic ({heurVals.length}). Pre-launch estimate — the two aren&apos;t
+          equivalent and this isn&apos;t a valuation.
+        </p>
       </section>
 
       {/* 1c — Progress to launch (bars from the live %, trend layered in via KV). */}
@@ -524,13 +537,9 @@ function ProjectTile({
             <span className="opacity-70">({formatHorizon(eta.daysRemaining)})</span>
           </span>
         )}
-        {valuation && valuation.arrExpected > 0 && (
-          <span className="text-muted">
-            · <span className="font-medium text-sage-strong">~{formatMoney(valuation.arrExpected)}/yr</span>{" "}
-            <span className="opacity-70">est.</span>
-          </span>
-        )}
       </div>
+
+      {valuation && <ValuationView v={valuation} />}
 
       <div className="mt-auto flex items-center justify-between border-t border-hairline pt-3">
         <span className="flex items-center gap-1 text-[11px] text-muted">

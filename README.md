@@ -292,6 +292,19 @@ degrades to a clear "unavailable" state rather than breaking the page.
   flagged as blockers show up in the per-project **Loop health** panel and the
   aggregated **What needs you** list.
 
+**`docs/BUSINESS_CASE.md`** → estimated annual revenue (the headline value)
+
+- If present, it's the **primary** source for a project's value: a bottoms-up
+  model with **conservative / base / optimistic** ARR figures. The parser is
+  tolerant of tables, bullet lists, and headings — `arrExpected` = base,
+  `arrLow` = conservative, `arrHigh` = optimistic. Currency, commas, and `k`/`M`
+  suffixes are understood; the file's last-commit date is shown as "as of …".
+- If only a single headline ARR (e.g. `Target ARR: $120,000/yr`) is found, it's
+  used as the base with low/high at ×0.3 / ×3.
+- **Absent → a clearly-labeled "rough heuristic"** fallback (LLM estimate, then a
+  price×adoption formula). The UI badges every number `business case` vs
+  `rough heuristic`, and the factory total keeps the two subtotals separate.
+
 **Also read (all optional):** `IMPROVEMENT_LOG.md`, and a loop-memory file at
 `docs/loop-memory.md` or `docs/autonomous-loop/LOOP_MEMORY.md`.
 
