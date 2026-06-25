@@ -556,14 +556,20 @@ function ProjectTile({
 
       {valuation && <ValuationView v={valuation} />}
 
-      <div className="mt-auto flex items-center justify-between border-t border-hairline pt-3">
-        <span className="flex items-center gap-1 text-[11px] text-muted">
-          <SparkleIcon className="h-3 w-3" />
+      <div className="mt-auto flex items-center justify-between gap-3 border-t border-hairline pt-3">
+        <span
+          className="flex min-w-0 items-center gap-1 text-[11px] text-muted"
+          title={narrative?.llmReason ? `LLM fallback — ${narrative.llmReason}` : undefined}
+        >
+          <SparkleIcon className="h-3 w-3 shrink-0" />
           {narrative?.source === "llm" ? "AI digest" : "Summary"}
+          {narrative?.source !== "llm" && narrative?.llmReason && (
+            <span className="truncate text-muted/70">· {narrative.llmReason}</span>
+          )}
         </span>
         <Link
           href={`/p/${s.slug}`}
-          className="group flex items-center gap-1 text-xs font-medium text-muted transition-colors hover:text-clay"
+          className="group flex shrink-0 items-center gap-1 text-xs font-medium text-muted transition-colors hover:text-clay"
         >
           Dashboard
           <ArrowRightIcon className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />

@@ -20,6 +20,8 @@ export interface Narrative {
   source: "llm" | "template";
   /** Model used when source === "llm". */
   model?: string;
+  /** Why the LLM path fell back to a template (diagnostic; source === "template"). */
+  llmReason?: string;
 }
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -203,13 +205,32 @@ interface ChatMessage {
   content: string;
 }
 
-/** Single OpenRouter chat call. Returns null on any failure (caller falls back). */
+interface LlmOutcome {
+  text?: string;
+  model?: string;
+  /** Short diagnostic reason when text is absent (or "ok"). */
+  reason: string;
+}
+
+function clipMsg(s: string, n = 70): string {
+  const t = s.replace(/\s+/g, " ").trim();
+  return t.length > n ? `${t.slice(0, n)}…` : t;
+}
+
+function errReason(e: unknown): string {
+  const s = String(e);
+  if (/abort|timeout|timed out/i.test(s)) return "timeout";
+  if (e instanceof Error && e.message) return clipMsg(e.message, 40);
+  return "network error";
+}
+
+/** Single OpenRouter chat call. */
 async function callOpenRouter(
   messages: ChatMessage[],
   maxTokens: number,
-): Promise<{ text: string; model: string } | null> {
+): Promise<LlmOutcome> {
   const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) return { reason: "no-key" };
 
   const model = process.env.OPENROUTER_MODEL || OPENROUTER_DEFAULT_MODEL;
   try {
@@ -220,24 +241,25 @@ async function callOpenRouter(
         "Content-Type": "application/json",
         "X-Title": "AutoFactoryDashboard",
       },
-      body: JSON.stringify({
-        model,
-        max_tokens: maxTokens,
-        temperature: 0.4,
-        messages,
-      }),
+      body: JSON.stringify({ model, max_tokens: maxTokens, temperature: 0.4, messages }),
       signal: AbortSignal.timeout(12_000),
       cache: "no-store",
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      let detail = "";
+      try {
+        const j = (await res.json()) as { error?: { message?: string } };
+        if (j?.error?.message) detail = `: ${clipMsg(j.error.message)}`;
+      } catch {}
+      return { reason: `openrouter HTTP ${res.status}${detail}` };
+    }
     const data = (await res.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
     };
     const text = data.choices?.[0]?.message?.content?.trim();
-    return text ? { text, model } : null;
-  } catch {
-    // Any failure (no network, bad key, bad model, timeout) → templated.
-    return null;
+    return text ? { text, model, reason: "ok" } : { reason: "openrouter returned empty" };
+  } catch (e) {
+    return { reason: `openrouter ${errReason(e)}` };
   }
 }
 
@@ -245,9 +267,9 @@ async function callOpenRouter(
 async function callGemini(
   messages: ChatMessage[],
   maxTokens: number,
-): Promise<{ text: string; model: string } | null> {
+): Promise<LlmOutcome> {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) return { reason: "no-key" };
 
   const model = process.env.GEMINI_MODEL || GEMINI_DEFAULT_MODEL;
   const system = messages.find((m) => m.role === "system")?.content;
@@ -267,47 +289,47 @@ async function callGemini(
       signal: AbortSignal.timeout(12_000),
       cache: "no-store",
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      let detail = "";
+      try {
+        const j = (await res.json()) as { error?: { message?: string } };
+        if (j?.error?.message) detail = `: ${clipMsg(j.error.message)}`;
+      } catch {}
+      return { reason: `gemini HTTP ${res.status}${detail}` };
+    }
     const data = (await res.json()) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      candidates?: Array<{
+        content?: { parts?: Array<{ text?: string }> };
+        finishReason?: string;
+      }>;
+      promptFeedback?: { blockReason?: string };
     };
-    const text = data.candidates?.[0]?.content?.parts
-      ?.map((p) => p.text ?? "")
-      .join("")
-      .trim();
-    return text ? { text, model } : null;
-  } catch {
-    return null;
+    const cand = data.candidates?.[0];
+    const text = cand?.content?.parts?.map((p) => p.text ?? "").join("").trim();
+    if (text) return { text, model, reason: "ok" };
+    const block = data.promptFeedback?.blockReason || cand?.finishReason;
+    return { reason: block ? `gemini empty (${block})` : "gemini empty" };
+  } catch (e) {
+    return { reason: `gemini ${errReason(e)}` };
   }
 }
 
 /**
- * Provider-agnostic LLM call. Prefers Gemini (reliable free tier) when
- * GEMINI_API_KEY is set, falls back to OpenRouter, then to null (→ template).
+ * Provider-agnostic LLM call. Prefers Gemini when GEMINI_API_KEY is set, falls
+ * back to OpenRouter. Carries a short diagnostic reason for the UI.
  */
-async function callLLM(
-  messages: ChatMessage[],
-  maxTokens: number,
-): Promise<{ text: string; model: string } | null> {
-  return (
-    (await callGemini(messages, maxTokens)) ??
-    (await callOpenRouter(messages, maxTokens))
-  );
-}
+async function callLLM(messages: ChatMessage[], maxTokens: number): Promise<LlmOutcome> {
+  const hasGemini = Boolean(process.env.GEMINI_API_KEY);
+  const hasOpenRouter = Boolean(process.env.OPENROUTER_API_KEY);
+  if (!hasGemini && !hasOpenRouter) return { reason: "no LLM key set" };
 
-async function llmNarrative(
-  s: ProjectSnapshot,
-): Promise<{ headline?: string; text: string; model: string } | null> {
-  const res = await callLLM(
-    [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: `Write the update from these metrics:\n\n${llmContext(s)}` },
-    ],
-    320, // headroom so a 2-sentence digest never gets cut off mid-thought
-  );
-  if (!res) return null;
-  const { headline, text } = parseHeadlineDigest(res.text);
-  return { headline, text, model: res.model };
+  if (hasGemini) {
+    const g = await callGemini(messages, maxTokens);
+    if (g.text || !hasOpenRouter) return g;
+    const o = await callOpenRouter(messages, maxTokens);
+    return o.text ? o : { reason: `${g.reason}; ${o.reason}` };
+  }
+  return callOpenRouter(messages, maxTokens);
 }
 
 /**
@@ -333,19 +355,27 @@ export function getNarrative(s: ProjectSnapshot): Promise<Narrative> {
 
   return unstable_cache(
     async (): Promise<Narrative> => {
-      const llm = await llmNarrative(s);
-      if (llm) {
+      const out = await callLLM(
+        [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: `Write the update from these metrics:\n\n${llmContext(s)}` },
+        ],
+        320, // headroom so a 2-sentence digest never gets cut off mid-thought
+      );
+      if (out.text) {
+        const { headline, text } = parseHeadlineDigest(out.text);
         return {
-          headline: llm.headline || templateHeadline(s),
-          text: llm.text,
+          headline: headline || templateHeadline(s),
+          text,
           source: "llm",
-          model: llm.model,
+          model: out.model,
         };
       }
       return {
         headline: templateHeadline(s),
         text: templateNarrative(s),
         source: "template",
+        llmReason: out.reason,
       };
     },
     cacheKey,
@@ -437,7 +467,7 @@ export function getFactoryBriefing(
         ],
         200,
       );
-      if (llm) return { text: llm.text, source: "llm" };
+      if (llm.text) return { text: llm.text, source: "llm" };
       return { text: templateBriefing(snapshots), source: "template" };
     },
     cacheKey,
@@ -534,7 +564,7 @@ export function getLaunchSummary(s: ProjectSnapshot): Promise<LaunchSummary> {
         ],
         700,
       );
-      if (llm) {
+      if (llm.text) {
         const { overview, features } = parseLaunch(llm.text);
         if (features.length > 0) return { overview, features, source: "llm" };
       }
@@ -677,13 +707,14 @@ export function getValuation(s: ProjectSnapshot): Promise<Valuation> {
         ],
         200,
       );
-      if (llm) {
-        const exp = parseValuationNum(llm.text, "ARR_EXPECTED");
+      if (llm.text) {
+        const out = llm.text;
+        const exp = parseValuationNum(out, "ARR_EXPECTED");
         if (exp !== null) {
-          const low = parseValuationNum(llm.text, "ARR_LOW");
-          const high = parseValuationNum(llm.text, "ARR_HIGH");
+          const low = parseValuationNum(out, "ARR_LOW");
+          const high = parseValuationNum(out, "ARR_HIGH");
           const rationale =
-            llm.text.match(/RATIONALE:\s*([\s\S]+)/i)?.[1]?.trim().split("\n")[0] ?? "";
+            out.match(/RATIONALE:\s*([\s\S]+)/i)?.[1]?.trim().split("\n")[0] ?? "";
           return {
             arrLow: low ?? Math.round(exp * 0.3),
             arrExpected: exp,
