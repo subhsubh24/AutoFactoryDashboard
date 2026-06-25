@@ -48,6 +48,20 @@ const CONSERVATIVE = /conservativ|bear\b|pessimist|worst[\s-]?case|low[\s-]?case
 const OPTIMISTIC = /optimist|bull\b|best[\s-]?case|high[\s-]?case|upside|stretch|ceiling/i;
 const BASE = /\bbase\b|planning|expected|realistic|likely|central|baseline|\bmid\b/i;
 
+// Plausibility band for an indie pre-launch app's first-year ARR. A headline
+// outside this is treated as a parse failure (so a stray figure can't 10× it).
+const PLAUSIBLE_MIN = 1_000;
+const PLAUSIBLE_MAX = 500_000;
+
+/** Enforce ordering + a plausible headline; return null if the number is wild. */
+function validate(v: Valuation): Valuation | null {
+  if (!(v.arrExpected > 0)) return null;
+  const arrLow = Math.min(v.arrLow, v.arrExpected);
+  const arrHigh = Math.max(v.arrHigh, v.arrExpected);
+  if (v.arrExpected < PLAUSIBLE_MIN || v.arrExpected > PLAUSIBLE_MAX) return null;
+  return { ...v, arrLow, arrHigh };
+}
+
 type ScenarioKey = "low" | "expected" | "high";
 
 function scenarioOf(line: string): ScenarioKey | null {
@@ -121,16 +135,17 @@ export function parseBusinessCase(
   if (!content || !content.trim()) return null;
   const lines = content.replace(/\r\n/g, "\n").split("\n");
 
-  // Primary: the three-scenario ARR totals.
+  // Primary: the three labeled scenario ARR totals. If found, it's authoritative
+  // — validate (don't fall through to a looser scrape on a wild number).
   const scenarios = parseScenarios(lines, sourceUrl, asOf);
-  if (scenarios) return scenarios;
+  if (scenarios) return validate(scenarios);
 
   // Fallback (still ARR-anchored, not pricing): a single ARR total → base, with
   // a conventional ×0.3 / ×3 band.
   for (const line of lines) {
     const value = arrTotal(line);
     if (value !== null) {
-      return {
+      return validate({
         arrLow: Math.round(value * 0.3),
         arrExpected: value,
         arrHigh: Math.round(value * 3),
@@ -139,7 +154,7 @@ export function parseBusinessCase(
         source: "business_case",
         sourceUrl,
         asOf,
-      };
+      });
     }
   }
 

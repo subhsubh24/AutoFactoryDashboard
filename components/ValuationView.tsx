@@ -40,9 +40,37 @@ export function ValuationView({
   v: Valuation;
   className?: string;
 }) {
-  if (!v || v.arrExpected <= 0) return null;
+  if (!v) return null;
   const isBC = v.source === "business_case";
   const asOf = shortDate(v.asOf);
+
+  // Business case present but no plausible ARR parsed — link, never a fabricated number.
+  if (v.arrExpected <= 0) {
+    if (!isBC) return null;
+    return (
+      <div
+        className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 text-xs", className)}
+        title={VALUATION_DISCLAIMER}
+      >
+        <span className="rounded-full bg-bg px-2 py-0.5 text-[10px] font-medium text-muted">
+          business case
+        </span>
+        <span className="text-muted">unparseable — see file</span>
+        {v.sourceUrl && (
+          <a
+            href={v.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Open the business case"
+            className="text-muted transition-colors hover:text-clay"
+          >
+            <ExternalLinkIcon className="h-3 w-3" />
+          </a>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 text-xs", className)}

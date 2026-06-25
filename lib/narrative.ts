@@ -27,9 +27,10 @@ export interface Narrative {
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
-// Bump to invalidate cached narratives/briefings after a logic/format change
-// (unstable_cache entries can otherwise survive across deploys).
-const CACHE_VERSION = "v3";
+// Bump to invalidate cached narratives/briefings/valuations after a logic
+// change — unstable_cache entries otherwise survive across deploys (which is
+// why an old wrong ARR could persist even after fixing the parser).
+const CACHE_VERSION = "v4";
 
 // Google Gemini free tier — reliable, generous quota. Preferred when set.
 const GEMINI_DEFAULT_MODEL = "gemini-2.0-flash";
@@ -319,6 +320,13 @@ async function callGemini(
  * back to OpenRouter. Carries a short diagnostic reason for the UI.
  */
 async function callLLM(messages: ChatMessage[], maxTokens: number): Promise<LlmOutcome> {
+  // Never make external LLM calls during `next build` — keeps the deploy build
+  // fast and immune to API hangs/errors. ISR populates the LLM text on the
+  // first revalidation at runtime instead.
+  if (process.env.NEXT_PHASE === "phase-production-build") {
+    return { reason: "skipped during build" };
+  }
+
   const hasGemini = Boolean(process.env.GEMINI_API_KEY);
   const hasOpenRouter = Boolean(process.env.OPENROUTER_API_KEY);
   if (!hasGemini && !hasOpenRouter) return { reason: "no LLM key set" };
@@ -687,12 +695,21 @@ export function getValuation(s: ProjectSnapshot): Promise<Valuation> {
       if (bc?.available && bc.content) {
         const sourceUrl = `${s.repoUrl}/blob/${s.workingBranch}/${bc.path ?? "docs/BUSINESS_CASE.md"}`;
         const parsed = parseBusinessCase(bc.content, sourceUrl, bc.lastCommitDate);
-        if (parsed) return parsed;
+        if (parsed) {
+          console.info(
+            `[valuation] ${s.slug}: business_case base=$${parsed.arrExpected} ` +
+              `(${parsed.scenarioLabel ?? "headline"}), range $${parsed.arrLow}-$${parsed.arrHigh}, asOf=${parsed.asOf ?? "?"}`,
+          );
+          return parsed;
+        }
+        console.warn(
+          `[valuation] ${s.slug}: BUSINESS_CASE.md present but unparseable/out-of-band (asOf=${bc.lastCommitDate ?? "?"})`,
+        );
         return {
           arrLow: 0,
           arrExpected: 0,
           arrHigh: 0,
-          rationale: "Business case present, but no scenario ARR total could be parsed.",
+          rationale: "Business case present, but no plausible scenario ARR could be parsed.",
           source: "business_case",
           sourceUrl,
           asOf: bc.lastCommitDate,
