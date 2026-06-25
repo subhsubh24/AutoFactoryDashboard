@@ -37,8 +37,13 @@ function buildPhase(): boolean {
   return process.env.NEXT_PHASE === "phase-production-build";
 }
 
-// Google Gemini free tier — reliable, generous quota. Preferred when set.
-const GEMINI_DEFAULT_MODEL = "gemini-2.0-flash";
+// Google Gemini, preferred when set. The "-latest" alias auto-tracks the
+// current Flash model (Google gives a 2-week notice before swapping it), so a
+// model retirement — e.g. gemini-2.0-flash was discontinued 2026-06-01 — won't
+// silently break digests the way a pinned version does.
+const GEMINI_DEFAULT_MODEL = "gemini-flash-latest";
+// If a pinned GEMINI_MODEL is retired (404), retry once with this alias.
+const GEMINI_FALLBACK_MODEL = "gemini-flash-latest";
 // OpenRouter free model (slugs rotate / get rate-limited; used as a fallback).
 const OPENROUTER_DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
 
@@ -269,15 +274,13 @@ async function callOpenRouter(
   }
 }
 
-/** Single Google Gemini call (Generative Language REST API). */
-async function callGemini(
+/** One Gemini call against a specific model (Generative Language REST API). */
+async function geminiCall(
+  model: string,
+  apiKey: string,
   messages: ChatMessage[],
   maxTokens: number,
-): Promise<LlmOutcome> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return { reason: "no-key" };
-
-  const model = process.env.GEMINI_MODEL || GEMINI_DEFAULT_MODEL;
+): Promise<LlmOutcome & { status?: number }> {
   const system = messages.find((m) => m.role === "system")?.content;
   const user = messages
     .filter((m) => m.role === "user")
@@ -301,7 +304,7 @@ async function callGemini(
         const j = (await res.json()) as { error?: { message?: string } };
         if (j?.error?.message) detail = `: ${clipMsg(j.error.message)}`;
       } catch {}
-      return { reason: `gemini HTTP ${res.status}${detail}` };
+      return { reason: `gemini HTTP ${res.status}${detail}`, status: res.status };
     }
     const data = (await res.json()) as {
       candidates?: Array<{
@@ -318,6 +321,26 @@ async function callGemini(
   } catch (e) {
     return { reason: `gemini ${errReason(e)}` };
   }
+}
+
+/**
+ * Google Gemini call. Uses GEMINI_MODEL (or the auto-tracking default) and, if
+ * that model is retired/unknown (HTTP 404), retries once with the "-latest"
+ * alias so a pinned-version retirement self-heals instead of going dark.
+ */
+async function callGemini(
+  messages: ChatMessage[],
+  maxTokens: number,
+): Promise<LlmOutcome> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return { reason: "no-key" };
+
+  const model = process.env.GEMINI_MODEL || GEMINI_DEFAULT_MODEL;
+  const out = await geminiCall(model, apiKey, messages, maxTokens);
+  if (!out.text && out.status === 404 && model !== GEMINI_FALLBACK_MODEL) {
+    return geminiCall(GEMINI_FALLBACK_MODEL, apiKey, messages, maxTokens);
+  }
+  return out;
 }
 
 /**
