@@ -30,7 +30,7 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 // Bump to invalidate cached narratives/briefings/valuations after a logic
 // change — unstable_cache entries otherwise survive across deploys (which is
 // why an old wrong ARR could persist even after fixing the parser).
-const CACHE_VERSION = "v6";
+const CACHE_VERSION = "v7";
 
 /** True during `next build` (prerender). Used to skip external LLM calls. */
 function buildPhase(): boolean {

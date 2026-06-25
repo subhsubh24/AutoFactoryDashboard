@@ -89,6 +89,26 @@ function unquote(s: string): string {
   return s.replace(/^["']|["']$/g, "").trim();
 }
 
+/**
+ * Strip a `#` comment that sits outside quotes. Handles both a value that is
+ * purely a comment ("arr_year1:   # note" → "", so the key introduces a map)
+ * and a trailing comment ("false  # note" → "false"). A `#` inside quotes or
+ * not preceded by whitespace (e.g. a hex color) is left alone.
+ */
+function stripComment(val: string): string {
+  let inSingle = false;
+  let inDouble = false;
+  for (let i = 0; i < val.length; i++) {
+    const c = val[i];
+    if (c === "'" && !inDouble) inSingle = !inSingle;
+    else if (c === '"' && !inSingle) inDouble = !inDouble;
+    else if (c === "#" && !inSingle && !inDouble && (i === 0 || /\s/.test(val[i - 1]))) {
+      return val.slice(0, i).trim();
+    }
+  }
+  return val.trim();
+}
+
 /** Parse an inline flow map like "{conservative: 38000, base: 100100}". */
 function parseFlowMap(s: string): Record<string, string> {
   const inner = s.replace(/^\{/, "").replace(/\}.*$/, "");
@@ -117,7 +137,7 @@ function parseYamlish(body: string): Record<string, YamlValue> {
     const m = rawLine.trim().match(/^([A-Za-z0-9_]+)\s*:\s*(.*)$/);
     if (!m) continue;
     const key = m[1];
-    const val = m[2].replace(/\s+#.*$/, "").trim(); // drop trailing inline comment
+    const val = stripComment(m[2]); // drop inline comment (handles "key:  # note")
 
     if (val.startsWith("{")) {
       root[key] = parseFlowMap(val);

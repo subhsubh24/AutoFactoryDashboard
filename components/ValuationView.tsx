@@ -22,8 +22,11 @@ function shortDate(iso?: string): string | null {
 function floorNote(v: Valuation): string | null {
   if (!v.floorUsd) return null;
   const floor = formatMoney(v.floorUsd);
+  // Only inline the time if it's short & clean; long descriptions stay in the file.
+  const t = v.timeToFloor?.trim();
+  const shortTime = t && t.length <= 16 && !/[;()]/.test(t) ? t : null;
   if (v.floorMetYear1 === true) return `clears ${floor} floor in year 1`;
-  if (v.timeToFloor) return `reaches ${floor} ~${v.timeToFloor}`;
+  if (shortTime) return `reaches ${floor} ~${shortTime}`;
   if (v.floorMetYear1 === false) return `below ${floor} floor in year 1`;
   return `${floor} floor`;
 }
