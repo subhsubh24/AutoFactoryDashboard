@@ -1,9 +1,16 @@
 /**
  * docs/BUSINESS_CASE.md → Valuation.
  *
- * The autonomous loop maintains a bottoms-up business case with three scenarios
- * (conservative / base / optimistic) and explicit ARR numbers. This parser is
- * deliberately tolerant of tables, bullet lists, and headings.
+ * The autonomous loop maintains a bottoms-up business case whose "Three
+ * scenarios" block carries a final ARR total per scenario, e.g.
+ *
+ *   Scenario A — Conservative      Total MRR: $3,133  → ARR: ~$37,600/year
+ *   Scenario B — Base (planning)   Total MRR: $8,342  → ARR: ~$100,100/year ✓
+ *   Scenario C — Optimistic        Total MRR: $18,730 → ARR: ~$224,760/year
+ *
+ * We extract ONLY those scenario ARR totals (money that immediately follows the
+ * token "ARR") — never pricing ($49/mo), COGS, marketing ($103,200/yr) or
+ * competitor/TAM figures (<$1M). Conservative→low, Base→headline, Optimistic→high.
  */
 
 export interface Valuation {
@@ -11,11 +18,10 @@ export interface Valuation {
   arrExpected: number;
   arrHigh: number;
   rationale: string;
-  /** Where the number came from. */
+  /** Which scenario the headline reflects, e.g. "base case". */
+  scenarioLabel?: string;
   source: "business_case" | "llm" | "template";
-  /** Link to docs/BUSINESS_CASE.md (business_case only). */
   sourceUrl?: string;
-  /** ISO date of the business case's last commit (business_case only). */
   asOf?: string;
 }
 
@@ -26,86 +32,86 @@ function toNumber(numStr: string, suffix?: string): number {
   return Math.round(n * mult);
 }
 
-/** First plausible money figure on a line (prefers $-prefixed, then k/M-suffixed). */
-function extractMoney(line: string): number | null {
-  const dollar = [...line.matchAll(/\$\s?([\d][\d,]*(?:\.\d+)?)\s*([kKmM])?/g)];
-  if (dollar.length) {
-    const n = toNumber(dollar[0][1], dollar[0][2]);
-    if (!Number.isNaN(n)) return n;
-  }
-  const suff = [...line.matchAll(/\b([\d][\d,]*(?:\.\d+)?)\s*([kKmM])\b/g)];
-  if (suff.length) {
-    const n = toNumber(suff[0][1], suff[0][2]);
-    if (!Number.isNaN(n)) return n;
-  }
-  return null;
-}
+// Money that FOLLOWS the token "ARR" on a line — the scenario total. The
+// `[^$\n]{0,14}` allows ": ~", " ≈ ", etc., but no intervening "$" so we bind to
+// the ARR figure, not some earlier dollar amount (MRR) on the same line.
+const ARR_TOTAL_RE = /\bARR\b[^$\n]{0,14}\$\s?([\d][\d,]*(?:\.\d+)?)\s*([kKmM])?/i;
 
-/** Find an ARR figure near a scenario keyword (same line or the next few). */
-function findScenarioArr(lines: string[], re: RegExp): number | null {
-  for (let i = 0; i < lines.length; i++) {
-    if (!re.test(lines[i])) continue;
-    for (let j = i; j < Math.min(i + 4, lines.length); j++) {
-      const m = extractMoney(lines[j]);
-      if (m !== null && m > 0) return m;
-    }
-  }
-  return null;
-}
-
-function findHeadlineArr(lines: string[]): number | null {
-  for (const line of lines) {
-    if (/\b(arr|annual recurring|target|planning case|revenue|run[\s-]?rate)\b/i.test(line)) {
-      const m = extractMoney(line);
-      if (m !== null && m > 0) return m;
-    }
-  }
-  for (const line of lines) {
-    if (/\/\s*(yr|year|annum|annual)/i.test(line)) {
-      const m = extractMoney(line);
-      if (m !== null && m > 0) return m;
-    }
-  }
-  return null;
-}
-
-function clip(s: string, n: number): string {
-  return s.length > n ? `${s.slice(0, n).trim()}…` : s;
-}
-
-function cleanLine(s: string): string {
-  return s
-    .replace(/^[#>\s]*/, "")
-    .replace(/^\s*[-*+]\s+/, "")
-    .replace(/\|/g, " ")
-    .replace(/[`*_]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function findRationale(lines: string[]): string | null {
-  // Prefer an explicit assumption/driver line; then a "planning/base case" line.
-  const passes = [
-    /\bassum\w*|\bdriver\b|conversion|churn|key assumption|key driver/i,
-    /planning case|base[\s-]?case|bottoms?[\s-]?up/i,
-  ];
-  for (const re of passes) {
-    const l = lines.find((x) => re.test(x) && cleanLine(x).length > 12);
-    if (l) return clip(cleanLine(l), 180);
-  }
-  const prose = lines.find(
-    (x) => cleanLine(x).length > 24 && /[a-z]/i.test(x) && !/^#{1,6}\s/.test(x),
-  );
-  return prose ? clip(cleanLine(prose), 180) : null;
+function arrTotal(line: string): number | null {
+  const m = line.match(ARR_TOTAL_RE);
+  if (!m) return null;
+  const n = toNumber(m[1], m[2]);
+  return Number.isNaN(n) || n <= 0 ? null : n;
 }
 
 const CONSERVATIVE = /conservativ|bear\b|pessimist|worst[\s-]?case|low[\s-]?case|downside|floor/i;
-const BASE = /\bbase\b|expected|planning|realistic|\bmid\b|likely|central|baseline/i;
 const OPTIMISTIC = /optimist|bull\b|best[\s-]?case|high[\s-]?case|upside|stretch|ceiling/i;
+const BASE = /\bbase\b|planning|expected|realistic|likely|central|baseline|\bmid\b/i;
+
+type ScenarioKey = "low" | "expected" | "high";
+
+function scenarioOf(line: string): ScenarioKey | null {
+  // Conservative / optimistic are checked first; "base" is the residual.
+  if (CONSERVATIVE.test(line)) return "low";
+  if (OPTIMISTIC.test(line)) return "high";
+  if (BASE.test(line)) return "expected";
+  return null;
+}
 
 /**
- * Parse docs/BUSINESS_CASE.md into a Valuation. Returns null when no ARR figure
- * can be found (caller then falls back to the heuristic estimator).
+ * Parse the three scenario ARR totals. Each ARR-total line is tagged with the
+ * most recent scenario label seen above it; the FIRST total per scenario wins.
+ */
+function parseScenarios(
+  lines: string[],
+  sourceUrl: string,
+  asOf?: string,
+): Valuation | null {
+  let current: ScenarioKey | null = null;
+  const byLabel: Partial<Record<ScenarioKey, number>> = {};
+  const allValues: number[] = [];
+
+  for (const line of lines) {
+    const label = scenarioOf(line);
+    if (label) current = label;
+    const value = arrTotal(line);
+    if (value === null) continue;
+    allValues.push(value);
+    if (current && byLabel[current] === undefined) byLabel[current] = value;
+  }
+
+  if (allValues.length === 0) return null;
+
+  // Prefer label-mapped values; fall back to order/value only when unlabeled.
+  const sorted = [...allValues].sort((a, b) => a - b);
+  let expected = byLabel.expected;
+  if (expected === undefined) {
+    if (allValues.length >= 3) expected = sorted[Math.floor(sorted.length / 2)];
+    else if (allValues.length) expected = sorted[sorted.length - 1];
+  }
+  if (expected === undefined) return null;
+
+  let low = byLabel.low ?? sorted[0];
+  let high = byLabel.high ?? sorted[sorted.length - 1];
+  low = Math.min(low, expected);
+  high = Math.max(high, expected);
+
+  return {
+    arrLow: low,
+    arrExpected: expected,
+    arrHigh: high,
+    rationale: "Base/planning case; range shown is conservative → optimistic.",
+    scenarioLabel: "base case",
+    source: "business_case",
+    sourceUrl,
+    asOf,
+  };
+}
+
+/**
+ * Parse docs/BUSINESS_CASE.md into a Valuation from its scenario ARR totals.
+ * Returns null only when no ARR-total line can be found at all (the caller then
+ * shows no number — it never substitutes the LLM/heuristic when the file exists).
  */
 export function parseBusinessCase(
   content: string | null | undefined,
@@ -115,29 +121,27 @@ export function parseBusinessCase(
   if (!content || !content.trim()) return null;
   const lines = content.replace(/\r\n/g, "\n").split("\n");
 
-  const base = findScenarioArr(lines, BASE);
-  const cons = findScenarioArr(lines, CONSERVATIVE);
-  const opt = findScenarioArr(lines, OPTIMISTIC);
+  // Primary: the three-scenario ARR totals.
+  const scenarios = parseScenarios(lines, sourceUrl, asOf);
+  if (scenarios) return scenarios;
 
-  let arrExpected = base;
-  if (arrExpected === null) {
-    arrExpected = findHeadlineArr(lines);
-    if (arrExpected === null) return null;
+  // Fallback (still ARR-anchored, not pricing): a single ARR total → base, with
+  // a conventional ×0.3 / ×3 band.
+  for (const line of lines) {
+    const value = arrTotal(line);
+    if (value !== null) {
+      return {
+        arrLow: Math.round(value * 0.3),
+        arrExpected: value,
+        arrHigh: Math.round(value * 3),
+        rationale: "Headline ARR target from the business case.",
+        scenarioLabel: "target",
+        source: "business_case",
+        sourceUrl,
+        asOf,
+      };
+    }
   }
 
-  let arrLow = cons ?? Math.round(arrExpected * 0.3);
-  let arrHigh = opt ?? Math.round(arrExpected * 3);
-  // Keep ordering sane regardless of how the doc was written.
-  arrLow = Math.min(arrLow, arrExpected);
-  arrHigh = Math.max(arrHigh, arrExpected);
-
-  return {
-    arrLow,
-    arrExpected,
-    arrHigh,
-    rationale: findRationale(lines) ?? "Bottoms-up business case.",
-    source: "business_case",
-    sourceUrl,
-    asOf,
-  };
+  return null;
 }

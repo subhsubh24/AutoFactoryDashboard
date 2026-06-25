@@ -644,14 +644,25 @@ export function getValuation(s: ProjectSnapshot): Promise<Valuation> {
   ];
   return unstable_cache(
     async (): Promise<Valuation> => {
-      // 1) Business case is authoritative — and free (no LLM).
+      // 1) Business case is authoritative — and free (no LLM). When the file
+      //    exists we NEVER substitute the heuristic, even if parsing finds no
+      //    ARR total (we'd rather show no number than a fabricated one).
       if (bc?.available && bc.content) {
         const sourceUrl = `${s.repoUrl}/blob/${s.workingBranch}/${bc.path ?? "docs/BUSINESS_CASE.md"}`;
         const parsed = parseBusinessCase(bc.content, sourceUrl, bc.lastCommitDate);
         if (parsed) return parsed;
+        return {
+          arrLow: 0,
+          arrExpected: 0,
+          arrHigh: 0,
+          rationale: "Business case present, but no scenario ARR total could be parsed.",
+          source: "business_case",
+          sourceUrl,
+          asOf: bc.lastCommitDate,
+        };
       }
 
-      // 2) Heuristic fallback.
+      // 2) Heuristic fallback — only when BUSINESS_CASE.md is genuinely absent.
       const llm = await callLLM(
         [
           { role: "system", content: VALUATION_SYSTEM },

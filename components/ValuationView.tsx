@@ -51,6 +51,7 @@ export function ValuationView({
       <span className="font-semibold text-sage-strong">
         ~{formatMoney(v.arrExpected)}/yr
       </span>
+      {v.scenarioLabel && <span className="text-muted">{v.scenarioLabel}</span>}
       <span className="text-muted">
         range {formatMoney(v.arrLow)}–{formatMoney(v.arrHigh)}
       </span>
