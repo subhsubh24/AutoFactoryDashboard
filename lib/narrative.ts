@@ -30,7 +30,12 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 // Bump to invalidate cached narratives/briefings/valuations after a logic
 // change — unstable_cache entries otherwise survive across deploys (which is
 // why an old wrong ARR could persist even after fixing the parser).
-const CACHE_VERSION = "v4";
+const CACHE_VERSION = "v5";
+
+/** True during `next build` (prerender). Used to skip external LLM calls. */
+function buildPhase(): boolean {
+  return process.env.NEXT_PHASE === "phase-production-build";
+}
 
 // Google Gemini free tier — reliable, generous quota. Preferred when set.
 const GEMINI_DEFAULT_MODEL = "gemini-2.0-flash";
@@ -321,11 +326,9 @@ async function callGemini(
  */
 async function callLLM(messages: ChatMessage[], maxTokens: number): Promise<LlmOutcome> {
   // Never make external LLM calls during `next build` — keeps the deploy build
-  // fast and immune to API hangs/errors. ISR populates the LLM text on the
-  // first revalidation at runtime instead.
-  if (process.env.NEXT_PHASE === "phase-production-build") {
-    return { reason: "skipped during build" };
-  }
+  // fast and immune to API hangs/errors. (The UI-facing callers also short-
+  // circuit before their cache during build; this is a defensive backstop.)
+  if (buildPhase()) return { reason: "build" };
 
   const hasGemini = Boolean(process.env.GEMINI_API_KEY);
   const hasOpenRouter = Boolean(process.env.OPENROUTER_API_KEY);
@@ -346,6 +349,19 @@ async function callLLM(messages: ChatMessage[], maxTokens: number): Promise<LlmO
  * short timeout. Cached ~10 min, keyed on the metrics that would change it.
  */
 export function getNarrative(s: ProjectSnapshot): Promise<Narrative> {
+  // During `next build`, return the template directly WITHOUT caching it, so the
+  // build never persists a placeholder into the Data Cache (an SWR cache could
+  // otherwise serve that build-time template for a cycle or two after deploy).
+  // At runtime the first render is a clean cache miss → real LLM → AI digest.
+  // No llmReason: a transient build skip isn't an error worth surfacing.
+  if (buildPhase()) {
+    return Promise.resolve({
+      headline: templateHeadline(s),
+      text: templateNarrative(s),
+      source: "template",
+    });
+  }
+
   const cacheKey = [
     "afd-narrative",
     CACHE_VERSION,
@@ -449,6 +465,12 @@ export function getFactoryBriefing(
 ): Promise<FactoryBriefing> {
   const totalMerged = snapshots.reduce((n, s) => n + s.merged24h, 0);
   const needs = snapshots.reduce((n, s) => n + humanAsksFor(s).length, 0);
+
+  // See getNarrative: skip the LLM (and the cache) during build.
+  if (buildPhase()) {
+    return Promise.resolve({ text: templateBriefing(snapshots), source: "template" });
+  }
+
   const cacheKey = [
     "afd-factory-briefing",
     CACHE_VERSION,
@@ -555,6 +577,9 @@ function templateLaunch(s: ProjectSnapshot): LaunchSummary {
  * deterministic fallback; cached ~10 min.
  */
 export function getLaunchSummary(s: ProjectSnapshot): Promise<LaunchSummary> {
+  // See getNarrative: skip the LLM (and the cache) during build.
+  if (buildPhase()) return Promise.resolve(templateLaunch(s));
+
   const cacheKey = [
     "afd-launch",
     CACHE_VERSION,
@@ -677,6 +702,14 @@ function templateValuation(s: ProjectSnapshot): Valuation {
  */
 export function getValuation(s: ProjectSnapshot): Promise<Valuation> {
   const bc = s.files.businessCase;
+
+  // Build phase + no business case: the only path here is the LLM heuristic, so
+  // return the template uncached rather than persist a build placeholder. (When
+  // a business case IS present, parsing is deterministic and safe to cache.)
+  if (buildPhase() && !(bc?.available && bc.content)) {
+    return Promise.resolve(templateValuation(s));
+  }
+
   const cacheKey = [
     "afd-valuation",
     CACHE_VERSION,
