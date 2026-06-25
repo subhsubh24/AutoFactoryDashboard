@@ -135,7 +135,7 @@ function firstUnchecked(ls: string[]): string | null {
     if (inFence) continue;
     if (UNCHECKED_RE.test(line)) {
       const t = checkboxText(line);
-      if (t) return t.length > 80 ? `${t.slice(0, 80)}…` : t;
+      if (t) return t; // full text — the detail page shows it whole, no clipping
     }
   }
   return null;

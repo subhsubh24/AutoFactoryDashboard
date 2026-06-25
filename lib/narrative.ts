@@ -3,7 +3,13 @@ import type { ProjectSnapshot } from "@/lib/types";
 import { humanAsksFor } from "@/lib/aggregate";
 import { extractThemes, themeSummary } from "@/lib/themes";
 import { parseBusinessCase, type Valuation } from "@/lib/businesscase";
-import { headlinePct, kindLabel, nextMilestone, pluralize } from "@/lib/utils";
+import {
+  headlinePct,
+  kindLabel,
+  nextMilestone,
+  nextMilestoneShort,
+  pluralize,
+} from "@/lib/utils";
 
 export type { Valuation };
 
@@ -98,7 +104,8 @@ export function templateNarrative(s: ProjectSnapshot): string {
       : s.progress.buildPct !== null
         ? `Build is ${s.progress.buildPct}% complete`
         : "Roadmap progress is unmeasured";
-  const milestone = nextMilestone(s);
+  // Short label so the one-line digest never truncates mid-sentence.
+  const milestone = nextMilestoneShort(s);
   const ciClause =
     s.ci.status === "failing"
       ? ", but CI is failing"
@@ -296,7 +303,7 @@ async function llmNarrative(
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: `Write the update from these metrics:\n\n${llmContext(s)}` },
     ],
-    240,
+    320, // headroom so a 2-sentence digest never gets cut off mid-thought
   );
   if (!res) return null;
   const { headline, text } = parseHeadlineDigest(res.text);

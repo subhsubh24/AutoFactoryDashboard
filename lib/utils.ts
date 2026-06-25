@@ -146,13 +146,30 @@ export function kindLabel(kind: ProjectKind): string {
   }
 }
 
-/** The next concrete thing — first unchecked item, else the lowest-% track. */
+/** The next concrete thing — first unchecked item (full), else lowest-% track. */
 export function nextMilestone(s: ProjectSnapshot): string | null {
   if (s.progress.nextItem) return s.progress.nextItem;
   const incomplete = s.progress.tracks.filter((t) => t.pct < 100);
   if (incomplete.length === 0) return null;
   incomplete.sort((a, b) => a.pct - b.pct);
   return incomplete[0].label;
+}
+
+/**
+ * A SHORT milestone label for embedding in one-line digests — the lowest-%
+ * incomplete track ("Track A"), else a concise readiness phrase. Never a long
+ * checkbox sentence, so digests don't truncate mid-thought.
+ */
+export function nextMilestoneShort(s: ProjectSnapshot): string | null {
+  const incomplete = s.progress.tracks.filter((t) => t.pct < 100);
+  if (incomplete.length > 0) {
+    incomplete.sort((a, b) => a.pct - b.pct);
+    return incomplete[0].label;
+  }
+  if (s.progress.submissionAvailable && (s.progress.percentToSubmission ?? 0) < 100) {
+    return "the Definition of Done";
+  }
+  return null;
 }
 
 /** Headline % = submission readiness (Definition of Done), or null if unmeasured. */
