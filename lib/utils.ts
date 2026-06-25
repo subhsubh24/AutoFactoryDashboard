@@ -42,6 +42,14 @@ export function pluralize(n: number, one: string, many = `${one}s`): string {
   return n === 1 ? one : many;
 }
 
+/** Compact money, e.g. $0, $4k, $120k, $1.2M. */
+export function formatMoney(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "$0";
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
+  if (n >= 1_000) return `$${Math.round(n / 1000)}k`;
+  return `$${Math.round(n)}`;
+}
+
 export type Tone = "sage" | "amber" | "clay" | "muted";
 
 export interface ToneClasses {

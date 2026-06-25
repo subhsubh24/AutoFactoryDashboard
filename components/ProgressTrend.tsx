@@ -1,9 +1,10 @@
 import { Sparkline } from "@/components/Sparkline";
+import { cn } from "@/lib/utils";
 
 export interface ProjectTrend {
   slug: string;
   name: string;
-  /** Live current % to submission (null when there's no roadmap %). */
+  /** Live current % to launch (null when there's no roadmap %). */
   current: number | null;
   /** Historical % series, oldest → newest (gaps allowed). */
   values: Array<number | null>;
@@ -14,50 +15,58 @@ function definedValues(values: Array<number | null>): number[] {
 }
 
 /**
- * Cross-project "progress to launch over time": one row per project with the
- * live % and a sparkline of its historical % to submission. Degrades cleanly
- * with a single data point (the line fills in as the daily snapshot runs).
+ * Cross-project "progress to launch": a prominent bar per project from the live
+ * %, with a trend sparkline layered in once a couple of days of KV history
+ * exist. Always shows something useful, even with zero history.
  */
 export function ProgressTrend({ trends }: { trends: ProjectTrend[] }) {
   return (
-    <ul className="divide-y divide-hairline">
+    <ul className="space-y-5">
       {trends.map((t) => {
         const defined = definedValues(t.values);
         const delta =
           defined.length >= 2 ? defined[defined.length - 1] - defined[0] : null;
+        const pct = t.current ?? 0;
 
         return (
-          <li key={t.slug} className="flex items-center gap-3 py-3 sm:gap-4">
-            <span className="w-24 shrink-0 truncate text-sm font-medium text-ink sm:w-32">
-              {t.name}
-            </span>
-            <span className="w-11 shrink-0 text-right text-lg font-semibold tabular text-ink">
-              {t.current === null ? "—" : `${t.current}%`}
-            </span>
-            <div className="min-w-0 flex-1">
-              {defined.length > 0 ? (
+          <li key={t.slug}>
+            <div className="mb-2 flex items-baseline justify-between gap-3">
+              <span className="truncate text-sm font-medium text-ink">
+                {t.name}
+              </span>
+              <span className="flex shrink-0 items-baseline gap-2">
+                <span className="font-serif text-2xl font-medium leading-none tabular text-ink">
+                  {t.current === null ? "—" : `${t.current}%`}
+                </span>
+                {delta !== null && delta !== 0 && (
+                  <span
+                    className={cn(
+                      "text-xs font-medium tabular",
+                      delta > 0 ? "text-sage-strong" : "text-clay-strong",
+                    )}
+                  >
+                    {delta > 0 ? `▲${delta}` : `▼${Math.abs(delta)}`}
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="h-3 w-full overflow-hidden rounded-full bg-hairline">
+              <div
+                className="h-full rounded-full bg-sage transition-all"
+                style={{ width: `${Math.max(pct, 1.5)}%` }}
+              />
+            </div>
+            {defined.length >= 2 && (
+              <div className="mt-2">
                 <Sparkline
                   values={t.values}
                   tone="sage"
                   max={100}
-                  height={36}
-                  className="h-9 w-full"
+                  height={32}
+                  className="h-8 w-full"
                 />
-              ) : (
-                <span className="text-xs text-muted">no roadmap %</span>
-              )}
-            </div>
-            <span className="w-12 shrink-0 text-right text-xs tabular">
-              {delta === null ? (
-                <span className="text-muted">·</span>
-              ) : delta > 0 ? (
-                <span className="text-sage-strong">▲{delta}</span>
-              ) : delta < 0 ? (
-                <span className="text-clay-strong">▼{Math.abs(delta)}</span>
-              ) : (
-                <span className="text-muted">±0</span>
-              )}
-            </span>
+              </div>
+            )}
           </li>
         );
       })}

@@ -529,3 +529,140 @@ export function getLaunchSummary(s: ProjectSnapshot): Promise<LaunchSummary> {
     { revalidate: 600 },
   )();
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Valuation — rough estimated annual revenue (clearly speculative)
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface Valuation {
+  arrLow: number;
+  arrExpected: number;
+  arrHigh: number;
+  rationale: string;
+  source: "llm" | "template";
+}
+
+const VALUATION_SYSTEM =
+  "You are a pragmatic indie-SaaS analyst. Given a product built by an " +
+  "autonomous agent, estimate its plausible ANNUAL recurring revenue (ARR) in " +
+  "its first 12 months if launched now, in US dollars. Be realistic and " +
+  "conservative — most indie apps earn little; weight by how complete and " +
+  "monetizable it is. Use the pricing if given. Respond EXACTLY:\n" +
+  "ARR_LOW: <number>\nARR_EXPECTED: <number>\nARR_HIGH: <number>\n" +
+  "RATIONALE: <1 sentence: the key driver/assumption>\n" +
+  "Plain integers only (e.g. 12000), no $ or commas.";
+
+function priceHints(s: ProjectSnapshot): string {
+  const text = [s.files.roadmap.content, s.files.pendingOps.content]
+    .filter(Boolean)
+    .join("\n");
+  const prices = [
+    ...text.matchAll(/\$\s?\d+(?:\.\d+)?\s*\/\s*(?:mo|month|yr|year|annual)/gi),
+  ]
+    .map((m) => m[0].replace(/\s+/g, ""))
+    .slice(0, 4);
+  return [...new Set(prices)].join(", ");
+}
+
+function valuationContext(s: ProjectSnapshot): string {
+  const pct = headlinePct(s);
+  const themes = extractThemes(s.merged7dItems)
+    .slice(0, 5)
+    .map((t) => t.label)
+    .join(", ");
+  const hints = priceHints(s);
+  return [
+    `Product: ${s.displayName} (${kindLabel(s.kind)})`,
+    `Status: ${s.status}${s.readyForSubmission ? " — ready to submit" : ""}, ~${pct ?? "?"}% complete`,
+    hints ? `Pricing: ${hints}` : "Pricing: unknown (assume freemium subscription)",
+    themes ? `Focus areas: ${themes}` : "",
+    s.files.roadmap.available && s.files.roadmap.content
+      ? `Roadmap (excerpt):\n${clip(s.files.roadmap.content, 1500)}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function parseValuationNum(raw: string, label: string): number | null {
+  const m = raw.match(new RegExp(`${label}\\s*:?\\s*\\$?\\s*([\\d.,]+\\s*[kKmM]?)`, "i"));
+  if (!m) return null;
+  let str = m[1].replace(/[, ]/g, "");
+  let mult = 1;
+  if (/k$/i.test(str)) {
+    mult = 1_000;
+    str = str.replace(/k$/i, "");
+  } else if (/m$/i.test(str)) {
+    mult = 1_000_000;
+    str = str.replace(/m$/i, "");
+  }
+  const n = parseFloat(str);
+  return Number.isNaN(n) ? null : Math.round(n * mult);
+}
+
+function templateValuation(s: ProjectSnapshot): Valuation {
+  const text = [s.files.roadmap.content, s.files.pendingOps.content]
+    .filter(Boolean)
+    .join("\n");
+  const yr = [...text.matchAll(/\$\s?(\d+(?:\.\d+)?)\s*\/\s*(?:yr|year|annual)/gi)].map(
+    (m) => parseFloat(m[1]),
+  )[0];
+  const mo = [...text.matchAll(/\$\s?(\d+(?:\.\d+)?)\s*\/\s*(?:mo|month)/gi)].map((m) =>
+    parseFloat(m[1]),
+  )[0];
+  const annual = yr ?? (mo ? mo * 10 : 60); // ~$5/mo with churn ≈ $50–60/yr
+  // Scale a little by completeness; conservative first-year paying users.
+  const factor = s.readyForSubmission ? 1 : 0.5;
+  return {
+    arrLow: Math.round(annual * 25 * factor),
+    arrExpected: Math.round(annual * 150 * factor),
+    arrHigh: Math.round(annual * 800 * factor),
+    rationale: `Rough estimate from ${yr ? `$${yr}/yr` : mo ? `$${mo}/mo` : "assumed ~$5/mo"} pricing and a small first-year user base.`,
+    source: "template",
+  };
+}
+
+/**
+ * A deliberately rough estimated annual revenue for a project. LLM-backed with
+ * a pricing-derived fallback. Clearly speculative — surfaced as an estimate.
+ */
+export function getValuation(s: ProjectSnapshot): Promise<Valuation> {
+  const cacheKey = [
+    "afd-valuation",
+    CACHE_VERSION,
+    s.slug,
+    currentModel(),
+    String(headlinePct(s)),
+    String(s.readyForSubmission),
+  ];
+  return unstable_cache(
+    async (): Promise<Valuation> => {
+      const llm = await callLLM(
+        [
+          { role: "system", content: VALUATION_SYSTEM },
+          { role: "user", content: valuationContext(s) },
+        ],
+        200,
+      );
+      if (llm) {
+        const exp = parseValuationNum(llm.text, "ARR_EXPECTED");
+        if (exp !== null) {
+          const low = parseValuationNum(llm.text, "ARR_LOW");
+          const high = parseValuationNum(llm.text, "ARR_HIGH");
+          const rationale =
+            llm.text.match(/RATIONALE:\s*([\s\S]+)/i)?.[1]?.trim().split("\n")[0] ?? "";
+          return {
+            arrLow: low ?? Math.round(exp * 0.3),
+            arrExpected: exp,
+            arrHigh: high ?? Math.round(exp * 3),
+            rationale,
+            source: "llm",
+          };
+        }
+      }
+      return templateValuation(s);
+    },
+    cacheKey,
+    { revalidate: 3600 },
+  )();
+}

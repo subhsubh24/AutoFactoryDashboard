@@ -4,7 +4,9 @@ import { buildOverview, humanAsksFor, type NeedEntry } from "@/lib/aggregate";
 import {
   getNarrative,
   getFactoryBriefing,
+  getValuation,
   type Narrative,
+  type Valuation,
 } from "@/lib/narrative";
 import { getHistory, getFactoryHistory } from "@/lib/kv";
 import { estimateCompletion, formatEtaDate, formatHorizon, type Estimate } from "@/lib/estimate";
@@ -14,6 +16,7 @@ import type { ProjectSnapshot } from "@/lib/types";
 import {
   cn,
   ciMeta,
+  formatMoney,
   headlinePct,
   kindLabel,
   pluralize,
@@ -34,8 +37,8 @@ import {
   SparkleIcon,
 } from "@/components/icons";
 
-// Near-real-time without hammering the GitHub API.
-export const revalidate = 600;
+// Agents run ~every 6h, so hourly revalidation is plenty fresh.
+export const revalidate = 3600;
 
 export default async function OverviewPage() {
   const snapshots = await getAllSnapshots();
@@ -69,12 +72,23 @@ export default async function OverviewPage() {
     snapshots.map((s, i) => [s.slug, estimateCompletion(s, histories[i])]),
   );
 
-  // LLM where it's worth it: one factory briefing + one per-project digest.
-  const [briefing, narrativeEntries] = await Promise.all([
+  // LLM where it's worth it: factory briefing + per-project digest + valuation.
+  const [briefing, narrativeEntries, valuationEntries] = await Promise.all([
     getFactoryBriefing(snapshots),
     Promise.all(snapshots.map(async (s) => [s.slug, await getNarrative(s)] as const)),
+    Promise.all(snapshots.map(async (s) => [s.slug, await getValuation(s)] as const)),
   ]);
   const narratives = new Map<string, Narrative>(narrativeEntries);
+  const valuations = new Map<string, Valuation>(valuationEntries);
+
+  // Factory-level rollups: estimated annual value + average time-to-launch.
+  const factoryArr = valuationEntries.reduce((n, [, v]) => n + v.arrExpected, 0);
+  const launchDays = snapshots
+    .map((s) => etas.get(s.slug)?.daysRemaining)
+    .filter((d): d is number => typeof d === "number");
+  const avgLaunchDays = launchDays.length
+    ? Math.round(launchDays.reduce((a, b) => a + b, 0) / launchDays.length)
+    : null;
 
   return (
     <div className="animate-fade-in mx-auto max-w-3xl">
@@ -134,7 +148,7 @@ export default async function OverviewPage() {
             active · 7-day
           </span>
         </div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-4">
           <FactoryStat
             label="Throughput"
             value={String(overview.factory.throughputPerDay)}
@@ -187,10 +201,57 @@ export default async function OverviewPage() {
           <FactoryStat
             label="Build progress"
             value={overview.avgProgress === null ? "—" : `${overview.avgProgress}%`}
-            unit="avg to launch"
+            unit="avg complete"
+          />
+          <FactoryStat
+            label="Est. value"
+            value={formatMoney(factoryArr)}
+            unit="ARR · rough"
+            tone="sage"
+          />
+          <FactoryStat
+            label="Time to launch"
+            value={avgLaunchDays === null ? "—" : formatHorizon(avgLaunchDays).replace("~", "")}
+            unit="avg estimate"
           />
         </div>
       </section>
+
+      {/* 1c — Progress to launch (bars from the live %, trend layered in via KV). */}
+      <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 shadow-card">
+        <div className="mb-4 flex items-end justify-between">
+          <h2 className="text-sm font-semibold tracking-tight text-ink">
+            Progress to launch
+          </h2>
+          <span className="text-xs text-muted">
+            % complete{hasHistory ? " · trend over time" : ""}
+          </span>
+        </div>
+        <ProgressTrend trends={trends} />
+        {!hasHistory && (
+          <p className="mt-4 text-xs text-muted">
+            Connect Vercel KV (see README) to layer a trend line onto each bar.
+          </p>
+        )}
+        {hasHistory && maxHistoryLen < 2 && (
+          <p className="mt-4 text-xs text-muted">
+            First snapshot recorded — trend lines fill in as the daily snapshot runs.
+          </p>
+        )}
+      </section>
+
+      {/* 1d — Factory KPI trends over time (Vercel KV; hides without it). */}
+      {hasFactoryHistory && (
+        <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 shadow-card">
+          <div className="mb-3 flex items-end justify-between">
+            <h2 className="text-sm font-semibold tracking-tight text-ink">
+              Factory trends
+            </h2>
+            <span className="text-xs text-muted">throughput · yield · lead time</span>
+          </div>
+          <FactoryTrends metrics={factoryHistory!} />
+        </section>
+      )}
 
       {/* 2 — Only the things that genuinely need you. */}
       {asks.length > 0 && (
@@ -219,29 +280,11 @@ export default async function OverviewPage() {
               snapshot={s}
               narrative={narratives.get(s.slug)}
               eta={etas.get(s.slug) ?? null}
+              valuation={valuations.get(s.slug) ?? null}
             />
           ))}
         </div>
       </section>
-
-      {/* 4 — Progress to launch over time (Vercel KV history; hides without it). */}
-      {hasHistory && (
-        <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 shadow-card">
-          <div className="mb-2 flex items-end justify-between">
-            <h2 className="text-sm font-semibold tracking-tight text-ink">
-              Progress to launch
-            </h2>
-            <span className="text-xs text-muted">% complete · over time</span>
-          </div>
-          <ProgressTrend trends={trends} />
-          {maxHistoryLen < 2 && (
-            <p className="mt-2 text-xs text-muted">
-              First snapshot recorded — the trend line fills in as the daily
-              snapshot runs.
-            </p>
-          )}
-        </section>
-      )}
 
       {/* 5 — Weekly shipping velocity (from data we already have; no setup). */}
       <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 shadow-card">
@@ -265,20 +308,7 @@ export default async function OverviewPage() {
         )}
       </section>
 
-      {/* 6 — Factory KPI trends over time (Vercel KV; hides without it). */}
-      {hasFactoryHistory && (
-        <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 shadow-card">
-          <div className="mb-3 flex items-end justify-between">
-            <h2 className="text-sm font-semibold tracking-tight text-ink">
-              Factory trends
-            </h2>
-            <span className="text-xs text-muted">throughput · yield · lead time</span>
-          </div>
-          <FactoryTrends metrics={factoryHistory!} />
-        </section>
-      )}
-
-      {/* 7 — The detail, kept out of the way until you want it. */}
+      {/* 6 — The detail, kept out of the way until you want it. */}
       {overnightCount > 0 && (
         <details className="group rounded-2xl border border-hairline bg-card shadow-card">
           <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3.5 text-sm font-medium text-ink">
@@ -395,10 +425,12 @@ function ProjectTile({
   snapshot: s,
   narrative,
   eta,
+  valuation,
 }: {
   snapshot: ProjectSnapshot;
   narrative?: Narrative;
   eta: Estimate | null;
+  valuation: Valuation | null;
 }) {
   const status = statusMeta(s.status);
   const ci = ciMeta(s.ci.status);
@@ -492,6 +524,12 @@ function ProjectTile({
             <span className="opacity-70">({formatHorizon(eta.daysRemaining)})</span>
           </span>
         )}
+        {valuation && valuation.arrExpected > 0 && (
+          <span className="text-muted">
+            · <span className="font-medium text-sage-strong">~{formatMoney(valuation.arrExpected)}/yr</span>{" "}
+            <span className="opacity-70">est.</span>
+          </span>
+        )}
       </div>
 
       <div className="mt-auto flex items-center justify-between border-t border-hairline pt-3">
@@ -523,7 +561,7 @@ function Header({ fetchedAt }: { fetchedAt: string | null }) {
         </h1>
       </div>
       <p className="text-xs text-muted">
-        <RelativeTime iso={fetchedAt} prefix="Updated " /> · refreshes every 10m
+        <RelativeTime iso={fetchedAt} prefix="Updated " /> · refreshes hourly
       </p>
     </div>
   );

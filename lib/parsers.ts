@@ -146,6 +146,21 @@ export function extractDoneAnnotations(md: string | null | undefined): string[] 
   return [...out];
 }
 
+/**
+ * Codes the roadmap explicitly annotates as NOT done ("B4-B5 pending", "C1 in
+ * progress"). Used to keep a merely-PR-touched sub-track from counting as done
+ * when the agent says it isn't — improves accuracy of the headline %.
+ */
+export function extractPendingAnnotations(md: string | null | undefined): string[] {
+  if (!md) return [];
+  const out = new Set<string>();
+  for (const clause of md.split(/[;\n]/)) {
+    if (!NOT_DONE_RE.test(clause) || DONE_WORD_RE.test(clause)) continue;
+    for (const c of extractTrackCodes(clause)) out.add(c);
+  }
+  return [...out];
+}
+
 export function parseRoadmap(md: string | null | undefined): ProgressInfo {
   if (!md || !md.trim()) {
     return {

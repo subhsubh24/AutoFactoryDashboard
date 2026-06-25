@@ -3,13 +3,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PROJECTS, getProjectBySlug } from "@/config/projects";
 import { getProjectSnapshot } from "@/lib/github";
-import { getNarrative, getLaunchSummary } from "@/lib/narrative";
+import { getNarrative, getLaunchSummary, getValuation } from "@/lib/narrative";
 import { getHistory } from "@/lib/kv";
 import type { FeedEntry, ProjectSnapshot } from "@/lib/types";
 import {
   cn,
   describeBlock,
   formatAge,
+  formatMoney,
   headlinePct,
   kindLabel,
   nextMilestone,
@@ -40,7 +41,8 @@ import {
   SparkleIcon,
 } from "@/components/icons";
 
-export const revalidate = 600;
+// Agents run ~every 6h; hourly revalidation keeps it fresh without churn.
+export const revalidate = 3600;
 // Projects are a fixed config list — only configured slugs are valid routes;
 // anything else is a real 404.
 export const dynamicParams = false;
@@ -69,9 +71,10 @@ export default async function ProjectPage({
   if (!project) notFound();
 
   const snapshot = await getProjectSnapshot(project);
-  const [narrative, history] = await Promise.all([
+  const [narrative, history, valuation] = await Promise.all([
     getNarrative(snapshot),
     getHistory(slug),
+    getValuation(snapshot),
   ]);
   // "What the factory built" — only meaningful once flagged ready to submit.
   const launch = snapshot.readyForSubmission
@@ -260,6 +263,14 @@ export default async function ProjectPage({
             {gateTotal > 0 && (
               <span className="inline-flex items-center gap-1 rounded-full bg-bg px-2.5 py-1 text-muted">
                 Launch gate {gateDone}/{gateTotal}
+              </span>
+            )}
+            {valuation.arrExpected > 0 && (
+              <span
+                title={valuation.rationale || "Rough estimate"}
+                className="inline-flex items-center gap-1 rounded-full bg-sage-soft px-2.5 py-1 font-medium text-sage-strong"
+              >
+                ~{formatMoney(valuation.arrExpected)}/yr est. value
               </span>
             )}
           </div>

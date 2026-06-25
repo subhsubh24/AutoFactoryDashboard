@@ -4,6 +4,7 @@ import type { ProjectConfig } from "@/config/projects";
 import { PROJECTS } from "@/config/projects";
 import {
   extractDoneAnnotations,
+  extractPendingAnnotations,
   extractTrackCodes,
   finalizeProgress,
   parsePendingOps,
@@ -22,8 +23,8 @@ import type {
   RepoMeta,
 } from "@/lib/types";
 
-/** Revalidate snapshots roughly every 10 minutes (ISR). */
-export const SNAPSHOT_REVALIDATE_SECONDS = 600;
+/** Revalidate snapshots roughly hourly (agents run ~every 6h, so this is fresh). */
+export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 
 const STUCK_PR_HOURS = 12;
 const READY_TITLE = "factory: ready for submission";
@@ -552,12 +553,15 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
   //    done if the roadmap annotates it done OR a merged PR references its code.
   const progressBase = parseRoadmap(roadmapFile.content);
   const definedCodes = new Set(progressBase.subtracks.map((s) => s.code));
+  const annoDone = new Set(extractDoneAnnotations(roadmapFile.content));
+  const annoPending = new Set(extractPendingAnnotations(roadmapFile.content));
   const doneCodes = new Set<string>();
-  for (const c of [
-    ...extractDoneAnnotations(roadmapFile.content),
-    ...(pulls?.mergedCodes ?? []),
-  ]) {
-    if (definedCodes.has(c)) doneCodes.add(c);
+  for (const c of [...annoDone, ...(pulls?.mergedCodes ?? [])]) {
+    if (!definedCodes.has(c)) continue;
+    // Explicit "pending" annotation overrides a mere PR-touch (but not an
+    // explicit "done" annotation) — keeps the % honest.
+    if (annoPending.has(c) && !annoDone.has(c)) continue;
+    doneCodes.add(c);
   }
 
   const readyForSubmission = Boolean(issues?.readyIssue);

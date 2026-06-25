@@ -1,5 +1,5 @@
 import type { FeedEntry, ProjectSnapshot } from "@/lib/types";
-import type { Tone } from "@/lib/utils";
+import { pluralize, type Tone } from "@/lib/utils";
 import { extractThemes, type ThemeCount } from "@/lib/themes";
 
 export type NeedKind =
@@ -21,6 +21,8 @@ export interface NeedEntry {
   kind: NeedKind;
   /** Lower sorts first. */
   priority: number;
+  /** When a single entry collapses several sub-items (e.g. a ready checklist). */
+  count?: number;
 }
 
 export interface CIHealthSummary {
@@ -151,30 +153,23 @@ export function needsFor(s: ProjectSnapshot): NeedEntry[] {
   const out: NeedEntry[] = [];
   const tag = { projectSlug: s.slug, projectName: s.displayName };
 
-  // 1) Ready-to-ship submission checklist — the most important thing to do.
+  // 1) Ready to ship. Collapsed to ONE entry — the full submission checklist
+  //    lives on the project dashboard, not flooding the cross-project list.
   if (s.readyForSubmission) {
-    if (s.ready.checklist.length > 0) {
-      for (const item of s.ready.checklist) {
-        out.push({
-          ...tag,
-          id: `${s.slug}:ready:${item.id}`,
-          text: item.text,
-          howTo: item.howTo,
-          url: s.ready.url,
-          kind: "ready",
-          priority: KIND_PRIORITY.ready,
-        });
-      }
-    } else {
-      out.push({
-        ...tag,
-        id: `${s.slug}:ready`,
-        text: "Ready for submission — review and ship it.",
-        url: s.ready.url,
-        kind: "ready",
-        priority: KIND_PRIORITY.ready,
-      });
-    }
+    const steps = s.ready.checklist.length;
+    out.push({
+      ...tag,
+      id: `${s.slug}:ready`,
+      text: "Ready to ship — review and submit it.",
+      howTo:
+        steps > 0
+          ? `${steps} submission ${pluralize(steps, "step")} on the project dashboard.`
+          : undefined,
+      url: s.ready.url,
+      kind: "ready",
+      priority: KIND_PRIORITY.ready,
+      count: steps,
+    });
   }
 
   // 2) CI failing.
