@@ -2,15 +2,22 @@
  * docs/BUSINESS_CASE.md → Valuation.
  *
  * The autonomous loop maintains a bottoms-up business case whose "Three
- * scenarios" block carries a final ARR total per scenario, e.g.
+ * scenarios" section carries a final annual-revenue total per scenario. Repos
+ * phrase that total two ways, both supported here:
  *
- *   Scenario A — Conservative      Total MRR: $3,133  → ARR: ~$37,600/year
- *   Scenario B — Base (planning)   Total MRR: $8,342  → ARR: ~$100,100/year ✓
- *   Scenario C — Optimistic        Total MRR: $18,730 → ARR: ~$224,760/year
+ *   AptDesignerAI   Total MRR: $8,342  →  ARR: ~$100,100/year ✓
+ *   GroceryManager  | **Annual net revenue** | **$121,017** |
  *
- * We extract ONLY those scenario ARR totals (money that immediately follows the
- * token "ARR") — never pricing ($49/mo), COGS, marketing ($103,200/yr) or
- * competitor/TAM figures (<$1M). Conservative→low, Base→headline, Optimistic→high.
+ * We extract ONLY the money that immediately FOLLOWS the result token ("ARR" or
+ * "annual (net|recurring) revenue"), and ONLY within the "Three scenarios"
+ * section — never pricing ($49/mo), a monthly subtotal ($8,342 MRR), COGS,
+ * marketing ($103,200/yr), a "$100K target", or competitor/TAM figures.
+ * Conservative → low, Base → headline, Optimistic → high.
+ *
+ * If a repo's scenarios section has no machine-readable result line (e.g.
+ * HighlightMagic expresses scenarios as "time to reach $100K ARR"), we return
+ * null and the UI shows a clean "unparseable — see file" link rather than a
+ * fabricated number.
  */
 
 export interface Valuation {
@@ -32,13 +39,16 @@ function toNumber(numStr: string, suffix?: string): number {
   return Math.round(n * mult);
 }
 
-// Money that FOLLOWS the token "ARR" on a line — the scenario total. The
-// `[^$\n]{0,14}` allows ": ~", " ≈ ", etc., but no intervening "$" so we bind to
-// the ARR figure, not some earlier dollar amount (MRR) on the same line.
-const ARR_TOTAL_RE = /\bARR\b[^$\n]{0,14}\$\s?([\d][\d,]*(?:\.\d+)?)\s*([kKmM])?/i;
+// Money that FOLLOWS a result token on a line — the scenario's annual total.
+// The token is "ARR" or "annual (net|recurring) revenue"; "Monthly net revenue"
+// is intentionally NOT matched (no "annual"). The `[^$\n]{0,20}` allows ": ~",
+// " | **", "= ", etc., but no intervening "$", so we bind to the result figure
+// (the ARR / annual-revenue number), never an earlier dollar (MRR) on the line.
+const RESULT_RE =
+  /\b(?:ARR|annual\s+(?:net\s+|recurring\s+)?revenue)\b[^$\n]{0,20}\$\s?([\d][\d,]*(?:\.\d+)?)\s*([kKmM])?/i;
 
-function arrTotal(line: string): number | null {
-  const m = line.match(ARR_TOTAL_RE);
+function resultArr(line: string): number | null {
+  const m = line.match(RESULT_RE);
   if (!m) return null;
   const n = toNumber(m[1], m[2]);
   return Number.isNaN(n) || n <= 0 ? null : n;
@@ -62,6 +72,38 @@ function validate(v: Valuation): Valuation | null {
   return { ...v, arrLow, arrHigh };
 }
 
+const HEADING_RE = /^(#{1,6})\s+(.*)$/;
+
+/**
+ * Restrict parsing to the "Three scenarios" section: from the first heading
+ * whose text mentions "scenario" up to the next heading of the same or higher
+ * level. If there is no such heading, return every line (so a simpler file with
+ * a single top-level ARR figure still parses via the fallback).
+ */
+function scenariosSection(lines: string[]): string[] {
+  let start = -1;
+  let level = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(HEADING_RE);
+    if (m && /scenario/i.test(m[2])) {
+      start = i;
+      level = m[1].length;
+      break;
+    }
+  }
+  if (start === -1) return lines;
+
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    const m = lines[i].match(HEADING_RE);
+    if (m && m[1].length <= level) {
+      end = i;
+      break;
+    }
+  }
+  return lines.slice(start, end);
+}
+
 type ScenarioKey = "low" | "expected" | "high";
 
 function scenarioOf(line: string): ScenarioKey | null {
@@ -73,8 +115,9 @@ function scenarioOf(line: string): ScenarioKey | null {
 }
 
 /**
- * Parse the three scenario ARR totals. Each ARR-total line is tagged with the
- * most recent scenario label seen above it; the FIRST total per scenario wins.
+ * Parse the three scenario annual-revenue totals. Each result line is tagged
+ * with the most recent scenario label seen above it; the FIRST total per
+ * scenario wins (the headline figure precedes any marketing/profit footnotes).
  */
 function parseScenarios(
   lines: string[],
@@ -88,7 +131,7 @@ function parseScenarios(
   for (const line of lines) {
     const label = scenarioOf(line);
     if (label) current = label;
-    const value = arrTotal(line);
+    const value = resultArr(line);
     if (value === null) continue;
     allValues.push(value);
     if (current && byLabel[current] === undefined) byLabel[current] = value;
@@ -123,9 +166,10 @@ function parseScenarios(
 }
 
 /**
- * Parse docs/BUSINESS_CASE.md into a Valuation from its scenario ARR totals.
- * Returns null only when no ARR-total line can be found at all (the caller then
- * shows no number — it never substitutes the LLM/heuristic when the file exists).
+ * Parse docs/BUSINESS_CASE.md into a Valuation from its scenario annual-revenue
+ * totals. Returns null when the scenarios section has no machine-readable result
+ * line (the caller then shows a "see file" link — it never substitutes the
+ * LLM/heuristic when the business-case file exists).
  */
 export function parseBusinessCase(
   content: string | null | undefined,
@@ -135,15 +179,19 @@ export function parseBusinessCase(
   if (!content || !content.trim()) return null;
   const lines = content.replace(/\r\n/g, "\n").split("\n");
 
-  // Primary: the three labeled scenario ARR totals. If found, it's authoritative
-  // — validate (don't fall through to a looser scrape on a wild number).
-  const scenarios = parseScenarios(lines, sourceUrl, asOf);
+  // Scope to the "Three scenarios" section so we never scrape a stray figure
+  // from the revenue-model tables, marketing math, or a "$100K target" line.
+  const scoped = scenariosSection(lines);
+
+  // Primary: the labeled scenario totals. If found, it's authoritative —
+  // validate (don't fall through to a looser scrape on a wild number).
+  const scenarios = parseScenarios(scoped, sourceUrl, asOf);
   if (scenarios) return validate(scenarios);
 
-  // Fallback (still ARR-anchored, not pricing): a single ARR total → base, with
-  // a conventional ×0.3 / ×3 band.
-  for (const line of lines) {
-    const value = arrTotal(line);
+  // Fallback (still result-anchored, not pricing): a single annual-revenue total
+  // → base, with a conventional ×0.3 / ×3 band.
+  for (const line of scoped) {
+    const value = resultArr(line);
     if (value !== null) {
       return validate({
         arrLow: Math.round(value * 0.3),
