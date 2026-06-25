@@ -30,7 +30,7 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 // Bump to invalidate cached narratives/briefings/valuations after a logic
 // change — unstable_cache entries otherwise survive across deploys (which is
 // why an old wrong ARR could persist even after fixing the parser).
-const CACHE_VERSION = "v5";
+const CACHE_VERSION = "v7";
 
 /** True during `next build` (prerender). Used to skip external LLM calls. */
 function buildPhase(): boolean {
@@ -341,6 +341,61 @@ async function callLLM(messages: ChatMessage[], maxTokens: number): Promise<LlmO
     return o.text ? o : { reason: `${g.reason}; ${o.reason}` };
   }
   return callOpenRouter(messages, maxTokens);
+}
+
+export interface LlmHealth {
+  /** True when the configured provider returned text. */
+  ok: boolean;
+  provider: "gemini" | "openrouter" | "none";
+  model: string;
+  /** Whether each key is visible to this deployment (NOT the key value). */
+  geminiKey: boolean;
+  openrouterKey: boolean;
+  /** Short diagnostic reason (e.g. "ok", "no LLM key set", "gemini HTTP 400: …"). */
+  reason: string;
+  /** A snippet of the model's reply, proving it's real (when ok). */
+  sample?: string;
+  /** Human hint on how to fix a failure. */
+  hint?: string;
+}
+
+/**
+ * Live check of the configured LLM path — runs the SAME callLLM the digests
+ * use, so it reflects exactly what the deployed app can reach at runtime.
+ * Surfaced via GET /api/llm-health (auth-gated).
+ */
+export async function checkLlmHealth(): Promise<LlmHealth> {
+  const geminiKey = Boolean(process.env.GEMINI_API_KEY);
+  const openrouterKey = Boolean(process.env.OPENROUTER_API_KEY);
+  const provider = geminiKey ? "gemini" : openrouterKey ? "openrouter" : "none";
+
+  const out = await callLLM(
+    [
+      { role: "system", content: "You are a health check. Reply with a single short word." },
+      { role: "user", content: "Reply with the word OK." },
+    ],
+    16,
+  );
+  const ok = Boolean(out.text);
+
+  let hint: string | undefined;
+  if (!ok) {
+    hint =
+      provider === "none"
+        ? "No GEMINI_API_KEY / OPENROUTER_API_KEY is visible to this deployment. In Vercel, enable the variable for THIS environment (a branch deploy is 'Preview', not 'Production') and redeploy — env-var changes don't apply to existing deployments."
+        : `The ${provider} call failed (${out.reason}). 400 = bad key, 403 = API not enabled/restricted, 404 = wrong model name, 429 = quota.`;
+  }
+
+  return {
+    ok,
+    provider,
+    model: currentModel(),
+    geminiKey,
+    openrouterKey,
+    reason: out.reason,
+    sample: out.text ? clipMsg(out.text, 60) : undefined,
+    hint,
+  };
 }
 
 /**
