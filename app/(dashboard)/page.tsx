@@ -92,12 +92,10 @@ export default async function OverviewPage() {
   const bcArr = bcVals.reduce((n, [, v]) => n + v.arrExpected, 0);
   const heurArr = heurVals.reduce((n, [, v]) => n + v.arrExpected, 0);
   const factoryArr = bcArr + heurArr;
-  const launchDays = snapshots
-    .map((s) => etas.get(s.slug)?.daysRemaining)
-    .filter((d): d is number => typeof d === "number");
-  const avgLaunchDays = launchDays.length
-    ? Math.round(launchDays.reduce((a, b) => a + b, 0) / launchDays.length)
-    : null;
+
+  // Cool extras: how many of the last 7 days shipped, and the busiest day.
+  const activeDays = overview.velocity.filter((d) => d.count > 0).length;
+  const readyToShip = snapshots.filter((s) => s.readyForSubmission).length;
 
   return (
     <div className="animate-fade-in mx-auto max-w-3xl">
@@ -123,7 +121,7 @@ export default async function OverviewPage() {
       <section className="mb-5 rounded-2xl border border-hairline bg-card p-6 shadow-card sm:p-8">
         <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted">
           <RocketIcon className="h-3.5 w-3.5 text-sage" />
-          Shipped overnight
+          Shipped · last 24 hours
         </div>
         {shipped > 0 ? (
           <p className="mt-2 font-serif text-3xl font-medium leading-tight tracking-tight text-ink sm:text-4xl">
@@ -136,7 +134,7 @@ export default async function OverviewPage() {
           </p>
         ) : (
           <p className="mt-2 font-serif text-3xl font-medium leading-tight tracking-tight text-ink sm:text-4xl">
-            Quiet night
+            Quiet
             <span className="text-muted"> — nothing shipped in the last 24h</span>
           </p>
         )}
@@ -157,7 +155,7 @@ export default async function OverviewPage() {
             active · 7-day
           </span>
         </div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3">
           <FactoryStat
             label="Throughput"
             value={String(overview.factory.throughputPerDay)}
@@ -213,15 +211,22 @@ export default async function OverviewPage() {
             unit="avg complete"
           />
           <FactoryStat
+            label="Readiness"
+            value={overview.avgReady === null ? "—" : `${overview.avgReady}%`}
+            unit="avg to submission"
+            tone="sage"
+          />
+          <FactoryStat
+            label="Ready to ship"
+            value={String(readyToShip)}
+            unit={`of ${overview.factory.totalProjects} projects`}
+            tone={readyToShip > 0 ? "sage" : "muted"}
+          />
+          <FactoryStat
             label="Est. value"
             value={formatMoney(factoryArr)}
             unit="est. ARR · see note"
             tone={bcVals.length > 0 ? "sage" : "muted"}
-          />
-          <FactoryStat
-            label="Time to launch"
-            value={avgLaunchDays === null ? "—" : formatHorizon(avgLaunchDays).replace("~", "")}
-            unit="avg estimate"
           />
         </div>
         <p className="mt-4 border-t border-hairline pt-3 text-[11px] leading-relaxed text-muted">
@@ -232,6 +237,28 @@ export default async function OverviewPage() {
           heuristic ({heurVals.length}). Pre-launch estimate — the two aren&apos;t
           equivalent and this isn&apos;t a valuation.
         </p>
+      </section>
+
+      {/* 1b2 — Weekly shipping velocity (large, up top with the metrics). */}
+      <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 shadow-card sm:p-6">
+        <div className="mb-1 flex items-end justify-between">
+          <h2 className="text-sm font-semibold tracking-tight text-ink">
+            Shipping this week
+          </h2>
+          <span className="text-xs text-muted">
+            {overview.velocityTotal} {pluralize(overview.velocityTotal, "PR")} ·{" "}
+            {activeDays}/7 active days
+          </span>
+        </div>
+        {overview.velocityTotal > 0 ? (
+          <div className="mt-5">
+            <WeekBars days={overview.velocity} />
+          </div>
+        ) : (
+          <p className="py-4 text-sm text-muted">
+            Nothing merged in the last 7 days yet.
+          </p>
+        )}
       </section>
 
       {/* 1c — Progress to launch (bars from the live %, trend layered in via KV). */}
@@ -303,34 +330,12 @@ export default async function OverviewPage() {
         </div>
       </section>
 
-      {/* 5 — Weekly shipping velocity (from data we already have; no setup). */}
-      <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 shadow-card">
-        <div className="mb-1 flex items-end justify-between">
-          <h2 className="text-sm font-semibold tracking-tight text-ink">
-            Shipping this week
-          </h2>
-          <span className="text-xs text-muted">
-            {overview.velocityTotal} {pluralize(overview.velocityTotal, "PR")} ·
-            last 7 days
-          </span>
-        </div>
-        {overview.velocityTotal > 0 ? (
-          <div className="mt-4">
-            <WeekBars days={overview.velocity} />
-          </div>
-        ) : (
-          <p className="py-4 text-sm text-muted">
-            Nothing merged in the last 7 days yet.
-          </p>
-        )}
-      </section>
-
-      {/* 6 — The detail, kept out of the way until you want it. */}
+      {/* The detail, kept out of the way until you want it. */}
       {overnightCount > 0 && (
         <details className="group rounded-2xl border border-hairline bg-card shadow-card">
           <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3.5 text-sm font-medium text-ink">
             <span>
-              What shipped overnight{" "}
+              What shipped · last 24h{" "}
               <span className="text-muted">({overnightCount})</span>
             </span>
             <ArrowRightIcon className="h-4 w-4 text-muted transition-transform group-open:rotate-90" />
@@ -538,7 +543,7 @@ function ProjectTile({
           <span className="text-muted">· build {build}%</span>
         )}
         <span className="text-muted">
-          · {s.merged24h > 0 ? `${s.merged24h} shipped overnight` : "quiet overnight"}
+          · {s.merged24h > 0 ? `${s.merged24h} shipped · 24h` : "quiet · 24h"}
         </span>
         {eta && (
           <span className="text-muted">

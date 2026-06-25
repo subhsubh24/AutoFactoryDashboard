@@ -351,13 +351,13 @@ export function getNarrative(s: ProjectSnapshot): Promise<Narrative> {
 // ────────────────────────────────────────────────────────────────────────────
 
 const FACTORY_SYSTEM =
-  "You write a 2-sentence good-morning briefing for someone running several " +
+  "You write a 2-sentence status briefing for someone running several " +
   "autonomous software projects shipped by scheduled coding agents. Sentence " +
-  "one: overall momentum across all projects (lead with what shipped and what " +
-  "it focused on). Sentence two: the one or two things most worth their " +
-  "attention (a blocker, red CI, something ready to ship) — or that nothing " +
-  "needs them. Specific, warm, concise. Plain prose only: no markdown, no " +
-  "lists, no preamble.";
+  "one: overall momentum across all projects in the last 24 hours (lead with " +
+  "what shipped and what it focused on). Sentence two: the one or two things " +
+  "most worth their attention (a blocker, red CI, something ready to ship) — or " +
+  "that nothing needs them. Specific, warm, concise. Plain prose only: no " +
+  "markdown, no lists, no preamble.";
 
 function factoryContext(snapshots: ProjectSnapshot[]): string {
   return snapshots
