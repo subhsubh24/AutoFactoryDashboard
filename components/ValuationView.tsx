@@ -18,6 +18,16 @@ function shortDate(iso?: string): string | null {
   });
 }
 
+/** Small note about the revenue "floor" target, when the summary block states one. */
+function floorNote(v: Valuation): string | null {
+  if (!v.floorUsd) return null;
+  const floor = formatMoney(v.floorUsd);
+  if (v.floorMetYear1 === true) return `clears ${floor} floor in year 1`;
+  if (v.timeToFloor) return `reaches ${floor} ~${v.timeToFloor}`;
+  if (v.floorMetYear1 === false) return `below ${floor} floor in year 1`;
+  return `${floor} floor`;
+}
+
 export function SourceBadge({ source }: { source: Valuation["source"] }) {
   const isBC = source === "business_case";
   return (
@@ -43,6 +53,7 @@ export function ValuationView({
   if (!v) return null;
   const isBC = v.source === "business_case";
   const asOf = shortDate(v.asOf);
+  const note = floorNote(v);
 
   // Business case present but no plausible ARR parsed — link, never a fabricated number.
   if (v.arrExpected <= 0) {
@@ -83,6 +94,7 @@ export function ValuationView({
       <span className="text-muted">
         range {formatMoney(v.arrLow)}–{formatMoney(v.arrHigh)}
       </span>
+      {note && <span className="text-muted">· {note}</span>}
       <SourceBadge source={v.source} />
       {isBC && asOf && <span className="text-muted">as of {asOf}</span>}
       {isBC && v.sourceUrl && (

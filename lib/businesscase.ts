@@ -1,23 +1,35 @@
 /**
  * docs/BUSINESS_CASE.md → Valuation.
  *
- * The autonomous loop maintains a bottoms-up business case whose "Three
- * scenarios" section carries a final annual-revenue total per scenario. Repos
- * phrase that total two ways, both supported here:
+ * PRIMARY (authoritative): a machine-readable BUSINESS_CASE_SUMMARY block — a
+ * fenced YAML block near the top of the file — e.g.
  *
- *   AptDesignerAI   Total MRR: $8,342  →  ARR: ~$100,100/year ✓
- *   GroceryManager  | **Annual net revenue** | **$121,017** |
+ *   ```yaml
+ *   # BUSINESS_CASE_SUMMARY
+ *   arr_year1:
+ *     conservative: 42000
+ *     base: 89900
+ *     optimistic: 180000
+ *   planning_case: base
+ *   floor_usd: 100000
+ *   floor_met_year1: false
+ *   time_to_floor: yr2-3
+ *   as_of: 2026-06-25
+ *   ```
  *
- * We extract ONLY the money that immediately FOLLOWS the result token ("ARR" or
- * "annual (net|recurring) revenue"), and ONLY within the "Three scenarios"
- * section — never pricing ($49/mo), a monthly subtotal ($8,342 MRR), COGS,
- * marketing ($103,200/yr), a "$100K target", or competitor/TAM figures.
- * Conservative → low, Base → headline, Optimistic → high.
+ *   headline = arr_year1[planning_case] (default base); range = conservative →
+ *   optimistic; floor_usd / floor_met_year1 / time_to_floor drive a small note.
+ *   When the block is present it is the ONLY source — we never mix in prose.
  *
- * If a repo's scenarios section has no machine-readable result line (e.g.
- * HighlightMagic expresses scenarios as "time to reach $100K ARR"), we return
- * null and the UI shows a clean "unparseable — see file" link rather than a
- * fabricated number.
+ * FALLBACK (only when the block is absent): a tolerant scrape of the "Three
+ * scenarios" section. It anchors on the result token ("ARR" or "annual
+ * (net|recurring) revenue") with the dollar AFTER it, PREFERS an explicitly
+ * annual "$X/year" figure and REJECTS monthly "$X/month" — so a line like
+ * "ARR = $7,493 × 12 ≈ $89,900/year" reads $89,900, never the $7,493 monthly,
+ * and a marketing/COGS dollar line (no result token) is ignored entirely.
+ *
+ * Both paths apply the sanity band ($1k–$500k headline); anything outside is a
+ * parse failure, so the UI links to the file rather than show a wild number.
  */
 
 export interface Valuation {
@@ -30,6 +42,12 @@ export interface Valuation {
   source: "business_case" | "llm" | "template";
   sourceUrl?: string;
   asOf?: string;
+  /** Revenue "floor" target from the summary block (e.g. 100000), if stated. */
+  floorUsd?: number;
+  /** Whether year-1 ARR meets the floor (from the summary block). */
+  floorMetYear1?: boolean;
+  /** Human label for time to reach the floor, e.g. "yr2-3". */
+  timeToFloor?: string;
 }
 
 function toNumber(numStr: string, suffix?: string): number {
@@ -39,27 +57,18 @@ function toNumber(numStr: string, suffix?: string): number {
   return Math.round(n * mult);
 }
 
-// Money that FOLLOWS a result token on a line — the scenario's annual total.
-// The token is "ARR" or "annual (net|recurring) revenue"; "Monthly net revenue"
-// is intentionally NOT matched (no "annual"). The `[^$\n]{0,20}` allows ": ~",
-// " | **", "= ", etc., but no intervening "$", so we bind to the result figure
-// (the ARR / annual-revenue number), never an earlier dollar (MRR) on the line.
-const RESULT_RE =
-  /\b(?:ARR|annual\s+(?:net\s+|recurring\s+)?revenue)\b[^$\n]{0,20}\$\s?([\d][\d,]*(?:\.\d+)?)\s*([kKmM])?/i;
-
-function resultArr(line: string): number | null {
-  const m = line.match(RESULT_RE);
+/** Pull a positive dollar value out of a scalar like "$90,000", "90k", "89900". */
+function parseMoneyValue(raw: string | undefined): number | null {
+  if (raw == null) return null;
+  const m = String(raw).match(/([\d][\d,]*(?:\.\d+)?)\s*([kKmM])?/);
   if (!m) return null;
   const n = toNumber(m[1], m[2]);
   return Number.isNaN(n) || n <= 0 ? null : n;
 }
 
-const CONSERVATIVE = /conservativ|bear\b|pessimist|worst[\s-]?case|low[\s-]?case|downside|floor/i;
-const OPTIMISTIC = /optimist|bull\b|best[\s-]?case|high[\s-]?case|upside|stretch|ceiling/i;
-const BASE = /\bbase\b|planning|expected|realistic|likely|central|baseline|\bmid\b/i;
-
-// Plausibility band for an indie pre-launch app's first-year ARR. A headline
-// outside this is treated as a parse failure (so a stray figure can't 10× it).
+// Plausibility band for an indie pre-launch app's first-year ARR headline. A
+// headline outside this is treated as a parse failure (so a stray or typo'd
+// figure can't 10× it). The low/high ends may legitimately exceed it.
 const PLAUSIBLE_MIN = 1_000;
 const PLAUSIBLE_MAX = 500_000;
 
@@ -72,13 +81,186 @@ function validate(v: Valuation): Valuation | null {
   return { ...v, arrLow, arrHigh };
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// PRIMARY — the BUSINESS_CASE_SUMMARY block
+// ────────────────────────────────────────────────────────────────────────────
+
+function unquote(s: string): string {
+  return s.replace(/^["']|["']$/g, "").trim();
+}
+
+/** Parse an inline flow map like "{conservative: 38000, base: 100100}". */
+function parseFlowMap(s: string): Record<string, string> {
+  const inner = s.replace(/^\{/, "").replace(/\}.*$/, "");
+  const out: Record<string, string> = {};
+  for (const pair of inner.split(",")) {
+    const m = pair.match(/^\s*([A-Za-z0-9_]+)\s*:\s*(.*?)\s*$/);
+    if (m) out[m[1]] = unquote(m[2]);
+  }
+  return out;
+}
+
+type YamlValue = string | Record<string, string>;
+
+/**
+ * Minimal YAML-subset parser: flat `key: value` scalars plus one level of
+ * nesting (an indented map, or an inline `{…}` flow map). Enough for the
+ * summary block; not a general YAML parser.
+ */
+function parseYamlish(body: string): Record<string, YamlValue> {
+  const root: Record<string, YamlValue> = {};
+  let curKey: string | null = null;
+  let curIndent = -1;
+  for (const rawLine of body.split("\n")) {
+    if (!rawLine.trim() || /^\s*#/.test(rawLine)) continue; // blanks / comments
+    const indent = rawLine.length - rawLine.trimStart().length;
+    const m = rawLine.trim().match(/^([A-Za-z0-9_]+)\s*:\s*(.*)$/);
+    if (!m) continue;
+    const key = m[1];
+    const val = m[2].replace(/\s+#.*$/, "").trim(); // drop trailing inline comment
+
+    if (val.startsWith("{")) {
+      root[key] = parseFlowMap(val);
+      curKey = null;
+    } else if (val === "") {
+      root[key] = {};
+      curKey = key;
+      curIndent = indent;
+    } else if (curKey && indent > curIndent) {
+      (root[curKey] as Record<string, string>)[key] = unquote(val);
+    } else {
+      root[key] = unquote(val);
+      curKey = null;
+    }
+  }
+  return root;
+}
+
+/** Find the fenced block that carries the summary (by marker or by arr_year1). */
+function findSummaryBlock(content: string): string | null {
+  const lines = content.split("\n");
+  let open = false;
+  let info = "";
+  let body: string[] = [];
+  for (const line of lines) {
+    const fence = line.match(/^\s*(?:```|~~~)\s*(.*)$/);
+    if (fence) {
+      if (!open) {
+        open = true;
+        info = fence[1].trim();
+        body = [];
+      } else {
+        const text = body.join("\n");
+        if (
+          /business[_\s-]?case[_\s-]?summary/i.test(info) ||
+          /business_case_summary/i.test(text) ||
+          /(^|\n)\s*arr_year1\s*:/i.test(text)
+        ) {
+          return text;
+        }
+        open = false;
+      }
+      continue;
+    }
+    if (open) body.push(line);
+  }
+  return null;
+}
+
+const PLANNING_LABEL: Record<string, string> = {
+  conservative: "conservative case",
+  base: "base case",
+  optimistic: "optimistic case",
+};
+
+function parseSummaryBlock(
+  body: string,
+  sourceUrl: string,
+  asOf?: string,
+): Valuation | null {
+  const y = parseYamlish(body);
+  const arr = (typeof y.arr_year1 === "object" ? y.arr_year1 : {}) as Record<string, string>;
+
+  const conservative = parseMoneyValue(arr.conservative);
+  const base = parseMoneyValue(arr.base);
+  const optimistic = parseMoneyValue(arr.optimistic);
+
+  const planning = String(y.planning_case ?? "base").toLowerCase();
+  const headline = parseMoneyValue(arr[planning]) ?? base ?? conservative ?? optimistic;
+  if (headline == null) return null; // block present but no usable ARR
+
+  const floorMetRaw = String(y.floor_met_year1 ?? "");
+  const floorMetYear1 = /^(true|yes)$/i.test(floorMetRaw)
+    ? true
+    : /^(false|no)$/i.test(floorMetRaw)
+      ? false
+      : undefined;
+
+  return validate({
+    arrLow: conservative ?? headline,
+    arrExpected: headline,
+    arrHigh: optimistic ?? headline,
+    rationale: "From the project's BUSINESS_CASE_SUMMARY block (year-1 ARR scenarios).",
+    scenarioLabel: PLANNING_LABEL[planning] ?? "base case",
+    source: "business_case",
+    sourceUrl,
+    asOf: typeof y.as_of === "string" && y.as_of ? y.as_of : asOf,
+    floorUsd: parseMoneyValue(typeof y.floor_usd === "string" ? y.floor_usd : undefined) ?? undefined,
+    floorMetYear1,
+    timeToFloor: typeof y.time_to_floor === "string" && y.time_to_floor ? y.time_to_floor : undefined,
+  });
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// FALLBACK — tolerant scrape of the "Three scenarios" prose (no block present)
+// ────────────────────────────────────────────────────────────────────────────
+
+const RESULT_TOKEN_RE = /\b(?:ARR|annual\s+(?:net\s+|recurring\s+)?revenue)\b/i;
+const DOLLAR_RE =
+  /\$\s?([\d][\d,]*(?:\.\d+)?)\s*([kKmM])?\s*(?:\/\s*(mo|month|yr|year|annum|annual))?/gi;
+
+/**
+ * The annual result figure that FOLLOWS a result token on the line. Among the
+ * dollars after the token it prefers one explicitly tagged "/year" (so a
+ * monthly→annual line resolves to the annual figure) and rejects a lone
+ * monthly "$X/month". A bare figure (e.g. a table cell whose label already says
+ * "annual") is accepted.
+ */
+function resultArr(line: string): number | null {
+  const tok = line.match(RESULT_TOKEN_RE);
+  if (!tok) return null;
+  const after = line.slice((tok.index ?? 0) + tok[0].length);
+
+  const figures: { value: number; monthly: boolean; annual: boolean }[] = [];
+  DOLLAR_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = DOLLAR_RE.exec(after))) {
+    const value = toNumber(m[1], m[2]);
+    if (Number.isNaN(value) || value <= 0) continue;
+    const period = (m[3] ?? "").toLowerCase();
+    figures.push({
+      value,
+      monthly: /^(mo|month)$/.test(period),
+      annual: /^(yr|year|annum|annual)$/.test(period),
+    });
+  }
+  if (figures.length === 0) return null;
+  const annual = figures.find((f) => f.annual);
+  if (annual) return annual.value;
+  const nonMonthly = figures.find((f) => !f.monthly);
+  return nonMonthly ? nonMonthly.value : null;
+}
+
+const CONSERVATIVE = /conservativ|bear\b|pessimist|worst[\s-]?case|low[\s-]?case|downside|floor/i;
+const OPTIMISTIC = /optimist|bull\b|best[\s-]?case|high[\s-]?case|upside|stretch|ceiling/i;
+const BASE = /\bbase\b|planning|expected|realistic|likely|central|baseline|\bmid\b/i;
+
 const HEADING_RE = /^(#{1,6})\s+(.*)$/;
 
 /**
- * Restrict parsing to the "Three scenarios" section: from the first heading
- * whose text mentions "scenario" up to the next heading of the same or higher
- * level. If there is no such heading, return every line (so a simpler file with
- * a single top-level ARR figure still parses via the fallback).
+ * Restrict the prose scrape to the "Three scenarios" section: from the first
+ * heading mentioning "scenario" to the next heading of the same/higher level.
+ * No such heading → every line (so a simpler file still parses).
  */
 function scenariosSection(lines: string[]): string[] {
   let start = -1;
@@ -107,18 +289,12 @@ function scenariosSection(lines: string[]): string[] {
 type ScenarioKey = "low" | "expected" | "high";
 
 function scenarioOf(line: string): ScenarioKey | null {
-  // Conservative / optimistic are checked first; "base" is the residual.
   if (CONSERVATIVE.test(line)) return "low";
   if (OPTIMISTIC.test(line)) return "high";
   if (BASE.test(line)) return "expected";
   return null;
 }
 
-/**
- * Parse the three scenario annual-revenue totals. Each result line is tagged
- * with the most recent scenario label seen above it; the FIRST total per
- * scenario wins (the headline figure precedes any marketing/profit footnotes).
- */
 function parseScenarios(
   lines: string[],
   sourceUrl: string,
@@ -139,7 +315,6 @@ function parseScenarios(
 
   if (allValues.length === 0) return null;
 
-  // Prefer label-mapped values; fall back to order/value only when unlabeled.
   const sorted = [...allValues].sort((a, b) => a - b);
   let expected = byLabel.expected;
   if (expected === undefined) {
@@ -166,10 +341,9 @@ function parseScenarios(
 }
 
 /**
- * Parse docs/BUSINESS_CASE.md into a Valuation from its scenario annual-revenue
- * totals. Returns null when the scenarios section has no machine-readable result
- * line (the caller then shows a "see file" link — it never substitutes the
- * LLM/heuristic when the business-case file exists).
+ * Parse docs/BUSINESS_CASE.md into a Valuation. The summary block is
+ * authoritative when present; otherwise we fall back to the scenario prose.
+ * Returns null when nothing usable is found (the caller links to the file).
  */
 export function parseBusinessCase(
   content: string | null | undefined,
@@ -177,19 +351,20 @@ export function parseBusinessCase(
   asOf?: string,
 ): Valuation | null {
   if (!content || !content.trim()) return null;
-  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const normalized = content.replace(/\r\n/g, "\n");
 
-  // Scope to the "Three scenarios" section so we never scrape a stray figure
-  // from the revenue-model tables, marketing math, or a "$100K target" line.
-  const scoped = scenariosSection(lines);
+  // 1) Authoritative: the machine-readable summary block. If it's present we
+  //    use ONLY it (a present-but-unusable/out-of-band block → null → "see file"
+  //    link; we never silently scrape prose behind a real summary block).
+  const block = findSummaryBlock(normalized);
+  if (block !== null) return parseSummaryBlock(block, sourceUrl, asOf);
 
-  // Primary: the labeled scenario totals. If found, it's authoritative —
-  // validate (don't fall through to a looser scrape on a wild number).
+  // 2) No block: tolerant prose scrape, scoped to the scenarios section.
+  const scoped = scenariosSection(normalized.split("\n"));
   const scenarios = parseScenarios(scoped, sourceUrl, asOf);
   if (scenarios) return validate(scenarios);
 
-  // Fallback (still result-anchored, not pricing): a single annual-revenue total
-  // → base, with a conventional ×0.3 / ×3 band.
+  // Single result line → base, with a conventional ×0.3 / ×3 band.
   for (const line of scoped) {
     const value = resultArr(line);
     if (value !== null) {
@@ -197,7 +372,7 @@ export function parseBusinessCase(
         arrLow: Math.round(value * 0.3),
         arrExpected: value,
         arrHigh: Math.round(value * 3),
-        rationale: "Headline ARR target from the business case.",
+        rationale: "Headline ARR from the business case.",
         scenarioLabel: "target",
         source: "business_case",
         sourceUrl,
