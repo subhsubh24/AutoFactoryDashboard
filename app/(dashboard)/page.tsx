@@ -6,7 +6,6 @@ import {
   humanAsksFor,
   projectDelta,
   type NeedEntry,
-  type Overview,
   type ProjectDelta,
 } from "@/lib/aggregate";
 import {
@@ -135,8 +134,6 @@ export default async function OverviewPage() {
     <div className="animate-fade-in mx-auto max-w-3xl">
       <Header fetchedAt={overview.oldestFetchedAt} />
 
-      <FactoryHeadline overview={overview} />
-
       {tokenMissing && (
         <div className="mb-6 rounded-xl border border-clay/30 bg-clay-soft px-4 py-3 text-sm text-clay-strong">
           <strong className="font-semibold">No GITHUB_TOKEN set.</strong> Add a
@@ -179,31 +176,69 @@ export default async function OverviewPage() {
 
         <Verdict count={asks.length} />
 
-        {/* Since-yesterday delta — the heart of the old daily email digest. */}
-        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-hairline pt-3 text-xs">
-          <span className="font-medium uppercase tracking-wide text-muted">
-            Since yesterday
-          </span>
-          {fDelta.hasBaseline ? (
-            <>
-              <DeltaPill value={fDelta.dReadinessPct} label="readiness" unit="pts" />
-              <DeltaPill value={fDelta.dBuildPct} label="build" unit="pts" />
-              <DeltaPill
-                value={fDelta.newPendingOps}
-                label="pending ops"
-                higherIsBetter={false}
-              />
-              {fDelta.dReadinessPct === null &&
-                fDelta.dBuildPct === null &&
-                fDelta.newPendingOps === null && (
-                  <span className="text-muted/70">no change recorded</span>
+        {/* At-a-glance state + the since-yesterday delta (the old digest, folded
+            into the hero so there's one masthead, not two stacked boxes). */}
+        <div className="mt-4 space-y-1.5 border-t border-hairline pt-3 text-xs">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="text-muted">
+              CI{" "}
+              <span
+                className={cn(
+                  "tabular font-medium",
+                  overview.ci.total === 0
+                    ? "text-muted"
+                    : overview.ci.anyFailing
+                      ? "text-clay-strong"
+                      : "text-sage-strong",
                 )}
-            </>
-          ) : (
-            <span className="text-muted/70">
-              fills in once the daily snapshot records history (Vercel KV)
+              >
+                {overview.ci.passing}/{overview.ci.total}
+              </span>{" "}
+              green
             </span>
-          )}
+            {overview.closestToLaunch && (
+              <>
+                <span aria-hidden className="text-muted/40">·</span>
+                <span className="text-muted">
+                  closest to launch{" "}
+                  <Link
+                    href={`/p/${overview.closestToLaunch.slug}`}
+                    className="font-medium text-ink transition-colors hover:text-clay"
+                  >
+                    {overview.closestToLaunch.name}
+                  </Link>{" "}
+                  <span className="tabular text-sage-strong">
+                    {overview.closestToLaunch.pct}%
+                  </span>
+                </span>
+              </>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="font-medium uppercase tracking-wide text-muted">
+              Since yesterday
+            </span>
+            {fDelta.hasBaseline ? (
+              <>
+                <DeltaPill value={fDelta.dReadinessPct} label="readiness" unit="pts" />
+                <DeltaPill value={fDelta.dBuildPct} label="build" unit="pts" />
+                <DeltaPill
+                  value={fDelta.newPendingOps}
+                  label="pending ops"
+                  higherIsBetter={false}
+                />
+                {fDelta.dReadinessPct === null &&
+                  fDelta.dBuildPct === null &&
+                  fDelta.newPendingOps === null && (
+                    <span className="text-muted/70">no change recorded</span>
+                  )}
+              </>
+            ) : (
+              <span className="text-muted/70">
+                fills in once the daily snapshot records history (Vercel KV)
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Loud loop-health flags: a stalled loop, or a proposal awaiting you. */}
@@ -250,9 +285,10 @@ export default async function OverviewPage() {
         </section>
       )}
 
-      {/* 1b — Factory performance: manufacturing-style KPIs across the floor. */}
-      <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 shadow-card">
-        <div className="mb-4 flex items-end justify-between">
+      {/* 1b — Factory performance: lead with the three that matter; the rest are
+          fine print, not nine equal-weight cells. */}
+      <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 sm:p-6">
+        <div className="mb-5 flex items-end justify-between">
           <h2 className="text-sm font-semibold tracking-tight text-ink">
             Factory performance
           </h2>
@@ -261,81 +297,79 @@ export default async function OverviewPage() {
             active · 7-day
           </span>
         </div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3">
-          <FactoryStat
+
+        {/* The headline trio — momentum, readiness, value — at real scale. */}
+        <div className="grid grid-cols-3 gap-4">
+          <PrimaryStat
             label="Throughput"
             value={String(overview.factory.throughputPerDay)}
             unit="PRs / day"
           />
-          <FactoryStat
-            label="Lead time"
-            value={formatCycle(overview.factory.leadTimeHours)}
-            unit="open → merge"
+          <PrimaryStat
+            label="Readiness"
+            value={overview.avgReady === null ? "—" : `${overview.avgReady}%`}
+            unit="avg to submission"
+            tone="sage"
           />
-          <FactoryStat
+          <PrimaryStat
+            label="Est. value"
+            value={formatMoney(factoryArr)}
+            unit="annual · see note"
+            tone={bcVals.length > 0 ? "sage" : "muted"}
+          />
+        </div>
+
+        {/* Operational metrics — quieter, a single line of fine print. */}
+        <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 border-t border-hairline pt-4 text-xs">
+          <MiniStat label="Lead time" value={formatCycle(overview.factory.leadTimeHours)} />
+          <MiniStat
             label="First-pass yield"
             value={
               overview.factory.firstPassYield === null
                 ? "—"
                 : `${overview.factory.firstPassYield}%`
             }
-            unit="CI pass rate"
             tone={
               overview.factory.firstPassYield !== null &&
               overview.factory.firstPassYield < 80
                 ? "clay"
-                : "sage"
+                : undefined
             }
           />
-          <FactoryStat
+          <MiniStat
             label="Rework"
             value={
               overview.factory.reworkRate === null
                 ? "—"
                 : `${overview.factory.reworkRate}%`
             }
-            unit="fix PRs"
             tone={
               overview.factory.reworkRate !== null && overview.factory.reworkRate > 40
                 ? "clay"
-                : "muted"
+                : undefined
             }
           />
-          <FactoryStat
+          <MiniStat
             label="WIP"
-            value={String(overview.factory.wipOpen)}
-            unit={
+            value={
               overview.factory.wipStuck > 0
-                ? `open · ${overview.factory.wipStuck} stuck`
-                : "open PRs"
+                ? `${overview.factory.wipOpen} · ${overview.factory.wipStuck} stuck`
+                : String(overview.factory.wipOpen)
             }
-            tone={overview.factory.wipStuck > 0 ? "clay" : "muted"}
+            tone={overview.factory.wipStuck > 0 ? "clay" : undefined}
           />
-          <FactoryStat
-            label="Build progress"
+          <MiniStat
+            label="Build"
             value={overview.avgProgress === null ? "—" : `${overview.avgProgress}%`}
-            unit="avg complete"
           />
-          <FactoryStat
-            label="Readiness"
-            value={overview.avgReady === null ? "—" : `${overview.avgReady}%`}
-            unit="avg to submission"
-            tone="sage"
-          />
-          <FactoryStat
+          <MiniStat
             label="Ready to ship"
-            value={String(readyToShip)}
-            unit={`of ${overview.factory.totalProjects} projects`}
-            tone={readyToShip > 0 ? "sage" : "muted"}
-          />
-          <FactoryStat
-            label="Est. value"
-            value={formatMoney(factoryArr)}
-            unit="est. ARR · see note"
-            tone={bcVals.length > 0 ? "sage" : "muted"}
+            value={`${readyToShip}/${overview.factory.totalProjects}`}
+            tone={readyToShip > 0 ? "sage" : undefined}
           />
         </div>
-        <p className="mt-4 border-t border-hairline pt-3 text-[11px] leading-relaxed text-muted">
+
+        <p className="mt-4 text-[11px] leading-relaxed text-muted">
           Estimated annual value {formatMoney(factoryArr)} ={" "}
           <span className="text-sage-strong">{formatMoney(bcArr)}</span> from{" "}
           {bcVals.length} business {pluralize(bcVals.length, "case")} +{" "}
@@ -346,7 +380,7 @@ export default async function OverviewPage() {
       </section>
 
       {/* 1b2 — Weekly shipping velocity (large, up top with the metrics). */}
-      <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 shadow-card sm:p-6">
+      <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 sm:p-6">
         <div className="mb-1 flex items-end justify-between">
           <h2 className="text-sm font-semibold tracking-tight text-ink">
             Shipping this week
@@ -368,7 +402,7 @@ export default async function OverviewPage() {
       </section>
 
       {/* 1c — Progress to launch (bars from the live %, trend layered in via KV). */}
-      <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 shadow-card">
+      <section className="mb-6 rounded-2xl border border-hairline bg-card p-5">
         <div className="mb-4 flex items-end justify-between">
           <h2 className="text-sm font-semibold tracking-tight text-ink">
             Progress to launch
@@ -392,7 +426,7 @@ export default async function OverviewPage() {
 
       {/* 1d — Factory KPI trends over time (Vercel KV; hides without it). */}
       {hasFactoryHistory && (
-        <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 shadow-card">
+        <section className="mb-6 rounded-2xl border border-hairline bg-card p-5">
           <div className="mb-3 flex items-end justify-between">
             <h2 className="text-sm font-semibold tracking-tight text-ink">
               Factory trends
@@ -426,7 +460,7 @@ export default async function OverviewPage() {
 
       {/* The detail, kept out of the way until you want it. */}
       {overnightCount > 0 && (
-        <details className="group rounded-2xl border border-hairline bg-card shadow-card">
+        <details className="group rounded-2xl border border-hairline bg-card">
           <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3.5 text-sm font-medium text-ink">
             <span>
               What shipped · last 24h{" "}
@@ -443,79 +477,54 @@ export default async function OverviewPage() {
   );
 }
 
-/** A single factory-performance KPI cell. */
-function FactoryStat({
+/** A headline factory KPI — larger, for the primary trio. */
+function PrimaryStat({
   label,
   value,
   unit,
-  tone = "muted",
+  tone = "ink",
 }: {
   label: string;
   value: string;
   unit: string;
-  tone?: "sage" | "clay" | "muted";
+  tone?: "ink" | "sage" | "muted";
 }) {
   const color =
-    tone === "clay" ? "text-clay-strong" : tone === "sage" ? "text-sage-strong" : "text-ink";
+    tone === "sage" ? "text-sage-strong" : tone === "muted" ? "text-muted" : "text-ink";
   return (
     <div>
       <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
         {label}
       </p>
-      <p className={cn("mt-1 font-serif text-2xl font-medium leading-none tabular", color)}>
+      <p
+        className={cn(
+          "mt-1 font-serif text-[26px] font-medium leading-none tabular sm:text-3xl",
+          color,
+        )}
+      >
         {value}
       </p>
-      <p className="mt-1 truncate text-[11px] text-muted">{unit}</p>
+      <p className="mt-1.5 truncate text-[11px] text-muted">{unit}</p>
     </div>
   );
 }
 
-/** One-line factory headline at the very top — the 3-second glance. */
-function FactoryHeadline({ overview }: { overview: Overview }) {
-  const { totalMerged24h, needs, ci, closestToLaunch } = overview;
-  const ciTone =
-    ci.total === 0 ? "text-muted" : ci.anyFailing ? "text-clay-strong" : "text-sage-strong";
+/** A quiet operational metric — inline "label value" fine print. */
+function MiniStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "sage" | "clay";
+}) {
+  const color =
+    tone === "clay" ? "text-clay-strong" : tone === "sage" ? "text-sage-strong" : "text-ink";
   return (
-    <div className="mb-5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-xl border border-hairline bg-card px-4 py-3 text-sm shadow-card">
-      <span>
-        <span className="font-semibold tabular text-ink">{totalMerged24h}</span>{" "}
-        <span className="text-muted">{pluralize(totalMerged24h, "PR")} shipped · 24h</span>
-      </span>
-      <Sep />
-      <span className={needs.length > 0 ? "font-medium text-clay-strong" : "text-muted"}>
-        <span className="tabular">{needs.length}</span>{" "}
-        {needs.length === 1 ? "item needs you" : "items need you"}
-      </span>
-      <Sep />
-      <span className="text-muted">
-        CI{" "}
-        <span className={cn("tabular font-medium", ciTone)}>
-          {ci.passing}/{ci.total}
-        </span>
-      </span>
-      {closestToLaunch && (
-        <>
-          <Sep />
-          <span className="text-muted">
-            closest to launch{" "}
-            <Link
-              href={`/p/${closestToLaunch.slug}`}
-              className="font-medium text-ink transition-colors hover:text-clay"
-            >
-              {closestToLaunch.name}
-            </Link>{" "}
-            <span className="tabular text-sage-strong">{closestToLaunch.pct}%</span>
-          </span>
-        </>
-      )}
-    </div>
-  );
-}
-
-function Sep() {
-  return (
-    <span aria-hidden className="text-muted/40">
-      ·
+    <span className="inline-flex items-baseline gap-1.5">
+      <span className="text-muted">{label}</span>
+      <span className={cn("tabular font-medium", color)}>{value}</span>
     </span>
   );
 }
