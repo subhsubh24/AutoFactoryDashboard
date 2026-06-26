@@ -220,6 +220,7 @@ export default async function ProjectPage({
       {launch && (
         <div className="mb-6">
           <SectionCard
+            elevated
             title="What the factory built"
             subtitle="Overview & shipped features"
             aside={
@@ -307,9 +308,8 @@ export default async function ProjectPage({
               )}
             </div>
           )}
-          <p className="mt-3 border-t border-hairline pt-3 text-xs leading-relaxed text-muted">
-            Completeness and readiness measure how much is built; the ARR estimate
-            measures potential revenue — they are different axes.
+          <p className="mt-3 border-t border-hairline pt-3 text-xs text-muted">
+            Completeness, readiness, and value are three separate axes — not one score.
           </p>
           {blockReason && (
             <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-clay-soft px-2.5 py-1 text-xs font-medium text-clay-strong">
@@ -395,7 +395,7 @@ export default async function ProjectPage({
           )}
 
           <SectionCard title="Today (live)" subtitle="Right now on the working branch">
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-x-5 gap-y-3.5 rounded-xl bg-bg px-4 py-4 sm:grid-cols-2">
               <LiveStat
                 icon={<MergeIcon className="h-4 w-4" />}
                 label="Merged today"
@@ -406,7 +406,7 @@ export default async function ProjectPage({
                 label="Commits (25h)"
                 value={snapshot.commitsToday ?? "—"}
               />
-              <div className="flex items-center justify-between rounded-xl border border-hairline bg-bg px-3.5 py-3">
+              <div className="flex items-center justify-between">
                 <span className="flex items-center gap-2 text-sm text-muted">
                   <span className="text-muted">CI</span>
                 </span>
@@ -495,10 +495,10 @@ export default async function ProjectPage({
                 Definition of Done section.)
               </p>
             )}
-            <p className="mt-4 border-t border-hairline pt-3 text-xs leading-relaxed text-muted">
-              Build completeness (above) is how much is built; submission
-              readiness ({prog.submissionAvailable ? `${pct}%` : "unmeasured"}) is
-              the Definition-of-Done stop gate. They are not the same number.
+            <p className="mt-4 border-t border-hairline pt-3 text-xs text-muted">
+              Build completeness is distinct from submission readiness (
+              {prog.submissionAvailable ? `${pct}%` : "unmeasured"}) — the
+              Definition-of-Done gate.
             </p>
           </SectionCard>
 
@@ -679,7 +679,7 @@ function QualityStat({
   const color =
     tone === "clay" ? "text-clay-strong" : tone === "sage" ? "text-sage-strong" : "text-ink";
   return (
-    <div className="rounded-xl border border-hairline bg-bg px-3.5 py-3">
+    <div>
       <p className={cn("text-xl font-semibold tabular", color)}>{value}</p>
       <p className="mt-0.5 text-xs text-muted">{label}</p>
     </div>
@@ -700,7 +700,7 @@ function LiveStat({
   accent?: "clay";
 }) {
   return (
-    <div className="flex items-center justify-between rounded-xl border border-hairline bg-bg px-3.5 py-3">
+    <div className="flex items-center justify-between">
       <span className="flex items-center gap-2 text-sm text-muted">
         <span className="text-muted">{icon}</span>
         {label}

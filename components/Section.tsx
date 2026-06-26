@@ -1,6 +1,10 @@
 import { cn } from "@/lib/utils";
 
-/** Card with a hairline header — the standard content container. */
+/**
+ * Card with a hairline header — the standard content container. Flat
+ * (border-only) by default so elevation can mean something; pass `elevated` for
+ * a focal moment that should lift off the page.
+ */
 export function SectionCard({
   title,
   subtitle,
@@ -9,6 +13,7 @@ export function SectionCard({
   className,
   bodyClassName,
   headerClassName,
+  elevated = false,
 }: {
   title: React.ReactNode;
   subtitle?: React.ReactNode;
@@ -17,9 +22,10 @@ export function SectionCard({
   className?: string;
   bodyClassName?: string;
   headerClassName?: string;
+  elevated?: boolean;
 }) {
   return (
-    <section className={cn("card overflow-hidden shadow-card", className)}>
+    <section className={cn("card overflow-hidden", elevated && "shadow-card", className)}>
       <header
         className={cn(
           "flex items-center justify-between gap-3 border-b border-hairline px-5 py-3.5",
