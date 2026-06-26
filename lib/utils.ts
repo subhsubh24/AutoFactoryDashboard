@@ -1,4 +1,4 @@
-import type { CIStatus, ProjectSnapshot, ProjectStatus } from "@/lib/types";
+import type { CIStatus, Liveness, ProjectSnapshot, ProjectStatus } from "@/lib/types";
 import type { ProjectKind } from "@/config/projects";
 
 /** Join class names, dropping falsy values. */
@@ -170,6 +170,32 @@ export function nextMilestoneShort(s: ProjectSnapshot): string | null {
     return "the Definition of Done";
   }
   return null;
+}
+
+export interface LivenessMeta {
+  label: string;
+  tone: Tone;
+  /** Pulse the dot when the loop is actively shipping. */
+  pulse: boolean;
+}
+
+/** Liveness → a label + tone for the green/amber/red "is it running?" dot. */
+export function livenessMeta(l: Liveness): LivenessMeta {
+  const ago = l.hoursSinceShip === null ? null : formatAge(l.hoursSinceShip);
+  switch (l.level) {
+    case "fresh":
+      return { label: ago ? `shipped ${ago} ago` : "shipping", tone: "sage", pulse: true };
+    case "slow":
+      return { label: ago ? `${ago} since a ship` : "slowing", tone: "amber", pulse: false };
+    case "stalled":
+      return {
+        label: ago ? `stalled · ${ago} since a ship` : "may be stalled",
+        tone: "clay",
+        pulse: false,
+      };
+    default:
+      return { label: "no recent ship", tone: "muted", pulse: false };
+  }
 }
 
 /** Headline % = submission readiness (Definition of Done), or null if unmeasured. */

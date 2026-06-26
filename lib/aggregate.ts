@@ -1,4 +1,5 @@
 import type { FeedEntry, ProjectSnapshot } from "@/lib/types";
+import type { DailyMetric } from "@/lib/kv";
 import { pluralize, type Tone } from "@/lib/utils";
 import { extractThemes, type ThemeCount } from "@/lib/themes";
 
@@ -57,9 +58,97 @@ export interface Overview {
   avgReady: number | null;
   /** Manufacturing-style performance KPIs across the whole factory. */
   factory: FactoryMetrics;
+  /** The project nearest submission — highest readiness % (ready = 100). */
+  closestToLaunch: { slug: string; name: string; pct: number } | null;
   /** Oldest "fetchedAt" across snapshots — drives the "updated x ago" stamp. */
   oldestFetchedAt: string | null;
   anyPartial: boolean;
+}
+
+/**
+ * The day-over-day delta — the digest's real value. Compares the live snapshot
+ * to the most recent KV metric from BEFORE today (the ~24h-ago baseline).
+ */
+export interface ProjectDelta {
+  /** Whether a pre-today baseline exists (else deltas are null). */
+  hasBaseline: boolean;
+  baselineDate: string | null;
+  shipped24h: number;
+  /** current − baseline, in points; null when either side is unmeasured. */
+  dBuildPct: number | null;
+  dReadinessPct: number | null;
+  /** current − baseline open PENDING_OPS items; null without history. */
+  newPendingOps: number | null;
+}
+
+export interface FactoryDelta {
+  hasBaseline: boolean;
+  shipped24h: number;
+  dBuildPct: number | null;
+  dReadinessPct: number | null;
+  newPendingOps: number | null;
+}
+
+/** Most recent recorded metric from a day before today (UTC) — the baseline. */
+function baselineMetric(history: DailyMetric[] | null): DailyMetric | null {
+  if (!history || history.length === 0) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].date < today) return history[i];
+  }
+  return null;
+}
+
+/** Day-over-day delta for one project (live snapshot vs ~24h-ago KV baseline). */
+export function projectDelta(
+  s: ProjectSnapshot,
+  history: DailyMetric[] | null,
+): ProjectDelta {
+  const base = baselineMetric(history);
+  const sub = (cur: number | null, prev: number | null | undefined): number | null =>
+    cur === null || prev === null || prev === undefined ? null : cur - prev;
+  return {
+    hasBaseline: base !== null,
+    baselineDate: base?.date ?? null,
+    shipped24h: s.merged24h,
+    dBuildPct: base ? sub(s.progress.buildPct, base.buildPct ?? null) : null,
+    dReadinessPct: base ? sub(s.progress.percentToSubmission, base.pct) : null,
+    newPendingOps:
+      base && base.pendingOps !== undefined
+        ? s.actionItems.items.length - base.pendingOps
+        : null,
+  };
+}
+
+/** Aggregate per-project deltas into a factory-wide delta. */
+export function factoryDelta(deltas: ProjectDelta[]): FactoryDelta {
+  const avg = (xs: (number | null)[]): number | null => {
+    const v = xs.filter((n): n is number => n !== null);
+    return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null;
+  };
+  const pendings = deltas
+    .map((d) => d.newPendingOps)
+    .filter((n): n is number => n !== null);
+  return {
+    hasBaseline: deltas.some((d) => d.hasBaseline),
+    shipped24h: deltas.reduce((n, d) => n + d.shipped24h, 0),
+    dBuildPct: avg(deltas.map((d) => d.dBuildPct)),
+    dReadinessPct: avg(deltas.map((d) => d.dReadinessPct)),
+    newPendingOps: pendings.length ? pendings.reduce((a, b) => a + b, 0) : null,
+  };
+}
+
+/** The project nearest submission (highest readiness %, ready = 100). */
+function closestToLaunch(
+  snapshots: ProjectSnapshot[],
+): Overview["closestToLaunch"] {
+  let best: Overview["closestToLaunch"] = null;
+  for (const s of snapshots) {
+    const pct = s.readyForSubmission ? 100 : s.progress.percentToSubmission;
+    if (pct === null) continue;
+    if (!best || pct > best.pct) best = { slug: s.slug, name: s.displayName, pct };
+  }
+  return best;
 }
 
 /**
@@ -352,6 +441,7 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
     avgProgress,
     avgReady,
     factory,
+    closestToLaunch: closestToLaunch(snapshots),
     oldestFetchedAt,
     anyPartial: snapshots.some((s) => s.partial),
   };

@@ -1,7 +1,9 @@
 import type {
   ActionItem,
   ActionItemsInfo,
+  LoopMemoryHealth,
   ProgressInfo,
+  ReadyEvidence,
   TrackProgress,
 } from "@/lib/types";
 
@@ -529,6 +531,146 @@ export function parseReadyChecklist(
   }
 
   return out;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// loop-memory.md → latest DEEP AUDIT (the loop auditing itself)
+// ────────────────────────────────────────────────────────────────────────────
+
+const ISO_DATE_RE = /\b(20\d{2}-\d{2}-\d{2})\b/;
+
+/**
+ * Find the most recent "DEEP AUDIT" entry in loop-memory. Order-independent:
+ * picks the line with the latest date (tie-break: a completed audit over a
+ * "not due"/"skipped"/"overdue" note), so it works whether the file is written
+ * oldest- or newest-first.
+ */
+export function parseLoopMemory(md: string | null | undefined): LoopMemoryHealth {
+  if (md === null || md === undefined) {
+    return { available: false, hasAudit: false, reason: "loop-memory not found" };
+  }
+  if (!md.trim()) {
+    return { available: true, hasAudit: false, note: "loop-memory is empty." };
+  }
+
+  type Hit = { date?: string; note: string; completed: boolean; idx: number };
+  let best: Hit | null = null;
+  const ls = lines(md);
+  for (let i = 0; i < ls.length; i++) {
+    const line = ls[i];
+    if (!/deep\s*audit/i.test(line)) continue;
+    const date = ISO_DATE_RE.exec(line)?.[1];
+    const completed =
+      /\b(complete|completed|performed|ran|done|clean)\b/i.test(line) &&
+      !/\bnot\s+(due|run)\b|skip|overdue|due\b/i.test(line);
+    const note = clip(stripMarkdown(line), 150);
+    const hit: Hit = { date, note, completed, idx: i };
+    if (!best || isMoreRecent(hit, best)) best = hit;
+  }
+
+  if (!best) {
+    return { available: true, hasAudit: false, note: "No DEEP AUDIT recorded yet." };
+  }
+  return {
+    available: true,
+    hasAudit: true,
+    lastAuditDate: best.date,
+    note: best.note,
+  };
+}
+
+function isMoreRecent(
+  a: { date?: string; completed: boolean; idx: number },
+  b: { date?: string; completed: boolean; idx: number },
+): boolean {
+  // Prefer the later date; if equal/absent, prefer a completed audit; else the
+  // line later in the file (assumed newer).
+  if (a.date && b.date && a.date !== b.date) return a.date > b.date;
+  if (a.date && !b.date) return true;
+  if (!a.date && b.date) return false;
+  if (a.completed !== b.completed) return a.completed;
+  return a.idx > b.idx;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Ready-issue body → readiness evidence (pre-flight pass + auditor findings)
+// ────────────────────────────────────────────────────────────────────────────
+
+// "37 PASS / 2 WARN / 0 FAIL" or "37 PASS, 0 FAIL" etc.
+const PREFLIGHT_COUNTS_RE =
+  /(\d+)\s*PASS(?:[^.\n]*?(\d+)\s*WARN)?[^.\n]*?(\d+)\s*FAIL/i;
+
+/**
+ * Pull the readiness proof out of the ready-issue body: whether pre-flight
+ * passed (+ its PASS/WARN/FAIL summary) and short auditor findings. Tolerant —
+ * everything is optional, so a sparse body just yields fewer fields.
+ */
+export function parseReadyEvidence(
+  body: string | null | undefined,
+): ReadyEvidence {
+  const empty: ReadyEvidence = {
+    preflightPassed: null,
+    auditorCount: null,
+    auditorFindings: [],
+  };
+  if (!body || !body.trim()) return empty;
+  const ls = lines(body);
+
+  // ── Pre-flight ──────────────────────────────────────────────────────────
+  let preflightPassed: boolean | null = null;
+  let preflightSummary: string | undefined;
+  const counts = PREFLIGHT_COUNTS_RE.exec(body);
+  if (counts) {
+    const fail = Number(counts[3]);
+    preflightPassed = fail === 0;
+    preflightSummary = counts[2]
+      ? `${counts[1]} PASS / ${counts[2]} WARN / ${counts[3]} FAIL`
+      : `${counts[1]} PASS / ${counts[3]} FAIL`;
+  } else if (/pre-?flight[^\n]*\b(pass|passed|green|exit\s*0|✅|0\s*fail)\b/i.test(body)) {
+    preflightPassed = true;
+  } else if (/pre-?flight[^\n]*\b(fail|failed|red|non-?zero|❌)\b/i.test(body)) {
+    preflightPassed = false;
+  }
+
+  // ── Auditors ────────────────────────────────────────────────────────────
+  let auditorCount: number | null = null;
+  const countMatch =
+    /\b(\d+)\s+(?:independent\s+|adversarial\s+|fresh\s+)*auditors?\b/i.exec(body) ||
+    /\bauditors?\b[^.\n]*?\b(\d+)\b/i.exec(body);
+  if (countMatch) {
+    const n = Number(countMatch[1]);
+    if (n > 0 && n < 50) auditorCount = n;
+  }
+
+  // Findings: bullet lines under an audit/auditor/findings/verified heading.
+  const findings: string[] = [];
+  let inAuditScope = false;
+  let inFence = false;
+  for (const line of ls) {
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    const h = HEADING_RE.exec(line);
+    if (h) {
+      inAuditScope = /audit|auditor|finding|verifi|gate\s*2/i.test(h[2]);
+      continue;
+    }
+    if (!inAuditScope) continue;
+    if (isBullet(line)) {
+      const t = clip(stripMarkdown(stripBullet(line)), 140);
+      if (t.length > 3) findings.push(t);
+    }
+    if (findings.length >= 5) break;
+  }
+
+  return {
+    preflightPassed,
+    preflightSummary,
+    auditorCount,
+    auditorFindings: findings,
+  };
 }
 
 // ────────────────────────────────────────────────────────────────────────────

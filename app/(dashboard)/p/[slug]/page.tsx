@@ -5,6 +5,7 @@ import { PROJECTS, getProjectBySlug } from "@/config/projects";
 import { getProjectSnapshot } from "@/lib/github";
 import { getNarrative, getLaunchSummary, getValuation } from "@/lib/narrative";
 import { getHistory } from "@/lib/kv";
+import { projectDelta } from "@/lib/aggregate";
 import type { FeedEntry, ProjectSnapshot } from "@/lib/types";
 import {
   cn,
@@ -12,6 +13,7 @@ import {
   formatAge,
   headlinePct,
   kindLabel,
+  livenessMeta,
   nextMilestone,
   pluralize,
   toneClasses,
@@ -30,14 +32,21 @@ import { ActionItemsPanel } from "@/components/ActionItemsPanel";
 import { CIHealth } from "@/components/CIHealth";
 import { HistoryCharts } from "@/components/HistoryCharts";
 import { RelativeTime } from "@/components/RelativeTime";
+import { Delta24h } from "@/components/Delta";
+import { LivenessDot } from "@/components/LivenessDot";
+import { ReadinessGatesView } from "@/components/ReadinessGates";
+import { ReadyEvidenceView } from "@/components/ReadyEvidence";
 import {
+  AlertIcon,
   ArrowLeftIcon,
   CheckIcon,
+  ClockIcon,
   ExternalLinkIcon,
   GitCommitIcon,
   MergeIcon,
   PullRequestIcon,
   RocketIcon,
+  ShieldIcon,
   SparkleIcon,
 } from "@/components/icons";
 
@@ -91,6 +100,12 @@ export default async function ProjectPage({
   const quality = qualitySignals(snapshot.merged7dItems, snapshot.ci);
   const eta = estimateCompletion(snapshot, history);
   const prog = snapshot.progress;
+  const delta = projectDelta(snapshot, history);
+  const fileHref = (path?: string): string | undefined =>
+    path ? `${snapshot.repoUrl}/blob/${snapshot.workingBranch}/${path}` : undefined;
+  const preflightUrl = snapshot.files.preflight.available
+    ? fileHref("scripts/preflight.sh")
+    : undefined;
 
   const projectFeed: FeedEntry[] = snapshot.merged7dItems.map((pr) => ({
     ...pr,
@@ -170,9 +185,16 @@ export default async function ProjectPage({
             <h2 className="font-serif text-lg font-medium">Ready for submission</h2>
           </div>
           <p className="mt-1 text-sm text-ink">
-            The agent flagged this project ready to ship. Here&apos;s the
-            human-core checklist to take it over the line.
+            The agent flagged this project ready to ship — it cleared the
+            mechanical pre-flight and an adversarial readiness audit. The proof
+            is below; the human-core checklist takes it over the line.
           </p>
+          {snapshot.readyEvidence && (
+            <ReadyEvidenceView
+              evidence={snapshot.readyEvidence}
+              issueUrl={snapshot.ready.url}
+            />
+          )}
           <div className="mt-4">
             {snapshot.ready.checklist.length > 0 ? (
               <ActionItemsPanel
@@ -341,6 +363,14 @@ export default async function ProjectPage({
             <p className="text-[15px] leading-relaxed text-ink">
               {narrative.text}
             </p>
+            <Delta24h
+              className="mt-3"
+              shipped={delta.shipped24h}
+              dBuildPct={delta.dBuildPct}
+              dReadinessPct={delta.dReadinessPct}
+              newPendingOps={delta.newPendingOps}
+              hasBaseline={delta.hasBaseline}
+            />
             <div className="mt-5 border-t border-hairline pt-4">
               <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">
                 {shipped24h.length > 0
@@ -514,6 +544,23 @@ export default async function ProjectPage({
 
         {/* Sidebar */}
         <div className="space-y-6">
+          {!snapshot.readyForSubmission && (
+            <SectionCard
+              title="Readiness gates"
+              subtitle="What stands between here and &ldquo;ready&rdquo;"
+            >
+              <ReadinessGatesView
+                gates={snapshot.readinessGates}
+                preflightUrl={preflightUrl}
+              />
+              <p className="mt-4 border-t border-hairline pt-3 text-xs leading-relaxed text-muted">
+                The &ldquo;ready for submission&rdquo; issue opens only when{" "}
+                <code className="font-mono text-[11px]">scripts/preflight.sh</code>{" "}
+                exits 0 AND ≥3 adversarial auditors find no gap. Gates the loop
+                hasn&apos;t built yet read &ldquo;not yet built/run&rdquo; — not a failure.
+              </p>
+            </SectionCard>
+          )}
           <SectionCard
             title="Action items"
             subtitle="From PENDING_OPS.md"
@@ -537,17 +584,44 @@ export default async function ProjectPage({
 
           <SectionCard title="Data sources" subtitle="What the dashboard found">
             <ul className="space-y-2 text-sm">
-              <FileRow label="ROADMAP.md" present={snapshot.files.roadmap.available} />
+              <FileRow
+                label="ROADMAP.md"
+                present={snapshot.files.roadmap.available}
+                href={
+                  snapshot.files.roadmap.available
+                    ? fileHref(snapshot.files.roadmap.path)
+                    : undefined
+                }
+              />
+              <FileRow
+                label="docs/BUSINESS_CASE.md"
+                present={snapshot.files.businessCase.available}
+                href={
+                  snapshot.files.businessCase.available
+                    ? fileHref(snapshot.files.businessCase.path)
+                    : undefined
+                }
+              />
+              <FileRow
+                label="scripts/preflight.sh"
+                present={snapshot.files.preflight.available}
+                href={preflightUrl}
+              />
               <FileRow
                 label="PENDING_OPS.md"
                 present={snapshot.files.pendingOps.available}
+                href={
+                  snapshot.files.pendingOps.available
+                    ? fileHref(snapshot.files.pendingOps.path)
+                    : undefined
+                }
               />
               <FileRow
                 label="IMPROVEMENT_LOG.md"
                 present={snapshot.files.improvementLog.available}
                 href={
                   snapshot.files.improvementLog.available
-                    ? `${snapshot.repoUrl}/blob/${snapshot.workingBranch}/${snapshot.files.improvementLog.path}`
+                    ? fileHref(snapshot.files.improvementLog.path)
                     : undefined
                 }
               />
@@ -556,7 +630,7 @@ export default async function ProjectPage({
                 present={snapshot.files.loopMemory.available}
                 href={
                   snapshot.files.loopMemory.available
-                    ? `${snapshot.repoUrl}/blob/${snapshot.workingBranch}/${snapshot.files.loopMemory.path}`
+                    ? fileHref(snapshot.files.loopMemory.path)
                     : undefined
                 }
               />
@@ -647,27 +721,46 @@ function LiveStat({
 }
 
 function LoopHealth({ snapshot }: { snapshot: ProjectSnapshot }) {
-  const shipping =
-    snapshot.merged24h > 0 || (snapshot.commitsToday ?? 0) > 0;
+  const live = livenessMeta(snapshot.liveness);
+  const lm = snapshot.loopMemoryHealth;
 
   return (
     <div className="space-y-3">
-      <div
-        className={cn(
-          "rounded-xl px-3 py-2.5 text-sm",
-          shipping ? "bg-sage-soft text-sage-strong" : "bg-bg text-muted",
+      {/* Liveness — "is it still running?" at a glance. */}
+      <div className="flex items-center justify-between gap-2 rounded-xl border border-hairline bg-bg px-3 py-2.5">
+        <span className="flex items-center gap-2 text-sm">
+          <LivenessDot liveness={snapshot.liveness} />
+          <span className={cn("font-medium", toneClasses(live.tone).text)}>
+            {live.label}
+          </span>
+        </span>
+        {snapshot.liveness.stalled && (
+          <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-clay-strong">
+            <AlertIcon className="h-3.5 w-3.5" /> may be stalled
+          </span>
         )}
-      >
-        {shipping
-          ? `Loop is shipping — ${snapshot.merged24h} ${pluralize(
-              snapshot.merged24h,
-              "PR",
-            )} and ${snapshot.commitsToday ?? 0} ${pluralize(
-              snapshot.commitsToday ?? 0,
-              "commit",
-            )} in the last day.`
-          : "Loop looks idle — no PRs or commits in the last day."}
       </div>
+
+      {/* loop-memory: the loop auditing itself. */}
+      {lm.available && lm.hasAudit && (
+        <div className="rounded-xl border border-hairline bg-bg px-3 py-2.5">
+          <p className="flex flex-wrap items-center gap-x-1.5 text-xs font-medium text-muted">
+            <ShieldIcon className="h-3.5 w-3.5" />
+            Latest deep audit
+            {lm.lastAuditDate && (
+              <span className="tabular text-ink">· {lm.lastAuditDate}</span>
+            )}
+          </p>
+          {lm.note && (
+            <p className="mt-1 text-xs leading-snug text-muted">{lm.note}</p>
+          )}
+        </div>
+      )}
+      {lm.available && !lm.hasAudit && (
+        <p className="flex items-center gap-1.5 text-xs text-muted">
+          <ClockIcon className="h-3.5 w-3.5" /> No deep audit recorded in loop-memory yet.
+        </p>
+      )}
 
       {snapshot.attentionIssues.length === 0 ? (
         <p className="text-sm text-muted">

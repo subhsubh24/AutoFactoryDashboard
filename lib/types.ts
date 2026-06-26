@@ -118,6 +118,66 @@ export interface ReadyInfo {
   checklist: ActionItem[];
 }
 
+/**
+ * Evidence pulled from the "ready for submission" issue body — the repos now
+ * gate that issue behind a mechanical pre-flight + ≥3 adversarial auditors and
+ * paste the proof into the body. "Ready" must show its proof.
+ */
+export interface ReadyEvidence {
+  /** True/false when a pre-flight result is stated; null when not found. */
+  preflightPassed: boolean | null;
+  /** Short pre-flight summary, e.g. "37 PASS / 2 WARN / 0 FAIL". */
+  preflightSummary?: string;
+  /** How many adversarial auditors signed off, if the body says. */
+  auditorCount: number | null;
+  /** Short bullets summarizing what the auditors verified. */
+  auditorFindings: string[];
+}
+
+/**
+ * The readiness gates that stand between a project and "ready". Shown when NOT
+ * ready so the WHY is visible. Brand-new in the repos — fields say "not yet
+ * built / not yet run" rather than fabricating a state we can't observe.
+ */
+export interface ReadinessGates {
+  /** Definition-of-Done checkboxes. */
+  dodDone: number;
+  dodTotal: number;
+  dodAvailable: boolean;
+  dodComplete: boolean;
+  /** scripts/preflight.sh — observed present/absent (the mechanical gate 1). */
+  preflightPresent: boolean;
+  /** Whether the file fetch was actually attempted (so we don't fake "absent"). */
+  preflightChecked: boolean;
+  /**
+   * Whether the adversarial readiness audit (gate 2) has run. Only observable
+   * once the ready issue opens, so: "passed" when ready, else "not_yet_run".
+   */
+  auditState: "passed" | "not_yet_run";
+}
+
+export type LivenessLevel = "fresh" | "slow" | "stalled" | "unknown";
+
+/** How recently the loop shipped, vs its ~6h cadence — "is it still running?". */
+export interface Liveness {
+  level: LivenessLevel;
+  /** Hours since the last merged PR / commit. null when never/unknown. */
+  hoursSinceShip: number | null;
+  /** ISO of the most recent ship (merge or commit). */
+  lastShipAt: string | null;
+  /** Loud flag: the loop may be stalled (>18h since a ship, or quiet 24h). */
+  stalled: boolean;
+}
+
+/** The latest self-audit recorded in docs/loop-memory.md (the loop auditing itself). */
+export interface LoopMemoryHealth extends Availability {
+  hasAudit: boolean;
+  /** ISO date (YYYY-MM-DD) of the most recent DEEP AUDIT mention. */
+  lastAuditDate?: string;
+  /** One-line note next to that audit. */
+  note?: string;
+}
+
 export interface RawFile extends Availability {
   path?: string;
   content?: string;
@@ -155,9 +215,19 @@ export interface ProjectSnapshot {
   status: ProjectStatus;
   readyForSubmission: boolean;
   ready: ReadyInfo;
+  /** Proof from the ready issue body (pre-flight + auditors); null until ready. */
+  readyEvidence: ReadyEvidence | null;
+  /** The gates between here and "ready" — shown when NOT ready. */
+  readinessGates: ReadinessGates;
 
   // progress
   progress: ProgressInfo;
+
+  // loop health
+  /** "Is it still running?" — recency of the last ship vs the ~6h cadence. */
+  liveness: Liveness;
+  /** Latest DEEP AUDIT recorded in loop-memory. */
+  loopMemoryHealth: LoopMemoryHealth;
 
   // PR activity
   mergedToday: number;
@@ -188,6 +258,8 @@ export interface ProjectSnapshot {
     loopMemory: RawFile;
     /** docs/BUSINESS_CASE.md — the project's bottoms-up revenue model. */
     businessCase: RawFile;
+    /** scripts/preflight.sh — the mechanical readiness gate (present/absent). */
+    preflight: RawFile;
   };
 
   // freshness
