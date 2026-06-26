@@ -1,6 +1,14 @@
 import Link from "next/link";
 import { getAllSnapshots } from "@/lib/github";
-import { buildOverview, humanAsksFor, type NeedEntry } from "@/lib/aggregate";
+import {
+  buildOverview,
+  factoryDelta,
+  humanAsksFor,
+  projectDelta,
+  type NeedEntry,
+  type Overview,
+  type ProjectDelta,
+} from "@/lib/aggregate";
 import {
   getNarrative,
   getFactoryBriefing,
@@ -19,11 +27,14 @@ import {
   formatMoney,
   headlinePct,
   kindLabel,
+  livenessMeta,
   pluralize,
   statusMeta,
   toneClasses,
 } from "@/lib/utils";
 import { ActivityFeed } from "@/components/ActivityFeed";
+import { Delta24h, DeltaPill } from "@/components/Delta";
+import { LivenessDot } from "@/components/LivenessDot";
 import { WeekBars } from "@/components/WeekBars";
 import { ProgressTrend, type ProjectTrend } from "@/components/ProgressTrend";
 import { FactoryTrends } from "@/components/FactoryTrends";
@@ -31,6 +42,7 @@ import { ValuationView } from "@/components/ValuationView";
 import { RelativeTime } from "@/components/RelativeTime";
 import { CalmCoda, Greeting, TimeOfDay } from "@/components/TimeAware";
 import {
+  AlertIcon,
   ArrowRightIcon,
   CheckIcon,
   ExternalLinkIcon,
@@ -77,6 +89,28 @@ export default async function OverviewPage() {
     snapshots.map((s, i) => [s.slug, estimateCompletion(s, histories[i])]),
   );
 
+  // 24h deltas (the digest's real value) — per project + factory-wide.
+  const deltas = new Map<string, ProjectDelta>(
+    snapshots.map((s, i) => [s.slug, projectDelta(s, histories[i])]),
+  );
+  const fDelta = factoryDelta([...deltas.values()]);
+
+  // Rank tiles by readiness so "closest to launch" sits first (ready → 100).
+  const ranked = [...snapshots].sort((a, b) => {
+    const pa = a.readyForSubmission ? 101 : headlinePct(a) ?? -1;
+    const pb = b.readyForSubmission ? 101 : headlinePct(b) ?? -1;
+    if (pb !== pa) return pb - pa;
+    return (b.progress.buildPct ?? -1) - (a.progress.buildPct ?? -1);
+  });
+
+  // Loop health at a glance: stalled loops + open harness-improvement proposals.
+  const stalledLoops = snapshots.filter((s) => s.liveness.stalled);
+  const proposals = snapshots.flatMap((s) =>
+    s.attentionIssues
+      .filter((a) => a.kind === "harness_proposal")
+      .map((a) => ({ ...a, projectName: s.displayName })),
+  );
+
   // LLM where it's worth it: factory briefing + per-project digest + valuation.
   const [briefing, narrativeEntries, valuationEntries] = await Promise.all([
     getFactoryBriefing(snapshots),
@@ -100,6 +134,8 @@ export default async function OverviewPage() {
   return (
     <div className="animate-fade-in mx-auto max-w-3xl">
       <Header fetchedAt={overview.oldestFetchedAt} />
+
+      <FactoryHeadline overview={overview} />
 
       {tokenMissing && (
         <div className="mb-6 rounded-xl border border-clay/30 bg-clay-soft px-4 py-3 text-sm text-clay-strong">
@@ -142,7 +178,77 @@ export default async function OverviewPage() {
         <p className="mt-3 text-sm leading-relaxed text-ink/90">{briefing.text}</p>
 
         <Verdict count={asks.length} />
+
+        {/* Since-yesterday delta — the heart of the old daily email digest. */}
+        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-hairline pt-3 text-xs">
+          <span className="font-medium uppercase tracking-wide text-muted">
+            Since yesterday
+          </span>
+          {fDelta.hasBaseline ? (
+            <>
+              <DeltaPill value={fDelta.dReadinessPct} label="readiness" unit="pts" />
+              <DeltaPill value={fDelta.dBuildPct} label="build" unit="pts" />
+              <DeltaPill
+                value={fDelta.newPendingOps}
+                label="pending ops"
+                higherIsBetter={false}
+              />
+              {fDelta.dReadinessPct === null &&
+                fDelta.dBuildPct === null &&
+                fDelta.newPendingOps === null && (
+                  <span className="text-muted/70">no change recorded</span>
+                )}
+            </>
+          ) : (
+            <span className="text-muted/70">
+              fills in once the daily snapshot records history (Vercel KV)
+            </span>
+          )}
+        </div>
+
+        {/* Loud loop-health flags: a stalled loop, or a proposal awaiting you. */}
+        {(stalledLoops.length > 0 || proposals.length > 0) && (
+          <div className="mt-3 space-y-1.5">
+            {stalledLoops.map((s) => (
+              <p
+                key={s.slug}
+                className="flex items-center gap-1.5 text-xs font-medium text-clay-strong"
+              >
+                <AlertIcon className="h-3.5 w-3.5 shrink-0" />
+                {s.displayName} loop may be stalled — {livenessMeta(s.liveness).label}.
+              </p>
+            ))}
+            {proposals.map((p) => (
+              <a
+                key={`${p.projectName}-${p.number}`}
+                href={p.url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-clay"
+              >
+                <SparkleIcon className="h-3.5 w-3.5 shrink-0 text-amber" />
+                <span className="truncate">
+                  {p.projectName}: harness proposal — {p.title}
+                </span>
+              </a>
+            ))}
+          </div>
+        )}
       </section>
+
+      {/* 2 — Only the things that genuinely need you — kept prominent, up top. */}
+      {asks.length > 0 && (
+        <section className="mb-6">
+          <h2 className="mb-3 px-1 text-sm font-semibold tracking-tight text-ink">
+            Needs you
+          </h2>
+          <ul className="space-y-2">
+            {asks.map((need) => (
+              <AskRow key={need.id} need={need} />
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* 1b — Factory performance: manufacturing-style KPIs across the floor. */}
       <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 shadow-card">
@@ -297,34 +403,22 @@ export default async function OverviewPage() {
         </section>
       )}
 
-      {/* 2 — Only the things that genuinely need you. */}
-      {asks.length > 0 && (
-        <section className="mb-6">
-          <h2 className="mb-3 px-1 text-sm font-semibold tracking-tight text-ink">
-            Needs you
-          </h2>
-          <ul className="space-y-2">
-            {asks.map((need) => (
-              <AskRow key={need.id} need={need} />
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {/* 3 — A briefing tile per project: name opens the live app; a did/now/next
-          summary; progress + ETA; Dashboard link. */}
+      {/* 3 — A briefing tile per project (ranked closest-to-launch first): name
+          opens the live app; a did/now/next summary; progress + ETA; Dashboard. */}
       <section className="mb-6">
-        <h2 className="mb-3 px-1 text-sm font-semibold tracking-tight text-ink">
-          Projects
-        </h2>
+        <div className="mb-3 flex items-end justify-between px-1">
+          <h2 className="text-sm font-semibold tracking-tight text-ink">Projects</h2>
+          <span className="text-xs text-muted">closest to launch first</span>
+        </div>
         <div className="space-y-4">
-          {snapshots.map((s) => (
+          {ranked.map((s) => (
             <ProjectTile
               key={s.slug}
               snapshot={s}
               narrative={narratives.get(s.slug)}
               eta={etas.get(s.slug) ?? null}
               valuation={valuations.get(s.slug) ?? null}
+              delta={deltas.get(s.slug) ?? null}
             />
           ))}
         </div>
@@ -373,6 +467,56 @@ function FactoryStat({
       </p>
       <p className="mt-1 truncate text-[11px] text-muted">{unit}</p>
     </div>
+  );
+}
+
+/** One-line factory headline at the very top — the 3-second glance. */
+function FactoryHeadline({ overview }: { overview: Overview }) {
+  const { totalMerged24h, needs, ci, closestToLaunch } = overview;
+  const ciTone =
+    ci.total === 0 ? "text-muted" : ci.anyFailing ? "text-clay-strong" : "text-sage-strong";
+  return (
+    <div className="mb-5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-xl border border-hairline bg-card px-4 py-3 text-sm shadow-card">
+      <span>
+        <span className="font-semibold tabular text-ink">{totalMerged24h}</span>{" "}
+        <span className="text-muted">{pluralize(totalMerged24h, "PR")} shipped · 24h</span>
+      </span>
+      <Sep />
+      <span className={needs.length > 0 ? "font-medium text-clay-strong" : "text-muted"}>
+        <span className="tabular">{needs.length}</span>{" "}
+        {needs.length === 1 ? "item needs you" : "items need you"}
+      </span>
+      <Sep />
+      <span className="text-muted">
+        CI{" "}
+        <span className={cn("tabular font-medium", ciTone)}>
+          {ci.passing}/{ci.total}
+        </span>
+      </span>
+      {closestToLaunch && (
+        <>
+          <Sep />
+          <span className="text-muted">
+            closest to launch{" "}
+            <Link
+              href={`/p/${closestToLaunch.slug}`}
+              className="font-medium text-ink transition-colors hover:text-clay"
+            >
+              {closestToLaunch.name}
+            </Link>{" "}
+            <span className="tabular text-sage-strong">{closestToLaunch.pct}%</span>
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Sep() {
+  return (
+    <span aria-hidden className="text-muted/40">
+      ·
+    </span>
   );
 }
 
@@ -448,11 +592,13 @@ function ProjectTile({
   narrative,
   eta,
   valuation,
+  delta,
 }: {
   snapshot: ProjectSnapshot;
   narrative?: Narrative;
   eta: Estimate | null;
   valuation: Valuation | null;
+  delta: ProjectDelta | null;
 }) {
   const status = statusMeta(s.status);
   const ci = ciMeta(s.ci.status);
@@ -494,7 +640,11 @@ function ProjectTile({
                 {s.displayName}
               </Link>
             )}
-            <p className="mt-0.5 text-xs text-muted">{kindLabel(s.kind)}</p>
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
+              <span>{kindLabel(s.kind)}</span>
+              <span aria-hidden>·</span>
+              <LivenessDot liveness={s.liveness} showLabel />
+            </div>
           </div>
         </div>
         {asks > 0 ? (
@@ -542,9 +692,6 @@ function ProjectTile({
         {build !== null && (
           <span className="text-muted">· build {build}%</span>
         )}
-        <span className="text-muted">
-          · {s.merged24h > 0 ? `${s.merged24h} shipped · 24h` : "quiet · 24h"}
-        </span>
         {eta && (
           <span className="text-muted">
             · est. launch{" "}
@@ -553,6 +700,16 @@ function ProjectTile({
           </span>
         )}
       </div>
+
+      {delta && (
+        <Delta24h
+          shipped={delta.shipped24h}
+          dBuildPct={delta.dBuildPct}
+          dReadinessPct={delta.dReadinessPct}
+          newPendingOps={delta.newPendingOps}
+          hasBaseline={delta.hasBaseline}
+        />
+      )}
 
       {valuation && <ValuationView v={valuation} />}
 

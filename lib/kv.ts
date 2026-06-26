@@ -15,6 +15,8 @@ export interface DailyMetric {
   /** Total Definition-of-Done checkboxes — grows when the loop adds scope. */
   submissionTotal?: number;
   ciPassRate: number | null;
+  /** Open PENDING_OPS action items — to compute "new items since yesterday". */
+  pendingOps?: number;
 }
 
 /** Factory-wide daily KPIs (manufacturing-style), for trend charts. */

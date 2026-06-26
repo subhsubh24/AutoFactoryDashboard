@@ -52,6 +52,7 @@ export async function GET(req: Request) {
         buildPct: s.progress.buildPct,
         submissionTotal: s.progress.submissionTotal,
         ciPassRate: s.ci.passRate,
+        pendingOps: s.actionItems.items.length,
       };
       const written = await recordDailyMetric(s.slug, metric);
       return { slug: s.slug, written, metric };

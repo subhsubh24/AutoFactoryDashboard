@@ -3,8 +3,10 @@ import { unstable_cache } from "next/cache";
 import type { ProjectConfig } from "@/config/projects";
 import { PROJECTS } from "@/config/projects";
 import {
+  parseLoopMemory,
   parsePendingOps,
   parseReadyChecklist,
+  parseReadyEvidence,
   parseRoadmap,
   parseTrackFromText,
 } from "@/lib/parsers";
@@ -12,18 +14,55 @@ import type {
   AttentionIssue,
   AttentionKind,
   CIInfo,
+  Liveness,
+  LivenessLevel,
   PRItem,
   ProjectSnapshot,
   ProjectStatus,
   RawFile,
+  ReadinessGates,
   RepoMeta,
 } from "@/lib/types";
 
 /** Revalidate snapshots roughly hourly (agents run ~every 6h, so this is fresh). */
 export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 
+// Bump when the ProjectSnapshot SHAPE changes — unstable_cache persists across
+// deploys by key, so without this the new code would read a stale old-shape
+// snapshot (missing new fields) and crash. v2: added liveness, readinessGates,
+// readyEvidence, loopMemoryHealth, files.preflight.
+const SNAPSHOT_CACHE_VERSION = "v2";
+
 const STUCK_PR_HOURS = 12;
-const READY_TITLE = "factory: ready for submission";
+// The factory's "done" issue. The canonical title is "FACTORY: ready for
+// submission"; some repos use "FACTORY: 100%". Match both — they mean the same
+// "the loop has declared the Definition of Done met" signal.
+const READY_TITLE_RE = /^factory:\s*(?:ready\b.*|100%?)\s*$/i;
+
+// Liveness thresholds vs the ~6h shipping cadence.
+const LIVE_FRESH_H = 8;
+const LIVE_SLOW_H = 18;
+
+/** Recency of the last ship (merge/commit) → a green/amber/red liveness dot. */
+function computeLiveness(
+  latestMergedAt: string | null | undefined,
+  latestCommitAt: string | null | undefined,
+  merged24h: number,
+  commits24h: number,
+): Liveness {
+  const lastShipAt = maxIso(latestMergedAt, latestCommitAt);
+  const hoursSinceShip = hoursAgo(lastShipAt);
+  let level: LivenessLevel;
+  if (hoursSinceShip === null) level = "unknown";
+  else if (hoursSinceShip < LIVE_FRESH_H) level = "fresh";
+  else if (hoursSinceShip <= LIVE_SLOW_H) level = "slow";
+  else level = "stalled";
+  // A known-but-quiet loop (nothing in 24h, last ship long ago) is a stall.
+  if (level !== "unknown" && merged24h === 0 && commits24h === 0) {
+    if ((hoursSinceShip ?? 0) > LIVE_SLOW_H) level = "stalled";
+  }
+  return { level, hoursSinceShip, lastShipAt, stalled: level === "stalled" };
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Octokit
@@ -255,7 +294,7 @@ async function fetchIssues(
         typeof l === "string" ? l : (l.name ?? ""),
       );
 
-      if (title.toLowerCase() === READY_TITLE) {
+      if (READY_TITLE_RE.test(title)) {
         readyIssue = { url: issue.html_url, body: issue.body ?? null };
         continue;
       }
@@ -466,6 +505,16 @@ function degraded(
     status: "idle",
     readyForSubmission: false,
     ready: { ready: false, checklist: [] },
+    readyEvidence: null,
+    readinessGates: {
+      dodDone: 0,
+      dodTotal: 0,
+      dodAvailable: false,
+      dodComplete: false,
+      preflightPresent: false,
+      preflightChecked: false,
+      auditState: "not_yet_run",
+    },
     progress: {
       available: false,
       reason: "Data unavailable.",
@@ -480,6 +529,8 @@ function degraded(
       tracks: [],
       nextItem: null,
     },
+    liveness: { level: "unknown", hoursSinceShip: null, lastShipAt: null, stalled: false },
+    loopMemoryHealth: { available: false, hasAudit: false },
     mergedToday: 0,
     merged24h: 0,
     merged7d: 0,
@@ -497,6 +548,7 @@ function degraded(
       improvementLog: { available: false },
       loopMemory: { available: false },
       businessCase: { available: false },
+      preflight: { available: false },
     },
     lastActivityAt: repoMeta.pushedAt ?? null,
     fetchedAt,
@@ -562,6 +614,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     improvementFile,
     loopMemoryFile,
     businessCaseFile,
+    preflightFile,
   ] = await Promise.all([
     fetchPulls(octokit, owner, repo, errors),
     fetchCommits(octokit, owner, repo, workingBranch, errors),
@@ -575,6 +628,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
       "docs/autonomous-loop/LOOP_MEMORY.md",
     ]),
     fetchFileWithHistory(octokit, owner, repo, workingBranch, "docs/BUSINESS_CASE.md"),
+    fetchFile(octokit, owner, repo, workingBranch, "scripts/preflight.sh"),
   ]);
 
   // 3) Parse markdown. Completeness is two separate axes, both from checkboxes
@@ -610,6 +664,39 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
       ? parseReadyChecklist(issues?.readyIssue?.body, roadmapFile.content)
       : [],
   };
+
+  // The proof behind "ready" (pre-flight + adversarial auditors), parsed from
+  // the issue body — only meaningful once the issue exists.
+  const readyEvidence = readyForSubmission
+    ? parseReadyEvidence(issues?.readyIssue?.body)
+    : null;
+
+  // The gates between here and "ready". preflight present/absent is OBSERVED
+  // (we fetched the file); the audit only becomes observable once ready. We
+  // never fabricate a gate state we can't see.
+  const readinessGates: ReadinessGates = {
+    dodDone: progress.submissionDone,
+    dodTotal: progress.submissionTotal,
+    dodAvailable: progress.submissionAvailable,
+    dodComplete:
+      progress.submissionAvailable &&
+      progress.submissionTotal > 0 &&
+      progress.submissionDone >= progress.submissionTotal,
+    preflightPresent: preflightFile.available,
+    preflightChecked: true,
+    auditState: readyForSubmission ? "passed" : "not_yet_run",
+  };
+
+  const loopMemoryHealth = parseLoopMemory(
+    loopMemoryFile.available ? loopMemoryFile.content : null,
+  );
+
+  const liveness = computeLiveness(
+    pulls?.latestMergedAt,
+    commits?.latest,
+    pulls?.merged24h ?? 0,
+    commits?.count ?? 0,
+  );
 
   // 4) Derived activity + status.
   const lastActivityAt = maxIso(
@@ -655,7 +742,11 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     status,
     readyForSubmission,
     ready,
+    readyEvidence,
+    readinessGates,
     progress,
+    liveness,
+    loopMemoryHealth,
     mergedToday: pulls?.mergedToday ?? 0,
     merged24h: pulls?.merged24h ?? 0,
     merged7d: pulls?.merged7d ?? 0,
@@ -673,6 +764,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
       improvementLog: improvementFile,
       loopMemory: loopMemoryFile,
       businessCase: businessCaseFile,
+      preflight: preflightFile,
     },
     lastActivityAt,
     fetchedAt,
@@ -698,7 +790,7 @@ function statusCodeFromErrors(errors: string[]): boolean {
 export function getProjectSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
   return unstable_cache(
     () => buildSnapshot(project),
-    ["afd-snapshot", project.slug],
+    ["afd-snapshot", SNAPSHOT_CACHE_VERSION, project.slug],
     { revalidate: SNAPSHOT_REVALIDATE_SECONDS, tags: [`project:${project.slug}`] },
   )();
 }

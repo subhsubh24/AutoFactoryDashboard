@@ -133,3 +133,28 @@ export function LockIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+export function ShieldIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" />
+      <path d="M9 12l2 2 4-4" />
+    </svg>
+  );
+}
+
+export function XIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
+
+export function PulseIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M3 12h4l3 8 4-16 3 8h4" />
+    </svg>
+  );
+}

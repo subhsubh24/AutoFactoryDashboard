@@ -41,12 +41,14 @@ Two pages:
 
 | Route        | What it shows |
 | ------------ | ------------- |
-| `/`          | **Factory Floor.** Stat strip (PRs shipped today · items needing you · CI health), a card per project (progress ring, status, PRs today, CI dot, needs-you count), the aggregated **What needs you** panel, and a unified merged-PR activity feed. |
-| `/p/[slug]`  | **Per project.** Big progress ring + next milestone, per-track bars, a 24-hour digest (AI or templated) with what shipped, a live "today" panel (PRs, open PRs with age + stuck flags, CI, commits), checkable action items, loop-health/attention signals, optional trend charts. |
+| `/`          | **Factory Floor.** A one-line **factory headline** (PRs 24h · items needing you · CI · closest-to-launch), an overnight "what shipped" hero with a **since-yesterday delta** and loud loop-health flags, the prominent **Needs you** panel, manufacturing-style KPIs, weekly velocity, progress-to-launch, and a card per project — **ranked closest-to-launch first** — with a **liveness dot**, did/now/next digest, ARR (+ floor status), and its 24h delta. |
+| `/p/[slug]`  | **Per project.** Readiness ring + next milestone; the ready **proof** (pre-flight + auditors) or, when not ready, a **Readiness gates** panel; per-track build bars; a 24-hour digest with a delta; ARR with floor status; a live "today" panel; **loop liveness + latest deep audit**; checkable action items; optional trends; and a sourced file list. |
 
 Data is fetched server-side with [`@octokit/rest`](https://github.com/octokit/rest.js)
-and cached with Next.js ISR (`revalidate ≈ 600s`), so pages are near-real-time
-without hammering the API. Every page shows a live "updated _x_ ago" stamp.
+and cached with Next.js ISR (pages revalidate **hourly**; the LLM digest cache is
+shorter), so pages are fresh without hammering the API. Every page shows a live
+"updated _x_ ago" stamp, and **every number carries provenance** — a source badge,
+an "as of" date, and a link to the underlying file or issue.
 
 A single-password gate (middleware) keeps your private roadmaps and action items
 off the public internet.
@@ -171,7 +173,13 @@ preference: **Gemini first, then OpenRouter**, then deterministic templates.
 
 - **Gemini (recommended — reliable free tier):** set `GEMINI_API_KEY`. Get one
   at <https://aistudio.google.com/apikey> (no card). Default model
-  `gemini-2.0-flash`; override with `GEMINI_MODEL`.
+  `gemini-flash-latest` — an alias that auto-tracks the current Flash model, so a
+  model retirement (e.g. `gemini-2.0-flash`, discontinued 2026-06-01) doesn't
+  silently break digests; override with `GEMINI_MODEL`. A 404 on a pinned model
+  self-heals by retrying the alias.
+- **Health check:** `GET /api/llm-health` (auth-gated) runs the exact LLM path
+  the digests use and returns `{ ok, provider, model, reason, … }` — the fastest
+  way to confirm the key works in your deployment (never returns the key itself).
 - **OpenRouter (fallback):** set `OPENROUTER_API_KEY` (<https://openrouter.ai/keys>).
   Default `meta-llama/llama-3.3-70b-instruct:free`; override with
   `OPENROUTER_MODEL`. Free slugs rotate and **rate-limit aggressively**, which is
@@ -238,6 +246,34 @@ curl -H "Authorization: Bearer $CRON_SECRET" \
 
 ---
 
+## Replacing the daily email digest
+
+This dashboard is a strict **superset** of the old daily Gmail digest — and it's
+always current, not a once-a-day snapshot. Everything the digest reported now
+lives here, first-class:
+
+| The digest reported… | …where it is now |
+| --- | --- |
+| PRs shipped in 24h | Factory headline + each tile's "shipped · 24h" + the 24h delta |
+| CI health | Factory headline `CI pass/total` + per-project CI dot |
+| % to submission | Readiness ring + the "Since yesterday" Δreadiness |
+| Pending-ops / what needs you | The **Needs you** panel (top of the Floor) + Δ new ops |
+| Loop health ("is it still running?") | **Liveness dots** (green/amber/red) + a loud "may be stalled" flag |
+| Loop self-audit | Latest **DEEP AUDIT** date + note from `loop-memory` |
+
+Because the dashboard is the single source of truth, **downgrade the daily routine
+to a tiny one-line push** — a nudge to come look — instead of a heavy HTML report.
+Suggested daily message:
+
+> 🏭 Factory: **N** PRs shipped (24h) · **M** need you · CI **p/t** · closest to launch **X at Y%** → `https://<your-app>.vercel.app`
+
+That line maps exactly to the **factory headline** at the top of the Floor —
+generate it from the same data (the KV snapshot the cron already writes, or a
+small server call) and link straight to the dashboard for everything else. Drop
+the long per-PR HTML email.
+
+---
+
 ## Add a project (one line)
 
 Adding a future project is a **one-line** change — append an entry to
@@ -285,28 +321,45 @@ degrades to a clear "unavailable" state rather than breaking the page.
 
 **Issues** → status & attention
 
-- An open issue titled exactly **`FACTORY: ready for submission`** flips the
-  project to **Ready** and surfaces its checklist (or the ROADMAP "Human Core"
-  section) as the submission to-do list.
+- An open issue titled **`FACTORY: ready for submission`** (or **`FACTORY: 100%`**)
+  flips the project to **Ready**. The ready banner surfaces the **proof** parsed
+  from the issue body — the mechanical pre-flight result + a summary of the
+  adversarial auditors who signed off — and links to the issue. When NOT ready, a
+  **Readiness gates** panel shows the WHY: DoD checkboxes, whether
+  `scripts/preflight.sh` exists, and whether the audit has run. Gates the loop
+  hasn't built yet read "not yet built / not yet run" — never a failure.
 - Issues titled **`loop: harness improvement proposal …`**, **`FYI …`**, or
-  flagged as blockers show up in the per-project **Loop health** panel and the
-  aggregated **What needs you** list.
+  flagged as blockers show up in the per-project **Loop health** panel and a
+  factory-wide loop-health note.
+
+**`scripts/preflight.sh`** → the mechanical readiness gate (gate 1); its
+presence/absence is observed and shown in the Readiness gates + Data sources.
+
+**Loop liveness** — from the latest merged PR/commit: a green/amber/red dot per
+project (green &lt; 8h, amber 8–18h, red &gt; 18h or quiet 24h) with a loud
+"may be stalled" flag, so "is it still running?" is answerable at a glance.
 
 **`docs/BUSINESS_CASE.md`** → estimated annual revenue (the headline value)
 
-- If present, it's the **primary** source for a project's value: a bottoms-up
-  model with **conservative / base / optimistic** ARR figures. The parser is
-  tolerant of tables, bullet lists, and headings — `arrExpected` = base,
-  `arrLow` = conservative, `arrHigh` = optimistic. Currency, commas, and `k`/`M`
-  suffixes are understood; the file's last-commit date is shown as "as of …".
-- If only a single headline ARR (e.g. `Target ARR: $120,000/yr`) is found, it's
-  used as the base with low/high at ×0.3 / ×3.
+- **Primary (authoritative): a machine-readable `BUSINESS_CASE_SUMMARY` block** —
+  a fenced YAML block near the top with `arr_year1.{conservative,base,optimistic}`,
+  `planning_case`, `floor_usd`, `floor_met_year1`, `time_to_floor`, `as_of`.
+  Headline = `arr_year1[planning_case]` (default base); range = conservative →
+  optimistic. `floor_met_year1` + `time_to_floor` render next to the value (e.g.
+  "below $100K floor in year 1"). The file's commit SHA busts the cache.
+- **Fallback (no block):** a tolerant scrape of the "Three scenarios" prose — it
+  binds to the figure *after* an `ARR` / `annual revenue` token, prefers an annual
+  `$X/year` over a monthly `$X/month`, and ignores pricing / COGS / marketing
+  dollar lines.
+- A headline outside a **$1k–$500k** plausibility band, or a file with no readable
+  figure, shows a "see file" link — **never a fabricated number**.
 - **Absent → a clearly-labeled "rough heuristic"** fallback (LLM estimate, then a
   price×adoption formula). The UI badges every number `business case` vs
   `rough heuristic`, and the factory total keeps the two subtotals separate.
 
 **Also read (all optional):** `IMPROVEMENT_LOG.md`, and a loop-memory file at
-`docs/loop-memory.md` or `docs/autonomous-loop/LOOP_MEMORY.md`.
+`docs/loop-memory.md` or `docs/autonomous-loop/LOOP_MEMORY.md` — its latest
+**DEEP AUDIT** date + note is shown so you can see the loop auditing itself.
 
 **Computed status:** `ready` if the submission issue is open; else `blocked`
 (needs you) if CI is failing, a PR is stuck > 12h, or an attention issue is open;
