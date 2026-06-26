@@ -17,6 +17,10 @@ export interface DailyMetric {
   ciPassRate: number | null;
   /** Open PENDING_OPS action items — to compute "new items since yesterday". */
   pendingOps?: number;
+  /** Waitlist signups total (growth) — pre-launch traction over time. */
+  waitlist?: number;
+  /** MRR in USD (growth) — post-launch revenue over time. */
+  mrr?: number;
 }
 
 /** Factory-wide daily KPIs (manufacturing-style), for trend charts. */

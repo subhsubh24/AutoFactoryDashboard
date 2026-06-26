@@ -1,11 +1,13 @@
 import type {
   ActionItem,
   ActionItemsInfo,
+  ActionPriority,
   LoopMemoryHealth,
   ProgressInfo,
   ReadyEvidence,
   TrackProgress,
 } from "@/lib/types";
+import { parseYamlBlock } from "@/lib/growth";
 
 /**
  * Markdown parsers for the factory's "API": ROADMAP.md, PENDING_OPS.md, and
@@ -362,6 +364,55 @@ function firstProseLine(ls: string[], from: number): string | undefined {
   return undefined;
 }
 
+const PRIORITY_RANK: Record<ActionPriority, number> = {
+  urgent: 0,
+  high: 1,
+  normal: 2,
+};
+
+function asPriority(v: unknown): ActionPriority {
+  const s = String(v ?? "").toLowerCase();
+  return s === "urgent" || s === "high" ? s : "normal";
+}
+
+/**
+ * The structured OWNER_ACTIONS YAML block in PENDING_OPS.md (preferred over the
+ * prose scrape). Keeps only open / in_progress items, sorts urgent → high →
+ * normal, and maps each to an ActionItem. Returns null when no block exists (so
+ * the caller falls back to the prose/issue scrape).
+ */
+function parseOwnerActions(md: string): ActionItem[] | null {
+  const block = parseYamlBlock(md, "OWNER_ACTIONS");
+  if (!block) return null;
+  const rawItems = Array.isArray(block.items) ? block.items : [];
+
+  const ranked: { item: ActionItem; rank: number }[] = [];
+  for (const raw of rawItems) {
+    if (!raw || typeof raw !== "object") continue;
+    const o = raw as Record<string, unknown>;
+    const status = String(o.status ?? "").toLowerCase();
+    if (status !== "open" && status !== "in_progress") continue; // actionable only
+    const title = typeof o.title === "string" ? o.title.trim() : "";
+    if (!title) continue;
+    const id = typeof o.id === "string" && o.id.trim() ? o.id.trim() : `n${ranked.length}`;
+    const priority = asPriority(o.priority);
+    ranked.push({
+      rank: PRIORITY_RANK[priority],
+      item: {
+        id: `owner:${id}`,
+        text: title,
+        howTo: typeof o.how === "string" && o.how.trim() ? o.how.trim() : undefined,
+        why: typeof o.why === "string" && o.why.trim() ? o.why.trim() : undefined,
+        priority,
+        source: "pending_ops",
+        raw: false,
+      },
+    });
+  }
+  ranked.sort((a, b) => a.rank - b.rank);
+  return ranked.map((r) => r.item);
+}
+
 export function parsePendingOps(md: string | null | undefined): ActionItemsInfo {
   if (md === null || md === undefined) {
     return {
@@ -372,6 +423,14 @@ export function parsePendingOps(md: string | null | undefined): ActionItemsInfo 
   }
   if (!md.trim()) {
     return { available: true, items: [], note: "PENDING_OPS.md is empty." };
+  }
+
+  // Prefer the structured OWNER_ACTIONS block when the repo publishes one.
+  const owner = parseOwnerActions(md);
+  if (owner !== null) {
+    return owner.length > 0
+      ? { available: true, items: owner }
+      : { available: true, items: [], note: "none queued" };
   }
 
   const ls = lines(md);

@@ -8,6 +8,7 @@ import { ExternalLinkIcon, SparkleIcon } from "@/components/icons";
 
 const KIND_CHIP: Record<NeedKind, { label: string; tone: Tone }> = {
   ready: { label: "Ship", tone: "sage" },
+  urgent_action: { label: "Urgent", tone: "clay" },
   blocker: { label: "Blocker", tone: "clay" },
   ci: { label: "CI", tone: "clay" },
   stuck: { label: "PR", tone: "amber" },

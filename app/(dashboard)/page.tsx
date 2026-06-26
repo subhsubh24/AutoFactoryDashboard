@@ -33,6 +33,7 @@ import {
 } from "@/lib/utils";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { Delta24h, DeltaPill } from "@/components/Delta";
+import { GrowthLine } from "@/components/GrowthPanel";
 import { LivenessDot } from "@/components/LivenessDot";
 import { WeekBars } from "@/components/WeekBars";
 import { ProgressTrend, type ProjectTrend } from "@/components/ProgressTrend";
@@ -719,6 +720,8 @@ function ProjectTile({
           hasBaseline={delta.hasBaseline}
         />
       )}
+
+      <GrowthLine growth={s.growth} />
 
       {valuation && <ValuationView v={valuation} />}
 

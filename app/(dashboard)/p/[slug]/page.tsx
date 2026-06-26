@@ -33,6 +33,7 @@ import { CIHealth } from "@/components/CIHealth";
 import { HistoryCharts } from "@/components/HistoryCharts";
 import { RelativeTime } from "@/components/RelativeTime";
 import { Delta24h } from "@/components/Delta";
+import { GrowthPanel } from "@/components/GrowthPanel";
 import { LivenessDot } from "@/components/LivenessDot";
 import { ReadinessGatesView } from "@/components/ReadinessGates";
 import { ReadyEvidenceView } from "@/components/ReadyEvidence";
@@ -382,6 +383,17 @@ export default async function ProjectPage({
                 emptyText="No merged pull requests yet."
               />
             </div>
+          </SectionCard>
+
+          <SectionCard
+            title="Growth & marketing"
+            subtitle="From the Growth Agent (docs/growth/GROWTH_STATUS.md)"
+          >
+            <GrowthPanel
+              growth={snapshot.growth}
+              waitlistDelta={delta.dWaitlist}
+              mrrDelta={delta.dMrr}
+            />
           </SectionCard>
 
           {themes.length > 0 && (

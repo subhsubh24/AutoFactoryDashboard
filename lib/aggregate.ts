@@ -5,6 +5,7 @@ import { extractThemes, type ThemeCount } from "@/lib/themes";
 
 export type NeedKind =
   | "ready"
+  | "urgent_action"
   | "ci"
   | "stuck"
   | "blocker"
@@ -79,6 +80,10 @@ export interface ProjectDelta {
   dReadinessPct: number | null;
   /** current − baseline open PENDING_OPS items; null without history. */
   newPendingOps: number | null;
+  /** current − baseline waitlist signups (growth); null without a baseline. */
+  dWaitlist: number | null;
+  /** current − baseline MRR (growth, post-launch); null without a baseline. */
+  dMrr: number | null;
 }
 
 export interface FactoryDelta {
@@ -107,6 +112,8 @@ export function projectDelta(
   const base = baselineMetric(history);
   const sub = (cur: number | null, prev: number | null | undefined): number | null =>
     cur === null || prev === null || prev === undefined ? null : cur - prev;
+  const waitlistNow = s.growth.available ? s.growth.funnel.waitlistSignupsTotal : null;
+  const mrrNow = s.growth.available ? s.growth.funnel.mrrUsd : null;
   return {
     hasBaseline: base !== null,
     baselineDate: base?.date ?? null,
@@ -117,6 +124,8 @@ export function projectDelta(
       base && base.pendingOps !== undefined
         ? s.actionItems.items.length - base.pendingOps
         : null,
+    dWaitlist: base ? sub(waitlistNow, base.waitlist ?? null) : null,
+    dMrr: base ? sub(mrrNow, base.mrr ?? null) : null,
   };
 }
 
@@ -179,12 +188,13 @@ function median(nums: number[]): number | null {
 
 const KIND_PRIORITY: Record<NeedKind, number> = {
   ready: 0,
-  blocker: 1,
-  ci: 2,
-  stuck: 3,
-  proposal: 4,
-  action: 5,
-  fyi: 6,
+  urgent_action: 1,
+  blocker: 2,
+  ci: 3,
+  stuck: 4,
+  proposal: 5,
+  action: 6,
+  fyi: 7,
 };
 
 /**
@@ -193,7 +203,7 @@ const KIND_PRIORITY: Record<NeedKind, number> = {
  * FYIs, routine stuck PRs) is noise for a morning glance and is filtered out of
  * the overview. The full list still lives on each project's detail page.
  */
-const HUMAN_ASK_KINDS = new Set<NeedKind>(["ready", "blocker", "ci"]);
+const HUMAN_ASK_KINDS = new Set<NeedKind>(["ready", "urgent_action", "blocker", "ci"]);
 
 export function isHumanAsk(n: NeedEntry): boolean {
   return HUMAN_ASK_KINDS.has(n.kind);
@@ -313,15 +323,17 @@ export function needsFor(s: ProjectSnapshot): NeedEntry[] {
     });
   }
 
-  // 5) Explicit PENDING_OPS action items.
+  // 5) Explicit PENDING_OPS action items. An "urgent" owner action is a genuine
+  //    human ask, so it gets a human-ask kind and surfaces in the overview.
   for (const item of s.actionItems.items) {
+    const urgent = item.priority === "urgent";
     out.push({
       ...tag,
       id: `${s.slug}:action:${item.id}`,
       text: item.text,
       howTo: item.howTo,
-      kind: "action",
-      priority: KIND_PRIORITY.action,
+      kind: urgent ? "urgent_action" : "action",
+      priority: urgent ? KIND_PRIORITY.urgent_action : KIND_PRIORITY.action,
     });
   }
 

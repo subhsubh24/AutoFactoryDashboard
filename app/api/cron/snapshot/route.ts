@@ -53,6 +53,11 @@ export async function GET(req: Request) {
         submissionTotal: s.progress.submissionTotal,
         ciPassRate: s.ci.passRate,
         pendingOps: s.actionItems.items.length,
+        // Growth trends — only persisted when the block reports a real number.
+        waitlist: s.growth.available
+          ? s.growth.funnel.waitlistSignupsTotal ?? undefined
+          : undefined,
+        mrr: s.growth.available ? s.growth.funnel.mrrUsd ?? undefined : undefined,
       };
       const written = await recordDailyMetric(s.slug, metric);
       return { slug: s.slug, written, metric };
