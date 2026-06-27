@@ -324,10 +324,19 @@ async function geminiCall(
   }
 }
 
+// Transient server-side failures worth a quick retry: 503 "high demand"
+// (model overloaded), 429 (rate limited), and other 5xx. NOT 400/403/404 (bad
+// key / permission / wrong model) or an empty MAX_TOKENS reply — retrying those
+// just wastes time.
+const TRANSIENT_STATUS = new Set([429, 500, 502, 503, 504]);
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 /**
- * Google Gemini call. Uses GEMINI_MODEL (or the auto-tracking default) and, if
- * that model is retired/unknown (HTTP 404), retries once with the "-latest"
- * alias so a pinned-version retirement self-heals instead of going dark.
+ * Google Gemini call. Uses GEMINI_MODEL (or the default). On a transient
+ * overload (503/429/5xx) it backs off briefly and retries the same model — the
+ * spike usually passes in well under a second. On a 404 (retired/unknown model)
+ * it retries once with the fallback model so a pinned-version retirement
+ * self-heals instead of going dark.
  */
 async function callGemini(
   messages: ChatMessage[],
@@ -337,7 +346,20 @@ async function callGemini(
   if (!apiKey) return { reason: "no-key" };
 
   const model = process.env.GEMINI_MODEL || GEMINI_DEFAULT_MODEL;
-  const out = await geminiCall(model, apiKey, messages, maxTokens);
+  let out = await geminiCall(model, apiKey, messages, maxTokens);
+
+  for (
+    let attempt = 1;
+    attempt <= 2 &&
+    !out.text &&
+    out.status !== undefined &&
+    TRANSIENT_STATUS.has(out.status);
+    attempt++
+  ) {
+    await sleep(300 * attempt); // 300ms, then 600ms
+    out = await geminiCall(model, apiKey, messages, maxTokens);
+  }
+
   if (!out.text && out.status === 404 && model !== GEMINI_FALLBACK_MODEL) {
     return geminiCall(GEMINI_FALLBACK_MODEL, apiKey, messages, maxTokens);
   }
