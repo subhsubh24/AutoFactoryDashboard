@@ -70,6 +70,14 @@ export const PROJECTS: ProjectConfig[] = [
     kind: "web+mobile",
     // appUrl omitted → no live deployment yet (pre-launch)
   },
+  {
+    slug: "llm-quant",
+    displayName: "LLM-Quant",
+    owner: "subhsubh24",
+    repo: "LLM-Quant",
+    branch: "claude/llm-stock-trading-app-fXupf",
+    kind: "web",
+  },
 ];
 
 /** Look up a single project by its slug. */
