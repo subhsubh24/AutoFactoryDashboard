@@ -61,6 +61,15 @@ export const PROJECTS: ProjectConfig[] = [
     kind: "web+mobile",
     appUrl: "https://grocery-manager-web.vercel.app/",
   },
+  {
+    slug: "jobscraper",
+    displayName: "JobScraper",
+    owner: "subhsubh24",
+    repo: "JobScraper",
+    // branch omitted → data layer uses the repo's default_branch (main)
+    kind: "web+mobile",
+    // appUrl omitted → no live deployment yet (pre-launch)
+  },
 ];
 
 /** Look up a single project by its slug. */
