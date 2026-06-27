@@ -173,10 +173,10 @@ preference: **Gemini first, then OpenRouter**, then deterministic templates.
 
 - **Gemini (recommended — reliable free tier):** set `GEMINI_API_KEY`. Get one
   at <https://aistudio.google.com/apikey> (no card). Default model
-  `gemini-flash-latest` — an alias that auto-tracks the current Flash model, so a
-  model retirement (e.g. `gemini-2.0-flash`, discontinued 2026-06-01) doesn't
-  silently break digests; override with `GEMINI_MODEL`. A 404 on a pinned model
-  self-heals by retrying the alias.
+  `gemini-2.5-flash-lite` — fast, cheap, and non-"thinking", so it returns the
+  digest within a small token budget (a reasoning model can spend the whole
+  output budget thinking and come back empty with `MAX_TOKENS`); override with
+  `GEMINI_MODEL`. A 404 on a pinned model self-heals by retrying the default.
 - **Health check:** `GET /api/llm-health` (auth-gated) runs the exact LLM path
   the digests use and returns `{ ok, provider, model, reason, … }` — the fastest
   way to confirm the key works in your deployment (never returns the key itself).

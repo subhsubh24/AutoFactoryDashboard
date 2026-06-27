@@ -37,13 +37,14 @@ function buildPhase(): boolean {
   return process.env.NEXT_PHASE === "phase-production-build";
 }
 
-// Google Gemini, preferred when set. The "-latest" alias auto-tracks the
-// current Flash model (Google gives a 2-week notice before swapping it), so a
-// model retirement — e.g. gemini-2.0-flash was discontinued 2026-06-01 — won't
-// silently break digests the way a pinned version does.
-const GEMINI_DEFAULT_MODEL = "gemini-flash-latest";
-// If a pinned GEMINI_MODEL is retired (404), retry once with this alias.
-const GEMINI_FALLBACK_MODEL = "gemini-flash-latest";
+// Google Gemini, preferred when set. gemini-2.5-flash-lite is fast, cheap, and
+// — crucially — does NOT "think" by default, so it returns the digest text
+// within a small output-token budget. (The auto-tracking "gemini-flash-latest"
+// alias pointed at a reasoning model that spent the whole maxOutputTokens budget
+// on internal thinking and came back empty with finishReason MAX_TOKENS.)
+const GEMINI_DEFAULT_MODEL = "gemini-2.5-flash-lite";
+// If a pinned GEMINI_MODEL is retired (404), retry once with this model.
+const GEMINI_FALLBACK_MODEL = "gemini-2.5-flash-lite";
 // OpenRouter free model (slugs rotate / get rate-limited; used as a fallback).
 const OPENROUTER_DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
 
@@ -397,7 +398,7 @@ export async function checkLlmHealth(): Promise<LlmHealth> {
       { role: "system", content: "You are a health check. Reply with a single short word." },
       { role: "user", content: "Reply with the word OK." },
     ],
-    16,
+    64, // headroom so a model with any token overhead still emits visible text
   );
   const ok = Boolean(out.text);
 
