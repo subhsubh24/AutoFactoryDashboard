@@ -31,8 +31,9 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 // Bump when the ProjectSnapshot SHAPE changes — unstable_cache persists across
 // deploys by key, so without this the new code would read a stale old-shape
 // snapshot (missing new fields) and crash. v2: added liveness, readinessGates,
-// readyEvidence, loopMemoryHealth, files.preflight. v3: added growth.
-const SNAPSHOT_CACHE_VERSION = "v3";
+// readyEvidence, loopMemoryHealth, files.preflight. v3: added growth. v4: more
+// loop-memory path candidates (root LOOP_MEMORY.md) — bust so it re-fetches.
+const SNAPSHOT_CACHE_VERSION = "v4";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
@@ -629,6 +630,8 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     fetchFirstFile(octokit, owner, repo, workingBranch, [
       "docs/loop-memory.md",
       "docs/autonomous-loop/LOOP_MEMORY.md",
+      "LOOP_MEMORY.md",
+      "docs/LOOP_MEMORY.md",
     ]),
     fetchFileWithHistory(octokit, owner, repo, workingBranch, "docs/BUSINESS_CASE.md"),
     fetchFile(octokit, owner, repo, workingBranch, "scripts/preflight.sh"),

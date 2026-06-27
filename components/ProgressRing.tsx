@@ -71,7 +71,7 @@ export function ProgressRing({
           />
         )}
       </svg>
-      <div className="absolute inset-0 grid place-content-center text-center leading-none">
+      <div className="absolute inset-0 grid place-content-center px-[14%] text-center leading-none">
         {unknown ? (
           <span className="text-sm text-muted">n/a</span>
         ) : (
@@ -86,11 +86,14 @@ export function ProgressRing({
           </span>
         )}
         {label && (
-          <span className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-muted">
+          <span
+            className="mt-1 font-medium uppercase leading-[1.25] text-ink/55"
+            style={{ fontSize: Math.max(8, size * 0.055), letterSpacing: "0.01em" }}
+          >
             {label}
           </span>
         )}
-        {sublabel && <span className="text-[10px] text-muted">{sublabel}</span>}
+        {sublabel && <span className="mt-0.5 text-[10px] text-muted">{sublabel}</span>}
       </div>
     </div>
   );
