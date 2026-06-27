@@ -10,6 +10,7 @@ import {
   parseRoadmap,
   parseTrackFromText,
 } from "@/lib/parsers";
+import { parseGrowth } from "@/lib/growth";
 import type {
   AttentionIssue,
   AttentionKind,
@@ -30,8 +31,8 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 // Bump when the ProjectSnapshot SHAPE changes — unstable_cache persists across
 // deploys by key, so without this the new code would read a stale old-shape
 // snapshot (missing new fields) and crash. v2: added liveness, readinessGates,
-// readyEvidence, loopMemoryHealth, files.preflight.
-const SNAPSHOT_CACHE_VERSION = "v2";
+// readyEvidence, loopMemoryHealth, files.preflight. v3: added growth.
+const SNAPSHOT_CACHE_VERSION = "v3";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
@@ -531,6 +532,7 @@ function degraded(
     },
     liveness: { level: "unknown", hoursSinceShip: null, lastShipAt: null, stalled: false },
     loopMemoryHealth: { available: false, hasAudit: false },
+    growth: parseGrowth(null),
     mergedToday: 0,
     merged24h: 0,
     merged7d: 0,
@@ -615,6 +617,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     loopMemoryFile,
     businessCaseFile,
     preflightFile,
+    growthFile,
   ] = await Promise.all([
     fetchPulls(octokit, owner, repo, errors),
     fetchCommits(octokit, owner, repo, workingBranch, errors),
@@ -629,7 +632,17 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     ]),
     fetchFileWithHistory(octokit, owner, repo, workingBranch, "docs/BUSINESS_CASE.md"),
     fetchFile(octokit, owner, repo, workingBranch, "scripts/preflight.sh"),
+    fetchFile(octokit, owner, repo, workingBranch, "docs/growth/GROWTH_STATUS.md"),
   ]);
+
+  // Growth status — parsed exactly like the business case (link, never a guess).
+  const growthUrl = growthFile.available
+    ? `${repoUrl}/blob/${workingBranch}/docs/growth/GROWTH_STATUS.md`
+    : undefined;
+  const growth = parseGrowth(
+    growthFile.available ? growthFile.content : null,
+    growthUrl,
+  );
 
   // 3) Parse markdown. Completeness is two separate axes, both from checkboxes
   //    inside their headed sections (DoD = readiness; Tracks = build progress).
@@ -747,6 +760,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     progress,
     liveness,
     loopMemoryHealth,
+    growth,
     mergedToday: pulls?.mergedToday ?? 0,
     merged24h: pulls?.merged24h ?? 0,
     merged7d: pulls?.merged7d ?? 0,

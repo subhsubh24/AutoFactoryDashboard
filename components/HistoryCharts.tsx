@@ -44,7 +44,7 @@ function Mini({
   );
 }
 
-/** PRs/day, %-to-submission, and CI pass% trends from KV history. */
+/** PRs/day, %-to-submission, CI pass%, and (when present) growth trends. */
 export function HistoryCharts({ metrics }: { metrics: DailyMetric[] }) {
   if (metrics.length < 2) {
     return (
@@ -54,6 +54,10 @@ export function HistoryCharts({ metrics }: { metrics: DailyMetric[] }) {
       </p>
     );
   }
+
+  // Growth series only show once the Growth Agent has reported real numbers.
+  const hasWaitlist = metrics.some((m) => m.waitlist != null && m.waitlist > 0);
+  const hasMrr = metrics.some((m) => m.mrr != null && m.mrr > 0);
 
   return (
     <div className="grid gap-4 sm:grid-cols-3">
@@ -72,6 +76,16 @@ export function HistoryCharts({ metrics }: { metrics: DailyMetric[] }) {
         suffix="%"
         max={100}
       />
+      {hasWaitlist && (
+        <Mini
+          label="Waitlist signups"
+          tone="sage"
+          values={metrics.map((m) => m.waitlist ?? null)}
+        />
+      )}
+      {hasMrr && (
+        <Mini label="MRR ($/mo)" tone="sage" values={metrics.map((m) => m.mrr ?? null)} />
+      )}
     </div>
   );
 }

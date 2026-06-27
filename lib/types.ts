@@ -1,4 +1,5 @@
 import type { ProjectKind } from "@/config/projects";
+import type { Growth } from "@/lib/growth";
 
 /** Computed project state. */
 export type ProjectStatus = "ready" | "blocked" | "building" | "idle";
@@ -45,11 +46,17 @@ export interface TrackProgress {
 
 export type ActionSource = "pending_ops" | "issue" | "human_core";
 
+export type ActionPriority = "urgent" | "high" | "normal";
+
 export interface ActionItem {
   id: string;
   text: string;
   /** Optional "how to" detail surfaced beneath the item. */
   howTo?: string;
+  /** Why it matters (from the structured OWNER_ACTIONS block), shown as context. */
+  why?: string;
+  /** Priority, when the item came from the structured OWNER_ACTIONS block. */
+  priority?: ActionPriority;
   source: ActionSource;
   /** True when this is raw fallback text rather than a cleanly parsed item. */
   raw?: boolean;
@@ -228,6 +235,10 @@ export interface ProjectSnapshot {
   liveness: Liveness;
   /** Latest DEEP AUDIT recorded in loop-memory. */
   loopMemoryHealth: LoopMemoryHealth;
+
+  // growth
+  /** docs/growth/GROWTH_STATUS.md → growth & marketing progress (Growth Agent). */
+  growth: Growth;
 
   // PR activity
   mergedToday: number;
