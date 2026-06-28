@@ -10,6 +10,7 @@ import { checkBriefing, checkNarrative, type Violation } from "@/lib/llm-guard";
 import {
   groupNeeds,
   humanAsksFor,
+  inferNeedTag,
   type NeedEntry,
   type NeedGroup,
 } from "@/lib/aggregate";
@@ -798,9 +799,21 @@ function firstSentence(s: string, max = 150): string {
   return out.length > max ? `${out.slice(0, max).trim()}…` : out;
 }
 
-function cleanTitle(text: string, max = 56): string {
-  const t = text.replace(/\s+/g, " ").trim().replace(/[.:]+$/, "");
-  return t.length > max ? `${t.slice(0, max).trim()}…` : t;
+function cleanTitle(text: string, max = 62): string {
+  let t = text.replace(/\s+/g, " ").trim();
+  // Drop leading urgency markers ("URGENT:", "NOW —", "[P0]") — the priority
+  // band already conveys that, so they're just noise in the title.
+  t = t
+    .replace(
+      /^(?:\[?\s*(?:urgent|now|asap|important|critical|p0|p1|todo|do first|action|fixme)\s*[)\]:.—-]*\s*)+/i,
+      "",
+    )
+    .replace(/[.:]+$/, "")
+    .trim();
+  if (t) t = t.charAt(0).toUpperCase() + t.slice(1);
+  // Clip at a word boundary, never mid-word.
+  if (t.length > max) t = `${t.slice(0, max).replace(/\s+\S*$/, "").trim()}…`;
+  return t;
 }
 
 /** Heuristic one-word category from the item text. */
@@ -964,15 +977,17 @@ const NEEDS_SYSTEM =
   '- "detail": ONE plain-language sentence — the shared gist\n' +
   '- "refs": the item numbers in this group\n' +
   '- "priority": "urgent" | "high" | "normal"\n' +
+  '- "tag": one short category word (billing, deploy, store, ci, security, data, growth, ops)\n' +
   "Every input number must appear in EXACTLY ONE group's refs — never drop, " +
   "duplicate, or invent. Order groups most urgent first. Return ONLY minified " +
-  'JSON: {"groups":[{"title":"…","detail":"…","refs":[1,3],"priority":"urgent"}]}.';
+  'JSON: {"groups":[{"title":"…","detail":"…","refs":[1,3],"priority":"urgent","tag":"billing"}]}.';
 
 interface RawNeedGroup {
   title?: string;
   detail?: string;
   refs?: number[];
   priority?: string;
+  tag?: string;
 }
 
 function parseNeedsJson(raw: string): { groups: RawNeedGroup[] } | null {
@@ -1010,13 +1025,15 @@ function mapNeedGroups(
       members.push(needs[r - 1]);
     }
     const byPriority = [...members].sort((a, b) => a.priority - b.priority);
+    const title = g.title?.trim() || byPriority[0].text;
     groups.push({
       id: members.length > 1 ? `grp:${byPriority[0].id}` : byPriority[0].id,
-      text: g.title?.trim() || byPriority[0].text,
+      text: title,
       howTo: g.detail?.trim() || byPriority[0].howTo,
       url: members.length === 1 ? byPriority[0].url : undefined,
       kind: byPriority[0].kind,
       priority: Math.min(...members.map((m) => m.priority)),
+      tag: g.tag?.trim().toLowerCase() || inferNeedTag(`${title} ${byPriority[0].howTo ?? ""}`),
       members: byPriority,
     });
   }

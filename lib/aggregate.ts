@@ -37,8 +37,23 @@ export interface NeedGroup {
   url?: string;
   kind: NeedKind;
   priority: number;
+  /** One-word category, e.g. billing / deploy / store — shared with the Action plan. */
+  tag?: string;
   /** 1+ members; >1 means the same task spans several projects. */
   members: NeedEntry[];
+}
+
+/** One-word category for an owner action — same vocabulary as the Action plan. */
+export function inferNeedTag(text: string): string {
+  const t = text.toLowerCase();
+  if (/\b(app ?store|play ?store|eas|testflight|submit|signing)\b/.test(t)) return "store";
+  if (/\b(bill|spend|cost|budget|quota|cap)\b/.test(t)) return "billing";
+  if (/\b(secret|api[- ]?key|token|\bauth\b|security|expose|credential)\b/.test(t)) return "security";
+  if (/\b(deploy|vercel|prod|domain|\benv\b|database_url|connection)\b/.test(t)) return "deploy";
+  if (/\b(ci|workflow|pipeline|e2e|lint)\b/.test(t)) return "ci";
+  if (/\b(migrat|database|postgres|schema|\bdb\b)\b/.test(t)) return "data";
+  if (/\b(waitlist|launch|market|email|seo|growth)\b/.test(t)) return "growth";
+  return "ops";
 }
 
 export interface CIHealthSummary {
@@ -422,6 +437,7 @@ export function groupNeeds(needs: NeedEntry[]): NeedGroup[] {
         url: m.url,
         kind: m.kind,
         priority: m.priority,
+        tag: inferNeedTag(`${m.text} ${m.howTo ?? ""}`),
         members,
       });
       continue;
@@ -434,6 +450,7 @@ export function groupNeeds(needs: NeedEntry[]): NeedGroup[] {
       howTo: byPriority[0].howTo ?? canonical.howTo,
       kind: byPriority[0].kind,
       priority: Math.min(...members.map((m) => m.priority)),
+      tag: inferNeedTag(`${canonical.text} ${byPriority[0].howTo ?? ""}`),
       members: byPriority,
     });
   }

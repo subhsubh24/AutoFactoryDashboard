@@ -602,7 +602,14 @@ function AskRow({ group }: { group: NeedGroup }) {
             {single.projectName}
           </Link>
         )}
-        <p className="text-sm leading-snug text-ink">{group.text}</p>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <p className="text-sm leading-snug text-ink">{group.text}</p>
+          {group.tag && (
+            <span className="rounded-full bg-bg px-1.5 py-0.5 text-[10px] font-medium text-muted">
+              {group.tag}
+            </span>
+          )}
+        </div>
         {group.howTo && (
           <p className="mt-0.5 text-xs text-muted">{group.howTo}</p>
         )}
