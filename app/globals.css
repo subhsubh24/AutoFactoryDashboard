@@ -113,11 +113,16 @@
 }
 
 /* ───────────────────────────────────────────────────────────────────────
- * Intro curtain — a brief "factory powering up" reveal on first visit.
- * Two gears spin and settle with a mechanical clunk, a ring sweeps to full
- * and flips clay→sage (the "unlock"), then the screen splits like bay doors
- * to reveal the dashboard. Plays once per session; skipped for reduced motion
- * (the component bails, and the guard below neutralizes it regardless).
+ * Intro curtain — a vault door on first visit.
+ *
+ * A gear-lock is mounted on the door (a bolted housing). The cog spins and
+ * settles into alignment with a clunk; on lock it flips clay→sage (the
+ * dashboard's own go/ready colour) and the door splits straight down the
+ * middle — cleaving the gear in two — to reveal the floor behind it.
+ *
+ * The trick: each half renders the SAME mechanism centred on the seam and
+ * clips its outer half, so the two halves read as one continuous gear until
+ * they part. Plays once per session; skipped for reduced motion.
  * ─────────────────────────────────────────────────────────────────────── */
 /* Pre-paint guard (set by an inline script): no curtain on repeat visits or
  * when motion is reduced — hidden before first paint, so zero flash. */
@@ -128,132 +133,83 @@
   position: fixed;
   inset: 0;
   z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   /* Click-through so a stalled curtain can never trap input. */
   pointer-events: none;
   overflow: hidden;
 }
-.intro-door {
+.intro-half {
   position: absolute;
-  left: 0;
-  right: 0;
-  height: 51%; /* the two halves overlap 2% so there's never a seam */
+  top: 0;
+  bottom: 0;
   background-color: var(--bg);
+  overflow: hidden;
   will-change: transform;
 }
-.intro-door-top {
-  top: 0;
-  animation: intro-door-up 620ms cubic-bezier(0.7, 0, 0.25, 1) 1080ms both;
+/* Left half is 1px wider so the two never leave a hairline seam at centre;
+ * its mechanism is nudged back 1px so the gear stays dead-centre. */
+.intro-half-left {
+  left: 0;
+  width: calc(50% + 1px);
+  animation: intro-open-left 620ms cubic-bezier(0.72, 0, 0.24, 1) 1040ms both;
 }
-.intro-door-bottom {
-  bottom: 0;
-  animation: intro-door-down 620ms cubic-bezier(0.7, 0, 0.25, 1) 1080ms both;
+.intro-half-right {
+  right: 0;
+  width: 50%;
+  animation: intro-open-right 620ms cubic-bezier(0.72, 0, 0.24, 1) 1040ms both;
 }
-.intro-stage {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 22px;
+.intro-mech {
+  position: absolute;
+  top: 50%;
+  width: 188px;
+  height: 188px;
   color: var(--clay);
   animation:
-    intro-stage-in 220ms ease both,
-    intro-tint 340ms ease 760ms both,
-    intro-stage-out 260ms ease 1020ms both;
+    intro-mech-in 240ms ease both,
+    intro-tint 320ms ease 760ms both;
 }
-.intro-gears {
-  position: relative;
-  width: 168px;
-  height: 168px;
-  display: grid;
-  place-items: center;
+.intro-mech-left {
+  right: 1px;
+  transform: translate(50%, -50%);
 }
-.intro-ring {
-  position: absolute;
-  inset: 0;
-  width: 168px;
-  height: 168px;
+.intro-mech-right {
+  left: 0;
+  transform: translate(-50%, -50%);
 }
-.intro-ring-sweep {
-  transform: rotate(-90deg);
-  transform-origin: 50% 50%;
-  animation: intro-sweep 720ms ease-out 140ms both;
+.intro-cog {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: intro-lock 880ms cubic-bezier(0.2, 0.8, 0.28, 1) both;
 }
 .intro-pulse {
   transform-box: fill-box;
   transform-origin: center;
   opacity: 0;
-  animation: intro-pulse 620ms ease-out 800ms both;
-}
-.intro-gear {
-  position: absolute;
-  transform-origin: 50% 50%;
-}
-.intro-gear-a {
-  width: 96px;
-  height: 96px;
-  animation: intro-lock 900ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
-}
-.intro-gear-b {
-  width: 60px;
-  height: 60px;
-  top: 14px;
-  right: 14px;
-  animation: intro-lock-rev 900ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
-}
-.intro-label {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--muted);
-  animation: intro-label 1180ms ease both;
+  animation: intro-pulse 640ms ease-out 780ms both;
 }
 
 @keyframes intro-lock {
-  0% { transform: rotate(-150deg); }
-  62% { transform: rotate(9deg); }
+  0% { transform: rotate(-160deg); }
+  62% { transform: rotate(10deg); }
   82% { transform: rotate(-4deg); }
   100% { transform: rotate(0deg); }
 }
-@keyframes intro-lock-rev {
-  0% { transform: rotate(150deg); }
-  62% { transform: rotate(-9deg); }
-  82% { transform: rotate(4deg); }
-  100% { transform: rotate(0deg); }
-}
-@keyframes intro-sweep {
-  from { stroke-dashoffset: 290; opacity: 0.3; }
-  to { stroke-dashoffset: 0; opacity: 1; }
-}
 @keyframes intro-pulse {
-  0% { transform: scale(0.82); opacity: 0; }
-  35% { opacity: 0.55; }
-  100% { transform: scale(1.32); opacity: 0; }
+  0% { transform: scale(0.84); opacity: 0; }
+  35% { opacity: 0.5; }
+  100% { transform: scale(1.3); opacity: 0; }
 }
 @keyframes intro-tint {
   to { color: var(--sage); }
 }
-@keyframes intro-stage-in {
+@keyframes intro-mech-in {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-@keyframes intro-stage-out {
-  to { opacity: 0; transform: scale(1.05); }
+@keyframes intro-open-left {
+  to { transform: translateX(-100%); }
 }
-@keyframes intro-label {
-  0% { opacity: 0; transform: translateY(5px); }
-  28% { opacity: 1; transform: translateY(0); }
-  72% { opacity: 1; }
-  100% { opacity: 0; }
-}
-@keyframes intro-door-up {
-  to { transform: translateY(-100%); }
-}
-@keyframes intro-door-down {
-  to { transform: translateY(100%); }
+@keyframes intro-open-right {
+  to { transform: translateX(100%); }
 }
 
 /* Respect reduced-motion preferences. */
