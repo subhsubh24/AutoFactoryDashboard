@@ -31,11 +31,11 @@ function Cog({ teeth, cogClass }: { teeth: number; cogClass: string }) {
         {Array.from({ length: teeth }, (_, i) => (
           <rect
             key={i}
-            x={c - 5}
-            y={3}
-            width={10}
-            height={15}
-            rx={2.5}
+            x={c - 3.6}
+            y={4}
+            width={7.2}
+            height={13}
+            rx={2}
             transform={`rotate(${(i * 360) / teeth} ${c} ${c})`}
           />
         ))}
@@ -98,10 +98,10 @@ export function IntroCurtain() {
       {/* Meshed gear pair, above the doors. */}
       <div className="intro-gears">
         <div className="intro-gear-box intro-gear-big">
-          <Cog teeth={12} cogClass="intro-cog-big" />
+          <Cog teeth={16} cogClass="intro-cog-big" />
         </div>
         <div className="intro-gear-box intro-gear-small">
-          <Cog teeth={9} cogClass="intro-cog-small" />
+          <Cog teeth={12} cogClass="intro-cog-small" />
         </div>
       </div>
     </div>

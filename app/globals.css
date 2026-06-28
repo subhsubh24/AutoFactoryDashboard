@@ -170,17 +170,17 @@
 }
 /* Centres placed so the teeth interlock (big at ~7-8 o'clock of the small). */
 .intro-gear-big {
-  width: 150px;
-  height: 150px;
-  left: -120px;
-  top: -46px;
+  width: 186px;
+  height: 186px;
+  left: -144px;
+  top: -60px;
   animation: intro-gear-out-left 560ms cubic-bezier(0.6, 0, 0.3, 1) 1820ms both;
 }
 .intro-gear-small {
-  width: 96px;
-  height: 96px;
-  left: -4px;
-  top: -78px;
+  width: 120px;
+  height: 120px;
+  left: -10px;
+  top: -93px;
   animation: intro-gear-out-right 560ms cubic-bezier(0.6, 0, 0.3, 1) 1820ms both;
 }
 /* Slow, opposite rotations that decelerate to an engaged stop. The small gear
@@ -198,11 +198,11 @@
 
 @keyframes intro-spin-cw {
   from { transform: rotate(0deg); }
-  to { transform: rotate(126deg); }
+  to { transform: rotate(120deg); }
 }
 @keyframes intro-spin-ccw {
   from { transform: rotate(0deg); }
-  to { transform: rotate(-189deg); }
+  to { transform: rotate(-160deg); }
 }
 @keyframes intro-tint {
   to { color: var(--sage); }
