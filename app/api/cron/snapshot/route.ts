@@ -58,6 +58,10 @@ export async function GET(req: Request) {
           ? s.growth.funnel.waitlistSignupsTotal ?? undefined
           : undefined,
         mrr: s.growth.available ? s.growth.funnel.mrrUsd ?? undefined : undefined,
+        // Quant-only: weekly paper PnL trend (null pre-edge → not persisted).
+        pnlPaper: s.growth.available
+          ? s.growth.metrics?.weeklyPnlPaper ?? undefined
+          : undefined,
       };
       const written = await recordDailyMetric(s.slug, metric);
       return { slug: s.slug, written, metric };

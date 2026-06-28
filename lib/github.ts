@@ -33,7 +33,8 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 // snapshot (missing new fields) and crash. v2: added liveness, readinessGates,
 // readyEvidence, loopMemoryHealth, files.preflight. v3: added growth. v4: more
 // loop-memory path candidates (root LOOP_MEMORY.md) — bust so it re-fetches.
-const SNAPSHOT_CACHE_VERSION = "v4";
+// v5: growth.metrics + growth.goLive (LLM-Quant weekly PnL + real-money GO).
+const SNAPSHOT_CACHE_VERSION = "v5";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for

@@ -357,6 +357,29 @@ project (green &lt; 8h, amber 8–18h, red &gt; 18h or quiet 24h) with a loud
   price×adoption formula). The UI badges every number `business case` vs
   `rough heuristic`, and the factory total keeps the two subtotals separate.
 
+**`docs/growth/GROWTH_STATUS.md`** → growth & marketing (the Growth Agent's report)
+
+- A machine-readable **`GROWTH_STATUS`** fenced YAML block — same discipline as the
+  business case. Pre-launch leads with **waitlist / visitors / signup rate**;
+  post-launch with **trials / paid / MRR / churn** plus **CAC·LTV** and the latest
+  decided experiment. Real data only; a missing or garbled block degrades to a
+  "see file" link, never a guessed number.
+- **Quant-only extension (e.g. LLM-Quant):** two extra maps unlock a prominent
+  **real-money GO panel** on that project's page —
+  - `metrics:` → **weekly PnL** (`weekly_pnl_paper` / `_live`) against the
+    `weekly_pnl_target_usd` profit floor, trended over KV history, plus hit rate,
+    Sharpe, max drawdown, Brier calibration, trades, and weeks validated above the
+    floor. Pre-edge the agent reports `null`/`0`, which shows as **"no validated
+    PnL yet"** — not a fabricated result.
+  - `go_live:` → the **GO signal**: `status` (`not_ready` → **"NOT READY"**;
+    `eligible` → **"GO-eligible"**, the only state that reads as go), `confidence`,
+    a 10-point **criteria** checklist (✓/✗ in published order), `blocking` reasons,
+    and `owner_decision_required`. It **can't be faked** — the project's own
+    `scripts/preflight.sh` fails CI if it flips to `eligible` without every
+    criterion true, the floor met, and all Definition-of-Done boxes checked — and
+    moving real money always stays a human decision. Non-quant projects simply omit
+    these maps and the panel doesn't render.
+
 **Also read (all optional):** `IMPROVEMENT_LOG.md`, and a loop-memory file at
 `docs/loop-memory.md` or `docs/autonomous-loop/LOOP_MEMORY.md` — its latest
 **DEEP AUDIT** date + note is shown so you can see the loop auditing itself.

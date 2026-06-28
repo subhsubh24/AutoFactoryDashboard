@@ -34,6 +34,7 @@ import { HistoryCharts } from "@/components/HistoryCharts";
 import { RelativeTime } from "@/components/RelativeTime";
 import { Delta24h } from "@/components/Delta";
 import { GrowthPanel } from "@/components/GrowthPanel";
+import { GoLivePanel } from "@/components/GoLivePanel";
 import { LivenessDot } from "@/components/LivenessDot";
 import { ReadinessGatesView } from "@/components/ReadinessGates";
 import { ReadyEvidenceView } from "@/components/ReadyEvidence";
@@ -337,6 +338,18 @@ export default async function ProjectPage({
           </div>
         </div>
       </div>
+
+      {/* Real-money GO signal + weekly PnL — only present for the quant project. */}
+      {(snapshot.growth.goLive || snapshot.growth.metrics) && (
+        <div className="mb-6">
+          <GoLivePanel
+            goLive={snapshot.growth.goLive}
+            metrics={snapshot.growth.metrics}
+            pnlHistory={history?.map((m) => m.pnlPaper ?? null) ?? []}
+            sourceUrl={snapshot.growth.sourceUrl}
+          />
+        </div>
+      )}
 
       {/* Body */}
       <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr] lg:items-start">

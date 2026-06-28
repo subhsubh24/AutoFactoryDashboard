@@ -87,6 +87,46 @@ export interface GrowthLinks {
   ownerDoc: string | null;
 }
 
+// ── Quant-only (LLM-Quant): weekly PnL tracking + the real-money GO signal ──
+
+/** Weekly PnL / trading metrics. Pre-edge most are null/0 — never fabricated. */
+export interface GrowthMetrics {
+  weeklyPnlPaper: number | null;
+  weeklyPnlLive: number | null;
+  /** The go-live profit floor (e.g. $2,000/wk). */
+  weeklyPnlTargetUsd: number | null;
+  weeksValidatedAboveFloor: number | null;
+  hitRate: number | null;
+  brierCalibration: number | null;
+  sharpe: number | null;
+  maxDrawdownPct: number | null;
+  totalTrades: number | null;
+}
+
+export type GoLiveStatus = "not_ready" | "eligible";
+export type GoLiveConfidence = "none" | "building" | "high";
+
+export interface GoLiveCriterion {
+  /** Raw snake_case key from the file (humanized for display). */
+  key: string;
+  met: boolean;
+}
+
+/**
+ * The real-money GO signal. `eligible` is gated in the repo's preflight CI
+ * (every criterion true + profit floor met + all DoD boxes) so it can't be
+ * faked. Even at `eligible`, flipping to real money stays the owner's call.
+ */
+export interface GrowthGoLive {
+  status: GoLiveStatus | null;
+  confidence: GoLiveConfidence | null;
+  /** The readiness checklist (10 booleans), in published order. */
+  criteria: GoLiveCriterion[];
+  /** What's currently stopping GO. */
+  blocking: string[];
+  ownerDecisionRequired: boolean | null;
+}
+
 /** The parsed growth status for one project. Availability-gated like the rest. */
 export interface Growth extends Availability {
   /** GitHub blob URL for the source file (for the "see file" link). */
@@ -108,6 +148,10 @@ export interface Growth extends Availability {
   nextActions: string[];
   ownerBlockers: string[];
   links: GrowthLinks;
+  /** Quant-only: weekly PnL / trading metrics. Absent for non-quant projects. */
+  metrics?: GrowthMetrics;
+  /** Quant-only: the real-money GO signal. Absent for non-quant projects. */
+  goLive?: GrowthGoLive;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -399,6 +443,50 @@ function blankGrowth(): Omit<Growth, "available"> {
   };
 }
 
+const GO_STATUSES: GoLiveStatus[] = ["not_ready", "eligible"];
+const GO_CONFIDENCES: GoLiveConfidence[] = ["none", "building", "high"];
+
+/** True only for a present mapping node (not a scalar, null, or sequence). */
+function isObj(v: Yaml | undefined): boolean {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+/** Quant-only weekly PnL / trading metrics. Every field null when absent. */
+function parseMetrics(m: Record<string, Yaml>): GrowthMetrics {
+  return {
+    weeklyPnlPaper: num(m.weekly_pnl_paper),
+    weeklyPnlLive: num(m.weekly_pnl_live),
+    weeklyPnlTargetUsd: num(m.weekly_pnl_target_usd),
+    weeksValidatedAboveFloor: num(m.weeks_validated_above_floor),
+    hitRate: num(m.hit_rate),
+    brierCalibration: num(m.brier_calibration),
+    sharpe: num(m.sharpe),
+    maxDrawdownPct: num(m.max_drawdown_pct),
+    totalTrades: num(m.total_trades),
+  };
+}
+
+/**
+ * The real-money GO signal. Status/confidence are validated against the known
+ * enums (anything else → null). Criteria preserve the file's published order;
+ * each is met only when its value is literally `true` (default-deny). We never
+ * synthesize a verdict — `eligible` is gated in the repo's own preflight CI.
+ */
+function parseGoLive(g: Record<string, Yaml>): GrowthGoLive {
+  const statusStr = str(g.status);
+  const confStr = str(g.confidence);
+  const crit = asObj(g.criteria);
+  return {
+    status: GO_STATUSES.includes(statusStr as GoLiveStatus) ? (statusStr as GoLiveStatus) : null,
+    confidence: GO_CONFIDENCES.includes(confStr as GoLiveConfidence)
+      ? (confStr as GoLiveConfidence)
+      : null,
+    criteria: Object.keys(crit).map((key) => ({ key, met: bool(crit[key]) === true })),
+    blocking: strArr(g.blocking),
+    ownerDecisionRequired: bool(g.owner_decision_required),
+  };
+}
+
 /**
  * Parse docs/growth/GROWTH_STATUS.md into a Growth. Returns `available: false`
  * (with a reason + the file link) when the block is missing or unparseable —
@@ -503,6 +591,10 @@ export function parseGrowth(
       inAppAnalytics: str(li.in_app_analytics),
       ownerDoc: str(li.owner_doc),
     },
+    // Quant-only blocks — attached only when present, so non-quant projects
+    // stay clean and the UI can key off their existence.
+    ...(isObj(root.metrics) ? { metrics: parseMetrics(asObj(root.metrics)) } : {}),
+    ...(isObj(root.go_live) ? { goLive: parseGoLive(asObj(root.go_live)) } : {}),
   };
 }
 

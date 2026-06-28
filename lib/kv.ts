@@ -21,6 +21,8 @@ export interface DailyMetric {
   waitlist?: number;
   /** MRR in USD (growth) — post-launch revenue over time. */
   mrr?: number;
+  /** Quant-only: reported weekly paper PnL (USD) at snapshot time — the GO trend. */
+  pnlPaper?: number;
 }
 
 /** Factory-wide daily KPIs (manufacturing-style), for trend charts. */
