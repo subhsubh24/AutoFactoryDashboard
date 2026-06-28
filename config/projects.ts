@@ -68,7 +68,7 @@ export const PROJECTS: ProjectConfig[] = [
     repo: "JobScraper",
     // branch omitted → data layer uses the repo's default_branch (main)
     kind: "web+mobile",
-    // appUrl omitted → no live deployment yet (pre-launch)
+    appUrl: "https://job-scraper-peach.vercel.app/",
   },
   {
     slug: "llm-quant",
@@ -77,6 +77,7 @@ export const PROJECTS: ProjectConfig[] = [
     repo: "LLM-Quant",
     branch: "claude/llm-stock-trading-app-fXupf",
     kind: "web",
+    appUrl: "https://llm-quant-six.vercel.app/",
   },
 ];
 
