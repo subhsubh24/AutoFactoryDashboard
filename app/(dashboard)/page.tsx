@@ -20,6 +20,7 @@ import {
 import { getHistory, getFactoryHistory } from "@/lib/kv";
 import { estimateCompletion, formatEtaDate, formatHorizon, type Estimate } from "@/lib/estimate";
 import { formatCycle } from "@/lib/quality";
+import { floorLoopSignal } from "@/lib/loophealth";
 import { getProjectBySlug } from "@/config/projects";
 import type { ProjectSnapshot } from "@/lib/types";
 import {
@@ -36,6 +37,7 @@ import {
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { Delta24h, DeltaPill } from "@/components/Delta";
 import { GrowthLine } from "@/components/GrowthPanel";
+import { LoopSignalChip } from "@/components/LoopHealthPanel";
 import { LivenessDot } from "@/components/LivenessDot";
 import { WeekBars } from "@/components/WeekBars";
 import { ProgressTrend, type ProjectTrend } from "@/components/ProgressTrend";
@@ -115,6 +117,13 @@ export default async function OverviewPage() {
     s.attentionIssues
       .filter((a) => a.kind === "harness_proposal")
       .map((a) => ({ ...a, projectName: s.displayName })),
+  );
+  // The loop's own "I'm stuck/churning" signal (LOOP_HEALTH) — distinct from the
+  // cadence-based "stalled" flag; surfaces the recurring wall it can't clear.
+  const churningLoops = snapshots.filter(
+    (s) =>
+      s.loopHealth.available &&
+      (s.loopHealth.signal === "stuck" || s.loopHealth.signal === "churning"),
   );
 
   // LLM where it's worth it: factory briefing + per-project digest + valuation,
@@ -253,8 +262,10 @@ export default async function OverviewPage() {
           </div>
         </div>
 
-        {/* Loud loop-health flags: a stalled loop, or a proposal awaiting you. */}
-        {(stalledLoops.length > 0 || proposals.length > 0) && (
+        {/* Loud loop-health flags: a stalled or churning loop, or a proposal. */}
+        {(stalledLoops.length > 0 ||
+          churningLoops.length > 0 ||
+          proposals.length > 0) && (
           <div className="mt-3 space-y-1.5">
             {stalledLoops.map((s) => (
               <p
@@ -265,6 +276,23 @@ export default async function OverviewPage() {
                 {s.displayName} loop may be stalled — {livenessMeta(s.liveness).label}.
               </p>
             ))}
+            {churningLoops.map((s) => {
+              const wall = s.loopHealth.rolling7d.recurringFailures[0];
+              return (
+                <p
+                  key={`churn-${s.slug}`}
+                  className="flex items-start gap-1.5 text-xs text-clay-strong"
+                >
+                  <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span className="font-medium">
+                    {s.displayName} loop is {s.loopHealth.signal}
+                    {wall && (
+                      <span className="font-normal text-muted"> — {wall}</span>
+                    )}
+                  </span>
+                </p>
+              );
+            })}
             {proposals.map((p) => (
               <a
                 key={`${p.projectName}-${p.number}`}
@@ -664,6 +692,7 @@ function ProjectTile({
   const appUrl = getProjectBySlug(s.slug)?.appUrl;
   const pct = headlinePct(s); // submission readiness (headline)
   const build = s.progress.buildPct; // build completeness (secondary)
+  const loopSignal = floorLoopSignal(s.loopHealth); // null while bootstrapping
 
   return (
     <div className="card flex flex-col gap-3 p-5 shadow-card transition-shadow hover:shadow-lift">
@@ -702,6 +731,7 @@ function ProjectTile({
               <span>{kindLabel(s.kind)}</span>
               <span aria-hidden>·</span>
               <LivenessDot liveness={s.liveness} showLabel />
+              {loopSignal && <LoopSignalChip signal={loopSignal} />}
             </div>
           </div>
         </div>

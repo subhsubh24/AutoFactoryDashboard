@@ -11,6 +11,8 @@ import {
   parseTrackFromText,
 } from "@/lib/parsers";
 import { parseGrowth } from "@/lib/growth";
+import { parseLoopHealth } from "@/lib/loophealth";
+import { parseScorecard } from "@/lib/scorecard";
 import type {
   AttentionIssue,
   AttentionKind,
@@ -37,7 +39,8 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 // v6: files.readme (drives the product tagline).
 // v7: growth.pmf + growth.outreach (PMF leading indicator + outreach funnel).
 // v8: build tracks now recognise the "## Tracks" + "### A —" heading style.
-const SNAPSHOT_CACHE_VERSION = "v8";
+// v9: loopHealth (LOOP_HEALTH.md) + qualityScorecard (QUALITY_SCORECARD.md).
+const SNAPSHOT_CACHE_VERSION = "v9";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
@@ -537,7 +540,9 @@ function degraded(
     },
     liveness: { level: "unknown", hoursSinceShip: null, lastShipAt: null, stalled: false },
     loopMemoryHealth: { available: false, hasAudit: false },
+    loopHealth: parseLoopHealth(null),
     growth: parseGrowth(null),
+    qualityScorecard: parseScorecard(null),
     mergedToday: 0,
     merged24h: 0,
     merged7d: 0,
@@ -625,6 +630,8 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     preflightFile,
     growthFile,
     readmeFile,
+    loopHealthFile,
+    scorecardFile,
   ] = await Promise.all([
     fetchPulls(octokit, owner, repo, errors),
     fetchCommits(octokit, owner, repo, workingBranch, errors),
@@ -645,6 +652,8 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     // README is the canonical "what this product is" — fetched with history so
     // the tagline cache can key on its commit SHA (regenerate only on change).
     fetchFileWithHistory(octokit, owner, repo, workingBranch, "README.md"),
+    fetchFile(octokit, owner, repo, workingBranch, "docs/autonomous-loop/LOOP_HEALTH.md"),
+    fetchFile(octokit, owner, repo, workingBranch, "docs/quality/QUALITY_SCORECARD.md"),
   ]);
 
   // Growth status — parsed exactly like the business case (link, never a guess).
@@ -654,6 +663,21 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
   const growth = parseGrowth(
     growthFile.available ? growthFile.content : null,
     growthUrl,
+  );
+
+  // The loop's self-reported health + the independent quality scorecard —
+  // parsed like the growth block (link, never a guess; absent → unavailable).
+  const loopHealth = parseLoopHealth(
+    loopHealthFile.available ? loopHealthFile.content : null,
+    loopHealthFile.available
+      ? `${repoUrl}/blob/${workingBranch}/docs/autonomous-loop/LOOP_HEALTH.md`
+      : undefined,
+  );
+  const qualityScorecard = parseScorecard(
+    scorecardFile.available ? scorecardFile.content : null,
+    scorecardFile.available
+      ? `${repoUrl}/blob/${workingBranch}/docs/quality/QUALITY_SCORECARD.md`
+      : undefined,
   );
 
   // 3) Parse markdown. Completeness is two separate axes, both from checkboxes
@@ -772,7 +796,9 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     progress,
     liveness,
     loopMemoryHealth,
+    loopHealth,
     growth,
+    qualityScorecard,
     mergedToday: pulls?.mergedToday ?? 0,
     merged24h: pulls?.merged24h ?? 0,
     merged7d: pulls?.merged7d ?? 0,

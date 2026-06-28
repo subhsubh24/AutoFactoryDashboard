@@ -46,6 +46,8 @@ import { RelativeTime } from "@/components/RelativeTime";
 import { Delta24h } from "@/components/Delta";
 import { GrowthPanel } from "@/components/GrowthPanel";
 import { GoLivePanel } from "@/components/GoLivePanel";
+import { LoopHealthPanel } from "@/components/LoopHealthPanel";
+import { QualityScorecardView } from "@/components/QualityScorecard";
 import { LivenessDot } from "@/components/LivenessDot";
 import { ReadinessGatesView } from "@/components/ReadinessGates";
 import { ReadyEvidenceView } from "@/components/ReadyEvidence";
@@ -600,6 +602,16 @@ export default async function ProjectPage({
             </p>
           </CollapsibleSection>
 
+          {snapshot.qualityScorecard.available && (
+            <CollapsibleSection
+              title="Quality scorecard"
+              subtitle="Independent A+→F grades — the auditor, not the maker"
+              storageKey={`afd-scorecard-${slug}`}
+            >
+              <QualityScorecardView scorecard={snapshot.qualityScorecard} />
+            </CollapsibleSection>
+          )}
+
           {history && history.length > 0 && (
             <CollapsibleSection
               title="Trends"
@@ -630,7 +642,15 @@ export default async function ProjectPage({
               </p>
             </SectionCard>
           )}
-          <SectionCard title="Loop health" subtitle="Attention & harness signals">
+          <SectionCard
+            title="Loop health"
+            subtitle="The loop's self-report + attention signals"
+          >
+            {snapshot.loopHealth.available && (
+              <div className="mb-4 border-b border-hairline pb-4">
+                <LoopHealthPanel loop={snapshot.loopHealth} />
+              </div>
+            )}
             <LoopHealth snapshot={snapshot} />
           </SectionCard>
 

@@ -1,5 +1,7 @@
 import type { ProjectKind } from "@/config/projects";
 import type { Growth } from "@/lib/growth";
+import type { LoopHealth } from "@/lib/loophealth";
+import type { QualityScorecard } from "@/lib/scorecard";
 
 /** Computed project state. */
 export type ProjectStatus = "ready" | "blocked" | "building" | "idle";
@@ -261,10 +263,14 @@ export interface ProjectSnapshot {
   liveness: Liveness;
   /** Latest DEEP AUDIT recorded in loop-memory. */
   loopMemoryHealth: LoopMemoryHealth;
+  /** docs/autonomous-loop/LOOP_HEALTH.md → the loop's self-reported health. */
+  loopHealth: LoopHealth;
 
   // growth
   /** docs/growth/GROWTH_STATUS.md → growth & marketing progress (Growth Agent). */
   growth: Growth;
+  /** docs/quality/QUALITY_SCORECARD.md → independent A+→F quality grades. */
+  qualityScorecard: QualityScorecard;
 
   // PR activity
   mergedToday: number;
