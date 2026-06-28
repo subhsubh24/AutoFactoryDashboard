@@ -26,6 +26,7 @@ import type { ProjectSnapshot } from "@/lib/types";
 import {
   cn,
   ciMeta,
+  cleanProposalTitle,
   formatMoney,
   headlinePct,
   kindLabel,
@@ -299,11 +300,12 @@ export default async function OverviewPage() {
                 href={p.url}
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-clay"
+                className="flex items-start gap-1.5 text-xs text-muted transition-colors hover:text-clay"
               >
-                <SparkleIcon className="h-3.5 w-3.5 shrink-0 text-amber" />
-                <span className="truncate">
-                  {p.projectName}: harness proposal — {p.title}
+                <SparkleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber" />
+                <span className="line-clamp-2">
+                  <span className="font-medium text-ink">{p.projectName}</span>{" "}
+                  harness proposal: {cleanProposalTitle(p.title)}
                 </span>
               </a>
             ))}

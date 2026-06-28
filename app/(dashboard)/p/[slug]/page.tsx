@@ -15,6 +15,7 @@ import { projectDelta } from "@/lib/aggregate";
 import type { FeedEntry, ProjectSnapshot } from "@/lib/types";
 import {
   cn,
+  cleanProposalTitle,
   describeBlock,
   formatAge,
   headlinePct,
@@ -877,7 +878,7 @@ function LoopHealth({ snapshot }: { snapshot: ProjectSnapshot }) {
                   rel="noreferrer"
                   className="min-w-0 text-sm text-ink transition-colors hover:text-clay"
                 >
-                  <span className="line-clamp-2">{issue.title}</span>
+                  <span className="line-clamp-2">{cleanProposalTitle(issue.title)}</span>
                 </a>
               </li>
             );

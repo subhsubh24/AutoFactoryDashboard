@@ -147,6 +147,22 @@ export function kindLabel(kind: ProjectKind): string {
 }
 
 /**
+ * Strip the "loop: harness improvement proposal —" boilerplate from a harness
+ * proposal issue title so the UI shows the actual ask, not a doubled label
+ * (the proposal type is already conveyed by its badge/icon). Non-matching
+ * titles pass through unchanged.
+ */
+export function cleanProposalTitle(title: string): string {
+  const cleaned = title
+    .replace(
+      /^\s*(?:loop\s*:\s*)?harness(?:\s+improvement)?\s+proposal\s*[—–:-]*\s*/i,
+      "",
+    )
+    .trim();
+  return cleaned || title;
+}
+
+/**
  * A short, glanceable milestone title for the hero. Roadmap checkbox items can
  * be long run-ons (and we only capture the first physical line, so they can end
  * mid-sentence) — so take the first real sentence (keeping a leading "A5."/"P0."
