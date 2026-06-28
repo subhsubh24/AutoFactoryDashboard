@@ -35,6 +35,7 @@ import { ValuationView } from "@/components/ValuationView";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { ActionItemsPanel } from "@/components/ActionItemsPanel";
 import { ActionPlan } from "@/components/ActionPlan";
+import { Collapsible } from "@/components/Collapsible";
 import { CIHealth } from "@/components/CIHealth";
 import { HistoryCharts } from "@/components/HistoryCharts";
 import { RelativeTime } from "@/components/RelativeTime";
@@ -397,15 +398,20 @@ export default async function ProjectPage({
               hasBaseline={delta.hasBaseline}
             />
             <div className="mt-5 border-t border-hairline pt-4">
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">
-                {shipped24h.length > 0
-                  ? "Shipped · last 24h"
-                  : "No merges in the last 24h · most recent"}
-              </p>
-              <ActivityFeed
-                entries={shippedList}
-                emptyText="No merged pull requests yet."
-              />
+              <Collapsible
+                title={
+                  shipped24h.length > 0
+                    ? "Shipped · last 24h"
+                    : "No merges in the last 24h · most recent"
+                }
+                count={shippedList.length}
+                storageKey={`afd-shipped-${slug}`}
+              >
+                <ActivityFeed
+                  entries={shippedList}
+                  emptyText="No merged pull requests yet."
+                />
+              </Collapsible>
             </div>
           </SectionCard>
 
