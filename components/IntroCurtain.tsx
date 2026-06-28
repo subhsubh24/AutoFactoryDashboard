@@ -3,102 +3,59 @@
 import { useLayoutEffect, useState } from "react";
 
 /**
- * A brief vault-door reveal, shown once per browser session when you first land
- * on the dashboard. A gear-lock is mounted on the door (a bolted housing); the
- * cog spins and settles into alignment with a clunk, flips clay→sage on lock
- * (the dashboard's own go/ready colour), and the door splits down the middle —
- * cleaving the gear in two — to reveal the floor behind it.
+ * A brief geared vault-door reveal, shown once per browser session when you
+ * first land on the dashboard. Two meshed gears — one big, one small — turn
+ * slowly in opposite directions like an idling machine, decelerating until
+ * they engage (clay→sage, the dashboard's own go/ready colour). Then they
+ * disengage — sliding apart and fading — as the vault doors split to reveal
+ * the floor.
  *
- * Each half renders the SAME mechanism centred on the seam and clips its outer
- * half (see globals.css), so the two read as one continuous gear until they
- * part. Visuals are pure CSS so they play even before hydration; this component
- * only decides *whether* to play and removes the node when it's done.
+ * The gears sit on a centred layer above the two background doors so they
+ * interlock cleanly. Visuals are pure CSS so they play even before hydration;
+ * this component only decides *whether* to play and removes the node when done.
  *
  * Tasteful guardrails: once per session (sessionStorage), skipped entirely for
  * `prefers-reduced-motion`, and click-through so it can never trap input.
  */
 
 const SESSION_KEY = "afd-intro-played";
-// Must outlast the longest CSS timeline (doors: 1040ms delay + 620ms).
-const TOTAL_MS = 1740;
+// Must outlast the longest CSS timeline (doors: 1820ms delay + 780ms).
+const TOTAL_MS = 2660;
 
-const C = 60; // SVG centre (viewBox 0 0 120 120)
-
-/** The gear-lock mechanism: a static bolted housing + a rotating cog. */
-function Mechanism({ side }: { side: "left" | "right" }) {
-  const teeth = Array.from({ length: 12 }, (_, i) => (
-    <rect
-      key={i}
-      x={C - 5}
-      y={18}
-      width={10}
-      height={14}
-      rx={2.5}
-      transform={`rotate(${i * 30} ${C} ${C})`}
-    />
-  ));
-  const bolts = Array.from({ length: 8 }, (_, i) => {
-    const a = (i * 45 * Math.PI) / 180;
-    return (
-      <circle
-        key={i}
-        cx={(C + 49 * Math.cos(a)).toFixed(2)}
-        cy={(C + 49 * Math.sin(a)).toFixed(2)}
-        r={2.1}
-        fill="currentColor"
-        opacity={0.45}
-      />
-    );
-  });
+/** A clean cog: filled teeth + body, punched hub + spokes, centred in a 0–100 box. */
+function Cog({ teeth, cogClass }: { teeth: number; cogClass: string }) {
+  const c = 50;
   return (
-    <div className={`intro-mech intro-mech-${side}`}>
-      <svg viewBox="0 0 120 120" width={188} height={188} aria-hidden="true">
-        {/* Housing — the metal rim the lock is mounted in (stays neutral). */}
-        <circle cx={C} cy={C} r={52} fill="none" stroke="var(--hairline)" strokeWidth={2.5} />
-        {/* Charge — fills the rim as the lock spins up, completing on lock. */}
-        <circle
-          className="intro-charge"
-          cx={C}
-          cy={C}
-          r={52}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2.5}
-          strokeLinecap="round"
-          strokeDasharray={327}
-        />
-        {bolts}
-        {/* The cog — spins into alignment, then tints with the rest. */}
-        <g className="intro-cog" fill="currentColor">
-          {teeth}
-          <circle cx={C} cy={C} r={30} />
-          <circle cx={C} cy={C} r={15} fill="var(--bg)" />
-          {[0, 120, 240].map((a) => (
-            <rect
-              key={a}
-              x={C - 3}
-              y={31}
-              width={6}
-              height={16}
-              rx={3}
-              fill="var(--bg)"
-              transform={`rotate(${a} ${C} ${C})`}
-            />
-          ))}
-          <circle cx={C} cy={C} r={5.5} />
-        </g>
-        {/* Shock ring on lock. */}
-        <circle
-          className="intro-pulse"
-          cx={C}
-          cy={C}
-          r={52}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2}
-        />
-      </svg>
-    </div>
+    <svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true">
+      <g className={cogClass} fill="currentColor">
+        {Array.from({ length: teeth }, (_, i) => (
+          <rect
+            key={i}
+            x={c - 5}
+            y={3}
+            width={10}
+            height={15}
+            rx={2.5}
+            transform={`rotate(${(i * 360) / teeth} ${c} ${c})`}
+          />
+        ))}
+        <circle cx={c} cy={c} r={34} />
+        <circle cx={c} cy={c} r={16} fill="var(--bg)" />
+        {[0, 120, 240].map((a) => (
+          <rect
+            key={a}
+            x={c - 3.5}
+            y={18}
+            width={7}
+            height={17}
+            rx={3.5}
+            fill="var(--bg)"
+            transform={`rotate(${a} ${c} ${c})`}
+          />
+        ))}
+        <circle cx={c} cy={c} r={6} />
+      </g>
+    </svg>
   );
 }
 
@@ -135,11 +92,17 @@ export function IntroCurtain() {
 
   return (
     <div className="intro-root" aria-hidden="true">
-      <div className="intro-half intro-half-left">
-        <Mechanism side="left" />
-      </div>
-      <div className="intro-half intro-half-right">
-        <Mechanism side="right" />
+      {/* Background doors — the actual reveal. */}
+      <div className="intro-half intro-half-left" />
+      <div className="intro-half intro-half-right" />
+      {/* Meshed gear pair, above the doors. */}
+      <div className="intro-gears">
+        <div className="intro-gear-box intro-gear-big">
+          <Cog teeth={12} cogClass="intro-cog-big" />
+        </div>
+        <div className="intro-gear-box intro-gear-small">
+          <Cog teeth={9} cogClass="intro-cog-small" />
+        </div>
       </div>
     </div>
   );

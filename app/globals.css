@@ -113,16 +113,16 @@
 }
 
 /* ───────────────────────────────────────────────────────────────────────
- * Intro curtain — a vault door on first visit.
+ * Intro curtain — a geared vault door on first visit.
  *
- * A gear-lock is mounted on the door (a bolted housing). The cog spins and
- * settles into alignment with a clunk; on lock it flips clay→sage (the
- * dashboard's own go/ready colour) and the door splits straight down the
- * middle — cleaving the gear in two — to reveal the floor behind it.
+ * Two meshed gears — one big, one small — turn slowly in opposite directions
+ * like an idling machine, decelerating until they engage (clay→sage, the
+ * dashboard's own go/ready colour). Then they disengage — sliding apart and
+ * fading — as the vault doors split down the middle to reveal the floor.
  *
- * The trick: each half renders the SAME mechanism centred on the seam and
- * clips its outer half, so the two halves read as one continuous gear until
- * they part. Plays once per session; skipped for reduced motion.
+ * The gears sit on a centred layer ABOVE the two background doors so they
+ * interlock cleanly; the doors do the actual reveal. Plays once per session;
+ * skipped for reduced motion. Deliberately unhurried (~2.6s).
  * ─────────────────────────────────────────────────────────────────────── */
 /* Pre-paint guard (set by an inline script): no curtain on repeat visits or
  * when motion is reduced — hidden before first paint, so zero flash. */
@@ -145,79 +145,76 @@
   overflow: hidden;
   will-change: transform;
 }
-/* Machined-door depth: a soft shadow cast onto the revealed floor + a faint
- * bevel highlight on the leading edge (so it reads on dark too). */
-/* Left half is 1px wider so the two never leave a hairline seam at centre;
- * its mechanism is nudged back 1px so the gear stays dead-centre. */
 .intro-half-left {
   left: 0;
   width: calc(50% + 1px);
-  animation: intro-open-left 620ms cubic-bezier(0.72, 0, 0.24, 1) 1040ms both;
+  animation: intro-open-left 780ms cubic-bezier(0.7, 0, 0.22, 1) 1820ms both;
 }
 .intro-half-right {
   right: 0;
   width: 50%;
-  animation: intro-open-right 620ms cubic-bezier(0.72, 0, 0.24, 1) 1040ms both;
+  animation: intro-open-right 780ms cubic-bezier(0.7, 0, 0.22, 1) 1820ms both;
 }
-.intro-mech {
+/* Centred layer holding the meshed pair; tinted clay→sage as they engage. */
+.intro-gears {
   position: absolute;
   top: 50%;
-  width: 188px;
-  height: 188px;
+  left: 50%;
+  width: 0;
+  height: 0;
   color: var(--clay);
-  animation:
-    intro-mech-in 240ms ease both,
-    intro-tint 320ms ease 760ms both;
+  animation: intro-tint 460ms ease 1480ms both;
 }
-.intro-mech-left {
-  right: 1px;
-  transform: translate(50%, -50%);
+.intro-gear-box {
+  position: absolute;
 }
-.intro-mech-right {
-  left: 0;
-  transform: translate(-50%, -50%);
+/* Centres placed so the teeth interlock (big at ~7-8 o'clock of the small). */
+.intro-gear-big {
+  width: 150px;
+  height: 150px;
+  left: -120px;
+  top: -46px;
+  animation: intro-gear-out-left 560ms cubic-bezier(0.6, 0, 0.3, 1) 1820ms both;
 }
-.intro-cog {
+.intro-gear-small {
+  width: 96px;
+  height: 96px;
+  left: -4px;
+  top: -78px;
+  animation: intro-gear-out-right 560ms cubic-bezier(0.6, 0, 0.3, 1) 1820ms both;
+}
+/* Slow, opposite rotations that decelerate to an engaged stop. The small gear
+ * turns ~1.5× the big one's angle (inverse of its size) so the mesh reads. */
+.intro-cog-big {
   transform-box: fill-box;
   transform-origin: center;
-  animation: intro-lock 880ms cubic-bezier(0.2, 0.8, 0.28, 1) both;
+  animation: intro-spin-cw 1720ms cubic-bezier(0.16, 0.5, 0.3, 1) both;
 }
-/* The lock "charging" — an arc sweeps the housing rim and completes on lock,
- * echoing the dashboard's own ProgressRing. */
-.intro-charge {
+.intro-cog-small {
   transform-box: fill-box;
   transform-origin: center;
-  transform: rotate(-90deg);
-  animation: intro-charge 840ms ease-out 40ms both;
-}
-.intro-pulse {
-  transform-box: fill-box;
-  transform-origin: center;
-  opacity: 0;
-  animation: intro-pulse 640ms ease-out 780ms both;
+  animation: intro-spin-ccw 1720ms cubic-bezier(0.16, 0.5, 0.3, 1) both;
 }
 
-@keyframes intro-lock {
-  0% { transform: rotate(-160deg); }
-  62% { transform: rotate(10deg); }
-  82% { transform: rotate(-4deg); }
-  100% { transform: rotate(0deg); }
+@keyframes intro-spin-cw {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(126deg); }
 }
-@keyframes intro-charge {
-  from { stroke-dashoffset: 327; }
-  to { stroke-dashoffset: 0; }
-}
-@keyframes intro-pulse {
-  0% { transform: scale(0.84); opacity: 0; }
-  35% { opacity: 0.5; }
-  100% { transform: scale(1.3); opacity: 0; }
+@keyframes intro-spin-ccw {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-189deg); }
 }
 @keyframes intro-tint {
   to { color: var(--sage); }
 }
-@keyframes intro-mech-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+/* On open the gears disengage — sliding apart and fading as the doors part. */
+@keyframes intro-gear-out-left {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(-300px); opacity: 0; }
+}
+@keyframes intro-gear-out-right {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(300px); opacity: 0; }
 }
 /* The cast shadow lives in the keyframes so it's absent while the doors are
  * shut (no centre seam) and grows onto the revealed floor as they part. */
