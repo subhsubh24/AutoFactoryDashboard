@@ -930,7 +930,10 @@ export function getActionPlan(s: ProjectSnapshot): Promise<ActionPlan> {
           { role: "system", content: PLAN_SYSTEM },
           { role: "user", content: `Action items:\n${numbered}` },
         ],
-        950,
+        // Headroom for up to 20 items of structured JSON (~70 tokens each) —
+        // too small a budget truncates the JSON, fails to parse, and silently
+        // drops the whole plan to the deterministic "Organized" fallback.
+        1900,
       );
       const parsed = out.text ? parsePlanJson(out.text) : null;
       if (!parsed) return templateActionPlan(items);
@@ -1076,7 +1079,8 @@ export function getNeedsPlan(needs: NeedEntry[]): Promise<NeedGroup[]> {
           { role: "system", content: NEEDS_SYSTEM },
           { role: "user", content: `Owner actions:\n${numbered}` },
         ],
-        700,
+        // Headroom so the grouped JSON never truncates (→ deterministic fallback).
+        1200,
       );
       const parsed = out.text ? parseNeedsJson(out.text) : null;
       const mapped = parsed ? mapNeedGroups(parsed, needs) : null;
