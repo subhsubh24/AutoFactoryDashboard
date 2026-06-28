@@ -296,8 +296,16 @@ export default async function ProjectPage({
               </span>
             )}
             {eta && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-sage-soft px-2.5 py-1 font-medium text-sage-strong">
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-medium",
+                  eta.basis === "velocity"
+                    ? "bg-bg text-muted"
+                    : "bg-sage-soft text-sage-strong",
+                )}
+              >
                 Est. launch {formatEtaDate(eta.date)} · {formatHorizon(eta.daysRemaining)}
+                {eta.basis === "velocity" && " · rough"}
               </span>
             )}
           </div>

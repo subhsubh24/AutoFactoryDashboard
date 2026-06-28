@@ -706,7 +706,10 @@ function ProjectTile({
           <span className="text-muted">
             · est. launch{" "}
             <span className="font-medium text-ink">{formatEtaDate(eta.date)}</span>{" "}
-            <span className="opacity-70">({formatHorizon(eta.daysRemaining)})</span>
+            <span className="opacity-70">
+              ({formatHorizon(eta.daysRemaining)}
+              {eta.basis === "velocity" ? ", rough" : ""})
+            </span>
           </span>
         )}
       </div>
