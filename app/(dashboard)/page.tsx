@@ -51,6 +51,7 @@ import {
   ArrowRightIcon,
   CheckIcon,
   ExternalLinkIcon,
+  RefreshIcon,
   RocketIcon,
   SparkleIcon,
 } from "@/components/icons";
@@ -268,6 +269,10 @@ export default async function OverviewPage() {
           churningLoops.length > 0 ||
           proposals.length > 0) && (
           <div className="mt-3 space-y-1.5">
+            <p className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted">
+              <RefreshIcon className="h-3 w-3" />
+              The loop needs you
+            </p>
             {stalledLoops.map((s) => (
               <p
                 key={s.slug}
