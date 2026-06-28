@@ -1,7 +1,17 @@
-import type { Growth, GrowthPhase } from "@/lib/growth";
-import { growthStale, latestDecidedExperiment } from "@/lib/growth";
+import { Fragment } from "react";
+import type {
+  Growth,
+  GrowthOutreach,
+  GrowthPhase,
+  GrowthPmf,
+  GrowthSignal,
+} from "@/lib/growth";
+import { floorPmfSignal, growthStale, latestDecidedExperiment } from "@/lib/growth";
 import { cn, formatMoney, type Tone } from "@/lib/utils";
-import { ExternalLinkIcon } from "@/components/icons";
+import { ArrowRightIcon, ExternalLinkIcon, MailIcon } from "@/components/icons";
+
+/** Owner's Gmail drafts — where the outreach draft bodies actually live. */
+const GMAIL_DRAFTS_URL = "https://mail.google.com/mail/u/0/#drafts";
 
 const PHASE_META: Record<GrowthPhase, { label: string; tone: Tone }> = {
   pre_launch: { label: "Pre-launch", tone: "muted" },
@@ -49,6 +59,171 @@ function GStat({
       <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted">{label}</p>
       <p className={cn("mt-1 text-xl font-semibold tabular", color)}>{value}</p>
       {sub && <p className="mt-0.5 text-[11px] text-sage-strong">{sub}</p>}
+    </div>
+  );
+}
+
+// ── PMF + outreach signals ──────────────────────────────────────────────────
+
+const SIGNAL_META: Record<GrowthSignal, { label: string; tone: Tone; bars: number }> = {
+  none: { label: "No signal yet", tone: "muted", bars: 0 },
+  weak: { label: "Weak signal", tone: "amber", bars: 1 },
+  emerging: { label: "Emerging signal", tone: "amber", bars: 2 },
+  strong: { label: "Strong signal", tone: "sage", bars: 3 },
+};
+
+/** Resolve a signal to its display meta; null → "no signal yet" (never an error). */
+function signalMeta(signal: GrowthSignal | null) {
+  return SIGNAL_META[signal ?? "none"];
+}
+
+/** A 3-segment strength meter — empty (track-coloured) when there's no signal. */
+function SignalBars({ bars, tone }: { bars: number; tone: Tone }) {
+  const fill = tone === "sage" ? "bg-sage" : tone === "amber" ? "bg-amber" : "bg-muted";
+  const heights = ["h-1.5", "h-2.5", "h-3.5"];
+  return (
+    <span className="inline-flex items-end gap-[2px]" aria-hidden>
+      {heights.map((h, i) => (
+        <span
+          key={i}
+          className={cn("w-1 rounded-sm", h, i < bars ? fill : "bg-[var(--ring-track)]")}
+        />
+      ))}
+    </span>
+  );
+}
+
+function SignalChip({ signal }: { signal: GrowthSignal | null }) {
+  const meta = signalMeta(signal);
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
+        CHIP[meta.tone],
+      )}
+    >
+      <SignalBars bars={meta.bars} tone={meta.tone} />
+      {meta.label}
+    </span>
+  );
+}
+
+/**
+ * Product-market fit — the leading indicator. Signal + the day-cohort retention
+ * curve (D1 → D7 → D30) + activation & organic-share. Pre-launch every value is
+ * null/none, so it renders a calm "no signal yet", never an error.
+ */
+function PmfTile({ pmf }: { pmf: GrowthPmf }) {
+  const curve: Array<{ k: string; v: number | null }> = [
+    { k: "D1", v: pmf.retentionD1 },
+    { k: "D7", v: pmf.retentionD7 },
+    { k: "D30", v: pmf.retentionD30 },
+  ];
+  const hasCurve = curve.some((p) => p.v !== null);
+  return (
+    <div className="rounded-xl border border-hairline bg-bg px-4 py-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
+          Product-market fit
+        </p>
+        <SignalChip signal={pmf.signal} />
+      </div>
+
+      <div className="mt-3 flex items-stretch gap-1.5">
+        {curve.map((p, i) => (
+          <Fragment key={p.k}>
+            {i > 0 && (
+              <span className="flex items-center">
+                <ArrowRightIcon className="h-3 w-3 shrink-0 text-muted/40" />
+              </span>
+            )}
+            <div className="flex flex-1 flex-col items-center rounded-lg bg-card px-2 py-1.5 text-center">
+              <span className="text-[10px] uppercase tracking-wide text-muted">{p.k}</span>
+              <span className="mt-0.5 text-sm font-semibold tabular text-ink">{fmtRate(p.v)}</span>
+            </div>
+          </Fragment>
+        ))}
+      </div>
+      <p className="mt-1.5 text-[10px] text-muted">
+        {hasCurve
+          ? "Retention curve — a flattening curve is the PMF signal"
+          : "Retention — no cohort data reported yet"}
+      </p>
+
+      <div className="mt-2.5 flex flex-wrap gap-x-6 gap-y-1 border-t border-hairline pt-2.5 text-xs">
+        <span className="text-muted">
+          Activation{" "}
+          <span className="font-medium tabular text-ink">{fmtRate(pmf.activationRate)}</span>
+        </span>
+        <span className="text-muted">
+          Organic share{" "}
+          <span className="font-medium tabular text-ink">{fmtRate(pmf.organicShareRate)}</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function FunnelStep({ n, label, tone }: { n: string; label: string; tone?: "sage" }) {
+  return (
+    <span className="inline-flex items-baseline gap-1">
+      <span
+        className={cn(
+          "text-base font-semibold tabular",
+          tone === "sage" ? "text-sage-strong" : "text-ink",
+        )}
+      >
+        {n}
+      </span>
+      <span className="text-[11px] text-muted">{label}</span>
+    </span>
+  );
+}
+
+/**
+ * Strategic outreach — a drafted → sent → replied funnel. The draft bodies live
+ * in the owner's Gmail (never the repo); we surface only the counts and link to
+ * Gmail when there are drafts to review. 0/null reads as "none yet", never error.
+ */
+function OutreachTile({ outreach }: { outreach: GrowthOutreach }) {
+  const { drafted7d: drafted, ownerSent7d: sent, replies7d: replies } = outreach;
+  const fmt = (n: number | null) => (n === null ? "—" : n.toLocaleString("en-US"));
+  const quiet = (drafted ?? 0) === 0 && (sent ?? 0) === 0 && (replies ?? 0) === 0;
+  const toReview = drafted !== null && drafted > 0;
+  return (
+    <div className="rounded-xl border border-hairline bg-bg px-4 py-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
+          <MailIcon className="h-3.5 w-3.5" />
+          Strategic outreach · 7d
+        </p>
+        <SignalChip signal={outreach.signal} />
+      </div>
+
+      <div className="mt-2.5 flex items-center gap-2">
+        <FunnelStep n={fmt(drafted)} label="drafted" />
+        <ArrowRightIcon className="h-3.5 w-3.5 shrink-0 text-muted/40" />
+        <FunnelStep n={fmt(sent)} label="sent" />
+        <ArrowRightIcon className="h-3.5 w-3.5 shrink-0 text-muted/40" />
+        <FunnelStep n={fmt(replies)} label="replied" tone={(replies ?? 0) > 0 ? "sage" : undefined} />
+      </div>
+
+      <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted">
+        <span>
+          1:1 drafts the agent prepares — you review &amp; send
+          {quiet ? " · none this week yet" : ""}.
+        </span>
+        {toReview && (
+          <a
+            href={GMAIL_DRAFTS_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 font-medium text-clay transition-colors hover:underline"
+          >
+            Review {drafted} in Gmail <ExternalLinkIcon className="h-3 w-3" />
+          </a>
+        )}
+      </p>
     </div>
   );
 }
@@ -143,6 +318,9 @@ export function GrowthPanel({
         )}
       </div>
 
+      {/* PMF — the leading indicator, surfaced first (only when the repo has it). */}
+      {growth.pmf && <PmfTile pmf={growth.pmf} />}
+
       {/* Funnel headline — waitlist pre-launch, trials/paid/MRR/churn post-launch. */}
       <div className="grid grid-cols-2 gap-x-5 gap-y-4 rounded-xl bg-bg px-4 py-4 sm:grid-cols-4">
         {post ? (
@@ -175,6 +353,9 @@ export function GrowthPanel({
           </>
         )}
       </div>
+
+      {/* Strategic outreach funnel (only when the repo has an outreach block). */}
+      {growth.outreach && <OutreachTile outreach={growth.outreach} />}
 
       {/* Channels connected (or the honest "awaiting connect" state). */}
       <p className="text-xs text-muted">
@@ -283,6 +464,7 @@ export function GrowthLine({ growth }: { growth: Growth }) {
   if (!growth.available) return null;
   const f = growth.funnel;
   const post = growth.phase === "post_launch";
+  const pmfSignal = floorPmfSignal(growth);
 
   let stat: string | null = null;
   if (post && f.mrrUsd !== null && f.mrrUsd > 0) {
@@ -292,13 +474,30 @@ export function GrowthLine({ growth }: { growth: Growth }) {
   } else if (growth.awaitingConnect) {
     stat = "growth: awaiting connect";
   }
-  if (!stat) return null;
+  // Nothing worth showing — keep the (mostly pre-launch) tile calm.
+  if (!stat && !pmfSignal) return null;
 
   const stale = growthStale(growth);
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-muted">
-      <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-sage/70" />
-      {stat}
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+      {pmfSignal && (
+        <span
+          className={cn(
+            "inline-flex items-center rounded-full px-1.5 py-0.5 font-medium capitalize",
+            pmfSignal === "strong"
+              ? "bg-sage-soft text-sage-strong"
+              : "bg-amber-soft text-amber-strong",
+          )}
+        >
+          PMF: {pmfSignal}
+        </span>
+      )}
+      {stat && (
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-sage/70" />
+          {stat}
+        </span>
+      )}
       {stale && <span className="text-amber-strong">· stale</span>}
     </span>
   );

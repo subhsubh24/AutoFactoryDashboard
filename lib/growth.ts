@@ -82,6 +82,47 @@ export interface GrowthContent {
   organicSessions7d: number | null;
 }
 
+// ── Product-market fit (leading indicator) + strategic outreach ─────────────
+
+/** The agent's honest read of a signal's strength. null == "no signal yet". */
+export type GrowthSignal = "none" | "weak" | "emerging" | "strong";
+
+/**
+ * Product-market fit — the leading indicator BEHIND the business-case number.
+ * Pre-PMF, the right move is a PRODUCT/retention fix, not scaling acquisition,
+ * and the agent encodes that read in `signal`. REAL data only: every field is
+ * null/none until a connected analytics source reports — we render that as
+ * "no signal yet", never an error and never a fabricated number.
+ */
+export interface GrowthPmf {
+  /** Share of new users who reach first value (the "aha"). 0–1 or already-%. */
+  activationRate: number | null;
+  /** Day-cohort return curve — a flattening curve is the strongest PMF signal. */
+  retentionD1: number | null;
+  retentionD7: number | null;
+  retentionD30: number | null;
+  /** Non-paid / referral share of signups — is it spreading on its own? */
+  organicShareRate: number | null;
+  /** none | weak | emerging | strong; null or "none" → no signal yet. */
+  signal: GrowthSignal | null;
+}
+
+/**
+ * Strategic 1:1 outreach — curated email DRAFTS the growth agent prepares for the
+ * OWNER to review and send. DRAFT-ONLY: the agent never sends. The draft bodies
+ * live in the owner's Gmail (never the repo), so we surface only the funnel
+ * counts. Replies are owner-reported, never fabricated; 0/null pre-launch.
+ */
+export interface GrowthOutreach {
+  /** Curated drafts the agent queued for the owner in the last 7d. */
+  drafted7d: number | null;
+  /** Of those, how many the owner actually sent (owner-reported). */
+  ownerSent7d: number | null;
+  /** Replies received (owner-reported, never fabricated). */
+  replies7d: number | null;
+  signal: GrowthSignal | null;
+}
+
 export interface GrowthLinks {
   inAppAnalytics: string | null;
   ownerDoc: string | null;
@@ -148,6 +189,10 @@ export interface Growth extends Availability {
   nextActions: string[];
   ownerBlockers: string[];
   links: GrowthLinks;
+  /** Product-market fit signals — the leading indicator. Absent until a repo adds it. */
+  pmf?: GrowthPmf;
+  /** Strategic outreach drafts funnel. Absent for products without a growth agent (e.g. LLM-Quant). */
+  outreach?: GrowthOutreach;
   /** Quant-only: weekly PnL / trading metrics. Absent for non-quant projects. */
   metrics?: GrowthMetrics;
   /** Quant-only: the real-money GO signal. Absent for non-quant projects. */
@@ -487,6 +532,36 @@ function parseGoLive(g: Record<string, Yaml>): GrowthGoLive {
   };
 }
 
+const GROWTH_SIGNALS: GrowthSignal[] = ["none", "weak", "emerging", "strong"];
+
+/** Validate the signal enum; anything unknown (incl. absent) → null = "no signal yet". */
+function parseSignal(v: Yaml | undefined): GrowthSignal | null {
+  const s = str(v);
+  return s && GROWTH_SIGNALS.includes(s as GrowthSignal) ? (s as GrowthSignal) : null;
+}
+
+/** PMF leading-indicator block. Every field stays null until a real source reports. */
+function parsePmf(p: Record<string, Yaml>): GrowthPmf {
+  return {
+    activationRate: num(p.activation_rate),
+    retentionD1: num(p.retention_d1),
+    retentionD7: num(p.retention_d7),
+    retentionD30: num(p.retention_d30),
+    organicShareRate: num(p.organic_share_rate),
+    signal: parseSignal(p.signal),
+  };
+}
+
+/** Strategic outreach drafts funnel — owner-reported, never fabricated. */
+function parseOutreach(o: Record<string, Yaml>): GrowthOutreach {
+  return {
+    drafted7d: num(o.drafted_7d),
+    ownerSent7d: num(o.owner_sent_7d),
+    replies7d: num(o.replies_7d),
+    signal: parseSignal(o.signal),
+  };
+}
+
 /**
  * Parse docs/growth/GROWTH_STATUS.md into a Growth. Returns `available: false`
  * (with a reason + the file link) when the block is missing or unparseable —
@@ -591,8 +666,11 @@ export function parseGrowth(
       inAppAnalytics: str(li.in_app_analytics),
       ownerDoc: str(li.owner_doc),
     },
-    // Quant-only blocks — attached only when present, so non-quant projects
-    // stay clean and the UI can key off their existence.
+    // Sub-blocks attached only when the repo actually publishes them, so the UI
+    // can key off existence and products that haven't added a block stay clean.
+    ...(isObj(root.pmf) ? { pmf: parsePmf(asObj(root.pmf)) } : {}),
+    ...(isObj(root.outreach) ? { outreach: parseOutreach(asObj(root.outreach)) } : {}),
+    // Quant-only blocks (LLM-Quant has no growth agent → no pmf/outreach either).
     ...(isObj(root.metrics) ? { metrics: parseMetrics(asObj(root.metrics)) } : {}),
     ...(isObj(root.go_live) ? { goLive: parseGoLive(asObj(root.go_live)) } : {}),
   };
@@ -611,4 +689,13 @@ export function latestDecidedExperiment(g: Growth): GrowthExperiment | null {
   const decided = g.experiments.filter((e) => e.decided || /decided|done|complete|shipped/i.test(e.status));
   if (decided.length === 0) return null;
   return decided.reduce((best, e) => (e.decided > (best.decided || "") ? e : best), decided[0]);
+}
+
+/**
+ * PMF signal worth surfacing on the dense Floor tile — only once it's advanced
+ * past the early/none states, so pre-launch tiles stay calm and uncluttered.
+ */
+export function floorPmfSignal(g: Growth): GrowthSignal | null {
+  const s = g.pmf?.signal;
+  return s === "emerging" || s === "strong" ? s : null;
 }

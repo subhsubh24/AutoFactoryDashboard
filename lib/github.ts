@@ -35,7 +35,8 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 // loop-memory path candidates (root LOOP_MEMORY.md) — bust so it re-fetches.
 // v5: growth.metrics + growth.goLive (LLM-Quant weekly PnL + real-money GO).
 // v6: files.readme (drives the product tagline).
-const SNAPSHOT_CACHE_VERSION = "v6";
+// v7: growth.pmf + growth.outreach (PMF leading indicator + outreach funnel).
+const SNAPSHOT_CACHE_VERSION = "v7";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
