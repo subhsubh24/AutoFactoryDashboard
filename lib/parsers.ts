@@ -118,6 +118,52 @@ export function extractTrackCodes(text: string): string[] {
 
 // Track/phase section headings: "Track A — …", "Track B", "P0 — …".
 const TRACK_HEADING_RE = /\btrack\s+[a-z0-9]\b|\bp[0-9]\b/i;
+// Some repos head tracks under a parent "## Tracks" as just "### A — …" /
+// "### B — …" (the letter only, no "Track" word). Recognise those too — but
+// ONLY when nested under a "Tracks" heading, so a stray "### A — note"
+// elsewhere can never be mistaken for a build track.
+const TRACK_LETTER_RE = /^[A-Za-z0-9]\s*[—–-]\s/;
+const TRACKS_PARENT_RE = /\btracks\b/i;
+
+/** True when some ancestor heading of `h` matches `re`. */
+function underHeading(headings: Heading[], h: number, re: RegExp): boolean {
+  let level = headings[h].level;
+  for (let i = h - 1; i >= 0; i--) {
+    if (headings[i].level < level) {
+      if (re.test(headings[i].text)) return true;
+      level = headings[i].level;
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether a heading marks a build track — either the explicit "Track A"/"P0"
+ * form, or a bare "A — …" letter heading sitting under a parent "Tracks"
+ * section (the convergence-anchor ROADMAP style some repos use).
+ */
+function isTrackHeading(headings: Heading[], h: number): boolean {
+  const t = headings[h].text;
+  return (
+    TRACK_HEADING_RE.test(t) ||
+    (TRACK_LETTER_RE.test(t) && underHeading(headings, h, TRACKS_PARENT_RE))
+  );
+}
+
+/**
+ * True when a track heading is nested inside another track — its checkboxes are
+ * already counted within the ancestor's body, so we must not count them twice.
+ */
+function hasTrackAncestor(headings: Heading[], h: number): boolean {
+  let level = headings[h].level;
+  for (let i = h - 1; i >= 0; i--) {
+    if (headings[i].level < level) {
+      if (isTrackHeading(headings, i)) return true;
+      level = headings[i].level;
+    }
+  }
+  return false;
+}
 
 /** Text of a checkbox line with the "- [ ]" marker and emphasis stripped. */
 function checkboxText(line: string): string {
@@ -202,14 +248,20 @@ export function parseRoadmap(md: string | null | undefined): ProgressInfo {
   let buildTotal = 0;
   let nextItem: string | null = null;
   for (let h = 0; h < headings.length; h++) {
-    if (!TRACK_HEADING_RE.test(headings[h].text)) continue;
+    if (!isTrackHeading(headings, h)) continue;
+    if (hasTrackAncestor(headings, h)) continue; // already counted by its parent
     const body = sectionBody(ls, headings, h);
     const c = countCheckboxes(body);
     if (c.total === 0) continue; // no checkboxes here → not a measurable track
-    const m = headings[h].text.match(/\b(track\s+[a-z0-9]|p[0-9])\b/i);
-    const label = m
-      ? m[1].replace(/track\s+/i, "Track ").replace(/^p/i, "P")
-      : cleanHeading(headings[h].text);
+    const tm = headings[h].text.match(/\b(track\s+[a-z0-9]|p[0-9])\b/i);
+    let label: string;
+    if (tm) {
+      label = tm[1].replace(/track\s+/i, "Track ").replace(/^p/i, "P");
+    } else {
+      // "A — DATA & VENUES" → "Track A", matching the labelled tracks elsewhere.
+      const lm = headings[h].text.match(/^([A-Za-z0-9])\s*[—–-]/);
+      label = lm ? `Track ${lm[1].toUpperCase()}` : cleanHeading(headings[h].text);
+    }
     tracks.push({ label, done: c.done, total: c.total, pct: pct(c.done, c.total) });
     buildDone += c.done;
     buildTotal += c.total;

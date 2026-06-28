@@ -36,7 +36,8 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 // v5: growth.metrics + growth.goLive (LLM-Quant weekly PnL + real-money GO).
 // v6: files.readme (drives the product tagline).
 // v7: growth.pmf + growth.outreach (PMF leading indicator + outreach funnel).
-const SNAPSHOT_CACHE_VERSION = "v7";
+// v8: build tracks now recognise the "## Tracks" + "### A —" heading style.
+const SNAPSHOT_CACHE_VERSION = "v8";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
