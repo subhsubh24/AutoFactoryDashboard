@@ -50,8 +50,12 @@ import {
   SparkleIcon,
 } from "@/components/icons";
 
-// Agents run ~every 6h, so hourly revalidation is plenty fresh.
-export const revalidate = 3600;
+// This is a live ops view, so render it dynamically: the AI digests then show
+// on the first load after a deploy, instead of serving the build-time "Summary"
+// placeholder until ISR catches up an hour later. The expensive work (GitHub +
+// Gemini) is memoised in unstable_cache, so this does NOT re-hit the APIs per
+// request — a warm load is just cache reads.
+export const dynamic = "force-dynamic";
 
 export default async function OverviewPage() {
   const snapshots = await getAllSnapshots();

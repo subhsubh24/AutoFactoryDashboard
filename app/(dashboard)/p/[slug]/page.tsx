@@ -52,8 +52,10 @@ import {
   SparkleIcon,
 } from "@/components/icons";
 
-// Agents run ~every 6h; hourly revalidation keeps it fresh without churn.
-export const revalidate = 3600;
+// Short ISR window so the AI digest replaces the build-time "Summary"
+// placeholder within minutes of a deploy (the LLM/GitHub work stays cached in
+// unstable_cache regardless). Agents only ship ~every 6h, so this is cheap.
+export const revalidate = 120;
 // Projects are a fixed config list — only configured slugs are valid routes;
 // anything else is a real 404.
 export const dynamicParams = false;
