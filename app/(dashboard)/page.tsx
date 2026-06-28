@@ -12,6 +12,7 @@ import {
   getNarrative,
   getFactoryBriefing,
   getNeedsPlan,
+  getProjectTagline,
   getValuation,
   type Narrative,
   type Valuation,
@@ -118,14 +119,17 @@ export default async function OverviewPage() {
 
   // LLM where it's worth it: factory briefing + per-project digest + valuation,
   // and clustering the cross-project "Needs you" list (same task → one card).
-  const [briefing, askGroups, narrativeEntries, valuationEntries] = await Promise.all([
-    getFactoryBriefing(snapshots),
-    getNeedsPlan(asks),
-    Promise.all(snapshots.map(async (s) => [s.slug, await getNarrative(s)] as const)),
-    Promise.all(snapshots.map(async (s) => [s.slug, await getValuation(s)] as const)),
-  ]);
+  const [briefing, askGroups, narrativeEntries, valuationEntries, taglineEntries] =
+    await Promise.all([
+      getFactoryBriefing(snapshots),
+      getNeedsPlan(asks),
+      Promise.all(snapshots.map(async (s) => [s.slug, await getNarrative(s)] as const)),
+      Promise.all(snapshots.map(async (s) => [s.slug, await getValuation(s)] as const)),
+      Promise.all(snapshots.map(async (s) => [s.slug, await getProjectTagline(s)] as const)),
+    ]);
   const narratives = new Map<string, Narrative>(narrativeEntries);
   const valuations = new Map<string, Valuation>(valuationEntries);
+  const taglines = new Map<string, string | null>(taglineEntries);
 
   // Factory value rollups — keep business-case and heuristic subtotals separate.
   const bcVals = valuationEntries.filter(([, v]) => v.source === "business_case");
@@ -458,6 +462,7 @@ export default async function OverviewPage() {
               key={s.slug}
               snapshot={s}
               narrative={narratives.get(s.slug)}
+              tagline={taglines.get(s.slug) ?? null}
               eta={etas.get(s.slug) ?? null}
               valuation={valuations.get(s.slug) ?? null}
               delta={deltas.get(s.slug) ?? null}
@@ -641,12 +646,14 @@ function AskRow({ group }: { group: NeedGroup }) {
 function ProjectTile({
   snapshot: s,
   narrative,
+  tagline,
   eta,
   valuation,
   delta,
 }: {
   snapshot: ProjectSnapshot;
   narrative?: Narrative;
+  tagline?: string | null;
   eta: Estimate | null;
   valuation: Valuation | null;
   delta: ProjectDelta | null;
@@ -714,6 +721,13 @@ function ProjectTile({
           </span>
         )}
       </div>
+
+      {tagline && (
+        // What the product IS (stable identity) — calm, above the status story.
+        <p className="-mt-1 text-[13.5px] italic leading-snug text-muted">
+          {tagline}
+        </p>
+      )}
 
       {narrative && (
         <div className="space-y-1">

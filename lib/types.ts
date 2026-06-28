@@ -297,6 +297,8 @@ export interface ProjectSnapshot {
     businessCase: RawFile;
     /** scripts/preflight.sh — the mechanical readiness gate (present/absent). */
     preflight: RawFile;
+    /** README.md — the canonical "what this product is" (drives the tagline). */
+    readme: RawFile;
   };
 
   // freshness

@@ -34,7 +34,8 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 // readyEvidence, loopMemoryHealth, files.preflight. v3: added growth. v4: more
 // loop-memory path candidates (root LOOP_MEMORY.md) — bust so it re-fetches.
 // v5: growth.metrics + growth.goLive (LLM-Quant weekly PnL + real-money GO).
-const SNAPSHOT_CACHE_VERSION = "v5";
+// v6: files.readme (drives the product tagline).
+const SNAPSHOT_CACHE_VERSION = "v6";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
@@ -553,6 +554,7 @@ function degraded(
       loopMemory: { available: false },
       businessCase: { available: false },
       preflight: { available: false },
+      readme: { available: false },
     },
     lastActivityAt: repoMeta.pushedAt ?? null,
     fetchedAt,
@@ -620,6 +622,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     businessCaseFile,
     preflightFile,
     growthFile,
+    readmeFile,
   ] = await Promise.all([
     fetchPulls(octokit, owner, repo, errors),
     fetchCommits(octokit, owner, repo, workingBranch, errors),
@@ -637,6 +640,9 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     fetchFileWithHistory(octokit, owner, repo, workingBranch, "docs/BUSINESS_CASE.md"),
     fetchFile(octokit, owner, repo, workingBranch, "scripts/preflight.sh"),
     fetchFile(octokit, owner, repo, workingBranch, "docs/growth/GROWTH_STATUS.md"),
+    // README is the canonical "what this product is" — fetched with history so
+    // the tagline cache can key on its commit SHA (regenerate only on change).
+    fetchFileWithHistory(octokit, owner, repo, workingBranch, "README.md"),
   ]);
 
   // Growth status — parsed exactly like the business case (link, never a guess).
@@ -783,6 +789,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
       loopMemory: loopMemoryFile,
       businessCase: businessCaseFile,
       preflight: preflightFile,
+      readme: readmeFile,
     },
     lastActivityAt,
     fetchedAt,

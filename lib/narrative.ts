@@ -1092,6 +1092,103 @@ export function getNeedsPlan(needs: NeedEntry[]): Promise<NeedGroup[]> {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Product tagline — a stable one-liner "what this product is" (LLM, README-led)
+// ────────────────────────────────────────────────────────────────────────────
+
+const TAGLINE_SYSTEM =
+  "You write a one-line product tagline for a dashboard. In ONE sentence of " +
+  "14 words or fewer, say what this product IS and who it's for — its purpose, " +
+  "not its progress, status, or tech stack. Concrete and plain; no marketing " +
+  "fluff, no 'this app/project/repo', no emoji. Ground it ONLY in the provided " +
+  "repo docs; never invent features. Output ONLY the sentence.";
+
+function taglineContext(s: ProjectSnapshot): string {
+  const readme =
+    s.files.readme.available && s.files.readme.content
+      ? clip(s.files.readme.content, 2000)
+      : "";
+  const roadmap =
+    !readme && s.files.roadmap.available && s.files.roadmap.content
+      ? clip(s.files.roadmap.content, 800)
+      : "";
+  return [
+    `Product name: ${s.displayName} (${kindLabel(s.kind)})`,
+    readme ? `README.md:\n${readme}` : "",
+    roadmap ? `ROADMAP.md (excerpt):\n${roadmap}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** Deterministic fallback: the first real prose sentence of the README. */
+function readmeTagline(readme: string): string | null {
+  for (const raw of readme.replace(/\r\n/g, "\n").split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    // Skip headings, quotes, images, lists, tables, html, code fences, badges.
+    if (/^[#>!\-*=|`<]/.test(line)) continue;
+    if (/^\[!\[/.test(line) || /shields\.io|badge|!\[/i.test(line)) continue;
+    const m = line.match(/^(.*?[.!?])(?:\s|$)/);
+    const sent = (m ? m[1] : line).replace(/[*_`[\]()]/g, "").replace(/\s+/g, " ").trim();
+    if (sent.length >= 14 && sent.length <= 200) {
+      return sent.length > 160 ? `${sent.slice(0, 160).replace(/\s+\S*$/, "").trim()}…` : sent;
+    }
+  }
+  return null;
+}
+
+/**
+ * A stable "what this product is" tagline for the tiles. LLM-written from the
+ * README (so it tracks the product as it evolves), cached on the README's
+ * commit SHA so it only regenerates when the description actually changes —
+ * cheap. Falls back to the README's first sentence, then null (hide the line).
+ */
+export function getProjectTagline(s: ProjectSnapshot): Promise<string | null> {
+  const readme = s.files.readme;
+  const hasReadme = Boolean(readme.available && readme.content);
+  const hasRoadmap = Boolean(s.files.roadmap.available && s.files.roadmap.content);
+  if (!hasReadme && !hasRoadmap) return Promise.resolve(null);
+
+  if (buildPhase()) {
+    return Promise.resolve(hasReadme ? readmeTagline(readme.content!) : null);
+  }
+
+  const cacheKey = [
+    "afd-tagline",
+    CACHE_VERSION,
+    s.slug,
+    currentModel(),
+    // Identity changes only when the README (or roadmap fallback) changes.
+    readme.lastCommitSha ?? String(readme.content?.length ?? 0),
+    String(s.files.roadmap.content?.length ?? 0),
+  ];
+
+  return unstable_cache(
+    async (): Promise<string | null> => {
+      const out = await callLLM(
+        [
+          { role: "system", content: TAGLINE_SYSTEM },
+          { role: "user", content: taglineContext(s) },
+        ],
+        60, // a one-sentence tagline needs almost nothing
+      );
+      if (out.text) {
+        let t = out.text
+          .replace(/\s+/g, " ")
+          .trim()
+          .replace(/^["'“”]+|["'“”]+$/g, "")
+          .trim();
+        if (t.length > 140) t = `${t.slice(0, 140).replace(/\s+\S*$/, "").trim()}…`;
+        if (t.length >= 8) return t;
+      }
+      return hasReadme ? readmeTagline(readme.content!) : null;
+    },
+    cacheKey,
+    { revalidate: 86_400 }, // daily; the SHA in the key busts it on any change
+  )();
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Valuation — primary: docs/BUSINESS_CASE.md; fallback: rough heuristic
 // ────────────────────────────────────────────────────────────────────────────
 
