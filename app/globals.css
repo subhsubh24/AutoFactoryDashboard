@@ -112,6 +112,150 @@
   }
 }
 
+/* ───────────────────────────────────────────────────────────────────────
+ * Intro curtain — a brief "factory powering up" reveal on first visit.
+ * Two gears spin and settle with a mechanical clunk, a ring sweeps to full
+ * and flips clay→sage (the "unlock"), then the screen splits like bay doors
+ * to reveal the dashboard. Plays once per session; skipped for reduced motion
+ * (the component bails, and the guard below neutralizes it regardless).
+ * ─────────────────────────────────────────────────────────────────────── */
+/* Pre-paint guard (set by an inline script): no curtain on repeat visits or
+ * when motion is reduced — hidden before first paint, so zero flash. */
+.intro-skip .intro-root {
+  display: none !important;
+}
+.intro-root {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Click-through so a stalled curtain can never trap input. */
+  pointer-events: none;
+  overflow: hidden;
+}
+.intro-door {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 51%; /* the two halves overlap 2% so there's never a seam */
+  background-color: var(--bg);
+  will-change: transform;
+}
+.intro-door-top {
+  top: 0;
+  animation: intro-door-up 620ms cubic-bezier(0.7, 0, 0.25, 1) 1080ms both;
+}
+.intro-door-bottom {
+  bottom: 0;
+  animation: intro-door-down 620ms cubic-bezier(0.7, 0, 0.25, 1) 1080ms both;
+}
+.intro-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  color: var(--clay);
+  animation:
+    intro-stage-in 220ms ease both,
+    intro-tint 340ms ease 760ms both,
+    intro-stage-out 260ms ease 1020ms both;
+}
+.intro-gears {
+  position: relative;
+  width: 168px;
+  height: 168px;
+  display: grid;
+  place-items: center;
+}
+.intro-ring {
+  position: absolute;
+  inset: 0;
+  width: 168px;
+  height: 168px;
+}
+.intro-ring-sweep {
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  animation: intro-sweep 720ms ease-out 140ms both;
+}
+.intro-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: intro-pulse 620ms ease-out 800ms both;
+}
+.intro-gear {
+  position: absolute;
+  transform-origin: 50% 50%;
+}
+.intro-gear-a {
+  width: 96px;
+  height: 96px;
+  animation: intro-lock 900ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+.intro-gear-b {
+  width: 60px;
+  height: 60px;
+  top: 14px;
+  right: 14px;
+  animation: intro-lock-rev 900ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+.intro-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+  animation: intro-label 1180ms ease both;
+}
+
+@keyframes intro-lock {
+  0% { transform: rotate(-150deg); }
+  62% { transform: rotate(9deg); }
+  82% { transform: rotate(-4deg); }
+  100% { transform: rotate(0deg); }
+}
+@keyframes intro-lock-rev {
+  0% { transform: rotate(150deg); }
+  62% { transform: rotate(-9deg); }
+  82% { transform: rotate(4deg); }
+  100% { transform: rotate(0deg); }
+}
+@keyframes intro-sweep {
+  from { stroke-dashoffset: 290; opacity: 0.3; }
+  to { stroke-dashoffset: 0; opacity: 1; }
+}
+@keyframes intro-pulse {
+  0% { transform: scale(0.82); opacity: 0; }
+  35% { opacity: 0.55; }
+  100% { transform: scale(1.32); opacity: 0; }
+}
+@keyframes intro-tint {
+  to { color: var(--sage); }
+}
+@keyframes intro-stage-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes intro-stage-out {
+  to { opacity: 0; transform: scale(1.05); }
+}
+@keyframes intro-label {
+  0% { opacity: 0; transform: translateY(5px); }
+  28% { opacity: 1; transform: translateY(0); }
+  72% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes intro-door-up {
+  to { transform: translateY(-100%); }
+}
+@keyframes intro-door-down {
+  to { transform: translateY(100%); }
+}
+
 /* Respect reduced-motion preferences. */
 @media (prefers-reduced-motion: reduce) {
   *,
