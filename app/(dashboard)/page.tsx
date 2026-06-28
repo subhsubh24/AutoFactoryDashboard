@@ -5,12 +5,13 @@ import {
   factoryDelta,
   humanAsksFor,
   projectDelta,
-  type NeedEntry,
+  type NeedGroup,
   type ProjectDelta,
 } from "@/lib/aggregate";
 import {
   getNarrative,
   getFactoryBriefing,
+  getNeedsPlan,
   getValuation,
   type Narrative,
   type Valuation,
@@ -115,9 +116,11 @@ export default async function OverviewPage() {
       .map((a) => ({ ...a, projectName: s.displayName })),
   );
 
-  // LLM where it's worth it: factory briefing + per-project digest + valuation.
-  const [briefing, narrativeEntries, valuationEntries] = await Promise.all([
+  // LLM where it's worth it: factory briefing + per-project digest + valuation,
+  // and clustering the cross-project "Needs you" list (same task → one card).
+  const [briefing, askGroups, narrativeEntries, valuationEntries] = await Promise.all([
     getFactoryBriefing(snapshots),
+    getNeedsPlan(asks),
     Promise.all(snapshots.map(async (s) => [s.slug, await getNarrative(s)] as const)),
     Promise.all(snapshots.map(async (s) => [s.slug, await getValuation(s)] as const)),
   ]);
@@ -283,8 +286,8 @@ export default async function OverviewPage() {
             Needs you
           </h2>
           <ul className="space-y-2">
-            {asks.map((need) => (
-              <AskRow key={need.id} need={need} />
+            {askGroups.map((group) => (
+              <AskRow key={group.id} group={group} />
             ))}
           </ul>
         </section>
@@ -557,8 +560,10 @@ function Verdict({ count }: { count: number }) {
 }
 
 /** One true human ask, phrased plainly. */
-function AskRow({ need }: { need: NeedEntry }) {
-  const isReady = need.kind === "ready";
+function AskRow({ group }: { group: NeedGroup }) {
+  const isReady = group.kind === "ready";
+  const multi = group.members.length > 1;
+  const single = group.members[0];
   return (
     <li
       className={cn(
@@ -573,18 +578,43 @@ function AskRow({ need }: { need: NeedEntry }) {
         )}
       />
       <div className="min-w-0 flex-1">
-        <Link
-          href={`/p/${need.projectSlug}`}
-          className="text-[11px] font-semibold uppercase tracking-wide text-muted transition-colors hover:text-clay"
-        >
-          {need.projectName}
-        </Link>
-        <p className="text-sm leading-snug text-ink">{need.text}</p>
-        {need.howTo && <p className="mt-0.5 text-xs text-muted">{need.howTo}</p>}
+        {multi ? (
+          // Same task across several projects — one card, a chip per project.
+          <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+            {group.members.map((m) => (
+              <Link
+                key={m.projectSlug}
+                href={`/p/${m.projectSlug}`}
+                className="rounded-full bg-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted transition-colors hover:text-clay"
+              >
+                {m.projectName}
+              </Link>
+            ))}
+            <span className="text-[10px] font-medium tabular text-muted">
+              {group.members.length} projects
+            </span>
+          </div>
+        ) : (
+          <Link
+            href={`/p/${single.projectSlug}`}
+            className="text-[11px] font-semibold uppercase tracking-wide text-muted transition-colors hover:text-clay"
+          >
+            {single.projectName}
+          </Link>
+        )}
+        <p className="text-sm leading-snug text-ink">{group.text}</p>
+        {group.howTo && (
+          <p className="mt-0.5 text-xs text-muted">{group.howTo}</p>
+        )}
+        {multi && (
+          <p className="mt-1 text-[11px] text-muted">
+            Same task on each — do it once per project.
+          </p>
+        )}
       </div>
-      {need.url && (
+      {!multi && single.url && (
         <a
-          href={need.url}
+          href={single.url}
           target="_blank"
           rel="noreferrer"
           aria-label="Open on GitHub"

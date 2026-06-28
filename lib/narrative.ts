@@ -7,7 +7,12 @@ import type {
   ProjectSnapshot,
 } from "@/lib/types";
 import { checkBriefing, checkNarrative, type Violation } from "@/lib/llm-guard";
-import { humanAsksFor } from "@/lib/aggregate";
+import {
+  groupNeeds,
+  humanAsksFor,
+  type NeedEntry,
+  type NeedGroup,
+} from "@/lib/aggregate";
 import { extractThemes, themeSummary } from "@/lib/themes";
 import { parseBusinessCase, type Valuation } from "@/lib/businesscase";
 import {
@@ -938,6 +943,127 @@ export function getActionPlan(s: ProjectSnapshot): Promise<ActionPlan> {
       });
       planItems.sort((a, b) => PLAN_PRIORITY_ORDER[a.priority] - PLAN_PRIORITY_ORDER[b.priority]);
       return { available: true, summary: parsed.summary?.trim(), items: planItems, source: "llm" };
+    },
+    cacheKey,
+    { revalidate: 600 },
+  )();
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Needs-you organiser — cluster owner actions across projects (LLM, guarded)
+// ────────────────────────────────────────────────────────────────────────────
+
+const NEEDS_SYSTEM =
+  "You organise an operator's cross-project action queue for autonomous " +
+  "software projects. You'll get a numbered list of owner actions, each " +
+  "prefixed with its project. GROUP actions that are the SAME underlying task " +
+  "— even if worded differently or naming different providers (e.g. 'set API " +
+  "spend caps' across several projects is ONE group). Keep genuinely different " +
+  "tasks in separate groups. For each group output:\n" +
+  '- "title": a crisp canonical action, 8 words or fewer\n' +
+  '- "detail": ONE plain-language sentence — the shared gist\n' +
+  '- "refs": the item numbers in this group\n' +
+  '- "priority": "urgent" | "high" | "normal"\n' +
+  "Every input number must appear in EXACTLY ONE group's refs — never drop, " +
+  "duplicate, or invent. Order groups most urgent first. Return ONLY minified " +
+  'JSON: {"groups":[{"title":"…","detail":"…","refs":[1,3],"priority":"urgent"}]}.';
+
+interface RawNeedGroup {
+  title?: string;
+  detail?: string;
+  refs?: number[];
+  priority?: string;
+}
+
+function parseNeedsJson(raw: string): { groups: RawNeedGroup[] } | null {
+  const a = raw.indexOf("{");
+  const b = raw.lastIndexOf("}");
+  if (a < 0 || b <= a) return null;
+  try {
+    const o = JSON.parse(raw.slice(a, b + 1)) as { groups?: RawNeedGroup[] };
+    return o && Array.isArray(o.groups) ? { groups: o.groups } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Map the LLM's clusters back to real NeedEntries. Structural guard: every input
+ * item must be assigned exactly once (no drop / duplicate / invented index) or
+ * we reject the whole thing and the caller falls back to deterministic grouping.
+ */
+function mapNeedGroups(
+  parsed: { groups: RawNeedGroup[] },
+  needs: NeedEntry[],
+): NeedGroup[] | null {
+  const seen = new Set<number>();
+  const groups: NeedGroup[] = [];
+  for (const g of parsed.groups) {
+    const refs = (g.refs ?? []).filter(
+      (r) => Number.isInteger(r) && r >= 1 && r <= needs.length,
+    );
+    if (refs.length === 0) continue;
+    const members: NeedEntry[] = [];
+    for (const r of refs) {
+      if (seen.has(r)) return null; // duplicate assignment → invalid
+      seen.add(r);
+      members.push(needs[r - 1]);
+    }
+    const byPriority = [...members].sort((a, b) => a.priority - b.priority);
+    groups.push({
+      id: members.length > 1 ? `grp:${byPriority[0].id}` : byPriority[0].id,
+      text: g.title?.trim() || byPriority[0].text,
+      howTo: g.detail?.trim() || byPriority[0].howTo,
+      url: members.length === 1 ? byPriority[0].url : undefined,
+      kind: byPriority[0].kind,
+      priority: Math.min(...members.map((m) => m.priority)),
+      members: byPriority,
+    });
+  }
+  if (seen.size !== needs.length) return null; // incomplete coverage → invalid
+  return groups.sort(
+    (a, b) => a.priority - b.priority || b.members.length - a.members.length,
+  );
+}
+
+/**
+ * Organise the cross-project "Needs you" list: cluster the same task across
+ * projects and give each group a clean canonical title. The LLM only clusters
+ * and labels — every action maps back to a real NeedEntry (project, link, id
+ * preserved), and a structural guard rejects any drop/duplicate, falling back
+ * to the deterministic `groupNeeds`. Cached; degrades cleanly with no LLM.
+ */
+export function getNeedsPlan(needs: NeedEntry[]): Promise<NeedGroup[]> {
+  // 1 item (or none): nothing to organise. Build phase: skip the LLM.
+  if (needs.length <= 1 || buildPhase()) {
+    return Promise.resolve(groupNeeds(needs));
+  }
+
+  const cacheKey = [
+    "afd-needsplan",
+    CACHE_VERSION,
+    currentModel(),
+    needs.map((n) => n.id).join(","),
+  ];
+
+  return unstable_cache(
+    async (): Promise<NeedGroup[]> => {
+      const numbered = needs
+        .map(
+          (n, i) =>
+            `${i + 1}. [${n.projectName}] ${n.text}${n.howTo ? ` — ${clip(n.howTo, 200)}` : ""}`,
+        )
+        .join("\n");
+      const out = await callLLM(
+        [
+          { role: "system", content: NEEDS_SYSTEM },
+          { role: "user", content: `Owner actions:\n${numbered}` },
+        ],
+        700,
+      );
+      const parsed = out.text ? parseNeedsJson(out.text) : null;
+      const mapped = parsed ? mapNeedGroups(parsed, needs) : null;
+      return mapped ?? groupNeeds(needs); // guard failed → deterministic grouping
     },
     cacheKey,
     { revalidate: 600 },

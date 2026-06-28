@@ -27,6 +27,20 @@ export interface NeedEntry {
   count?: number;
 }
 
+/** One or more owner actions sharing the same task (grouped across projects). */
+export interface NeedGroup {
+  id: string;
+  /** Canonical action text (the shortest member's). */
+  text: string;
+  howTo?: string;
+  /** Only meaningful for a single-member group. */
+  url?: string;
+  kind: NeedKind;
+  priority: number;
+  /** 1+ members; >1 means the same task spans several projects. */
+  members: NeedEntry[];
+}
+
 export interface CIHealthSummary {
   passing: number;
   total: number;
@@ -356,6 +370,77 @@ function summarizeCI(snapshots: ProjectSnapshot[]): CIHealthSummary {
     failingNames,
     tone: anyFailing ? "clay" : tracked.length > 0 ? "sage" : "muted",
   };
+}
+
+// Filler words that vary between otherwise-identical owner actions — dropped so
+// the same task across projects shares a signature.
+const NEED_STOP = new Set([
+  "the", "a", "an", "in", "on", "for", "to", "of", "and", "with", "every",
+  "each", "all", "your", "hard", "now", "asap", "immediately", "daily",
+  "monthly", "weekly", "api", "provider", "dashboard", "dashboards", "please",
+  "ensure", "make", "sure", "across", "any", "you", "that", "this",
+]);
+
+/** A normalized keyword signature — same task → same signature, order-agnostic. */
+function needSignature(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, " ") // drop parentheticals (provider lists, notes)
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !NEED_STOP.has(w))
+    .sort()
+    .join(" ");
+}
+
+/**
+ * Collapse near-identical owner actions across projects into one entry — e.g.
+ * the same "set API spend caps + alerts" appearing on four projects becomes a
+ * single grouped card carrying all four projects. An action with a unique
+ * signature stays a singleton. Sorted by priority, then by how many projects
+ * each spans. Pure + order-stable (no LLM) so it's cheap and predictable.
+ */
+export function groupNeeds(needs: NeedEntry[]): NeedGroup[] {
+  const buckets = new Map<string, NeedEntry[]>();
+  for (const n of needs) {
+    const sig = needSignature(n.text);
+    // Need ≥2 significant words to risk grouping; else keep it unique by id.
+    const key = sig.split(" ").filter(Boolean).length >= 2 ? `sig:${sig}` : `id:${n.id}`;
+    const arr = buckets.get(key);
+    if (arr) arr.push(n);
+    else buckets.set(key, [n]);
+  }
+
+  const groups: NeedGroup[] = [];
+  for (const members of buckets.values()) {
+    if (members.length === 1) {
+      const m = members[0];
+      groups.push({
+        id: m.id,
+        text: m.text,
+        howTo: m.howTo,
+        url: m.url,
+        kind: m.kind,
+        priority: m.priority,
+        members,
+      });
+      continue;
+    }
+    const byPriority = [...members].sort((a, b) => a.priority - b.priority);
+    const canonical = [...members].sort((a, b) => a.text.length - b.text.length)[0];
+    groups.push({
+      id: `grp:${canonical.id}`,
+      text: canonical.text,
+      howTo: byPriority[0].howTo ?? canonical.howTo,
+      kind: byPriority[0].kind,
+      priority: Math.min(...members.map((m) => m.priority)),
+      members: byPriority,
+    });
+  }
+
+  return groups.sort(
+    (a, b) => a.priority - b.priority || b.members.length - a.members.length,
+  );
 }
 
 export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
