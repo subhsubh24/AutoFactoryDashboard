@@ -1,6 +1,7 @@
 import type { Valuation } from "@/lib/businesscase";
 import { cn, formatMoney } from "@/lib/utils";
 import { ExternalLinkIcon } from "@/components/icons";
+import { Sparkline } from "@/components/Sparkline";
 
 export const VALUATION_DISCLAIMER =
   "Pre-launch estimate. 'Business case' = the project's own bottoms-up model; " +
@@ -48,9 +49,12 @@ export function SourceBadge({ source }: { source: Valuation["source"] }) {
 /** Always shows the low–high range with the base as headline; never a lone number. */
 export function ValuationView({
   v,
+  arrTrend = [],
   className,
 }: {
   v: Valuation;
+  /** ARR recorded per poll (from KV history) — the target number's trajectory. */
+  arrTrend?: Array<number | null>;
   className?: string;
 }) {
   if (!v) return null;
@@ -93,6 +97,16 @@ export function ValuationView({
       <span className="font-semibold text-sage-strong">
         ~{formatMoney(v.arrExpected)}/yr
       </span>
+      {arrTrend.filter((n) => n !== null).length >= 2 && (
+        <Sparkline
+          values={arrTrend}
+          tone="sage"
+          width={56}
+          height={16}
+          fillOpacity={0.12}
+          className="opacity-80"
+        />
+      )}
       {v.scenarioLabel && <span className="text-muted">{v.scenarioLabel}</span>}
       <span className="text-muted">
         range {formatMoney(v.arrLow)}–{formatMoney(v.arrHigh)}

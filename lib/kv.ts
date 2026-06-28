@@ -23,6 +23,15 @@ export interface DailyMetric {
   mrr?: number;
   /** Quant-only: reported weekly paper PnL (USD) at snapshot time — the GO trend. */
   pnlPaper?: number;
+  // ── point-in-time blocks, snapshot each poll so we can chart the trajectory ──
+  /** Business-case year-1 ARR target (USD) — the headline number over time. */
+  arr?: number;
+  /** PMF D7-retention (0–1 or %) — the leading indicator's trajectory. */
+  pmfRetentionD7?: number;
+  /** PMF activation rate — leading indicator. */
+  pmfActivation?: number;
+  /** Loop self-reported signal at snapshot time (bootstrapping|…|stuck). */
+  loopSignal?: string;
 }
 
 /** Factory-wide daily KPIs (manufacturing-style), for trend charts. */

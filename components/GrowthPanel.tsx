@@ -9,6 +9,7 @@ import type {
 import { floorPmfSignal, growthStale, latestDecidedExperiment } from "@/lib/growth";
 import { cn, formatMoney, type Tone } from "@/lib/utils";
 import { ArrowRightIcon, ExternalLinkIcon, MailIcon } from "@/components/icons";
+import { Sparkline } from "@/components/Sparkline";
 
 /** Owner's Gmail drafts — where the outreach draft bodies actually live. */
 const GMAIL_DRAFTS_URL = "https://mail.google.com/mail/u/0/#drafts";
@@ -113,7 +114,15 @@ function SignalChip({ signal }: { signal: GrowthSignal | null }) {
  * curve (D1 → D7 → D30) + activation & organic-share. Pre-launch every value is
  * null/none, so it renders a calm "no signal yet", never an error.
  */
-function PmfTile({ pmf }: { pmf: GrowthPmf }) {
+function PmfTile({
+  pmf,
+  retentionTrend = [],
+}: {
+  pmf: GrowthPmf;
+  /** D7 retention recorded on each recent poll (oldest→newest). */
+  retentionTrend?: Array<number | null>;
+}) {
+  const hasTrend = retentionTrend.filter((v) => v !== null).length >= 2;
   const curve: Array<{ k: string; v: number | null }> = [
     { k: "D1", v: pmf.retentionD1 },
     { k: "D7", v: pmf.retentionD7 },
@@ -149,6 +158,22 @@ function PmfTile({ pmf }: { pmf: GrowthPmf }) {
           ? "Retention curve — a flattening curve is the PMF signal"
           : "Retention — no cohort data reported yet"}
       </p>
+
+      {hasTrend && (
+        <div className="mt-2">
+          <Sparkline
+            values={retentionTrend}
+            tone="sage"
+            width={240}
+            height={32}
+            fillOpacity={0.1}
+            className="w-full"
+          />
+          <p className="mt-0.5 text-[10px] text-muted">
+            D7 retention · last {retentionTrend.length} polls
+          </p>
+        </div>
+      )}
 
       <div className="mt-2.5 flex flex-wrap gap-x-6 gap-y-1 border-t border-hairline pt-2.5 text-xs">
         <span className="text-muted">
@@ -237,6 +262,7 @@ export function GrowthPanel({
   growth,
   waitlistDelta = null,
   mrrDelta = null,
+  retentionTrend = [],
   className,
 }: {
   growth: Growth;
@@ -244,6 +270,8 @@ export function GrowthPanel({
   waitlistDelta?: number | null;
   /** Day-over-day MRR delta (from ProjectDelta), shown when positive. */
   mrrDelta?: number | null;
+  /** D7 retention recorded per poll (from KV history) — PMF trajectory. */
+  retentionTrend?: Array<number | null>;
   className?: string;
 }) {
   if (!growth.available) {
@@ -319,7 +347,7 @@ export function GrowthPanel({
       </div>
 
       {/* PMF — the leading indicator, surfaced first (only when the repo has it). */}
-      {growth.pmf && <PmfTile pmf={growth.pmf} />}
+      {growth.pmf && <PmfTile pmf={growth.pmf} retentionTrend={retentionTrend} />}
 
       {/* Funnel headline — waitlist pre-launch, trials/paid/MRR/churn post-launch. */}
       <div className="grid grid-cols-2 gap-x-5 gap-y-4 rounded-xl bg-bg px-4 py-4 sm:grid-cols-4">

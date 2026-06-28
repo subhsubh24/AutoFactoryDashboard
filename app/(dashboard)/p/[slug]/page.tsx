@@ -114,6 +114,10 @@ export default async function ProjectPage({
   const eta = estimateCompletion(snapshot, history);
   const prog = snapshot.progress;
   const delta = projectDelta(snapshot, history);
+  // Trajectories for the point-in-time blocks (from KV history; [] without it).
+  const arrTrend = history?.map((h) => h.arr ?? null) ?? [];
+  const retentionTrend = history?.map((h) => h.pmfRetentionD7 ?? null) ?? [];
+  const loopSignalTrend = history?.map((h) => h.loopSignal ?? null) ?? [];
   const fileHref = (path?: string): string | undefined =>
     path ? `${snapshot.repoUrl}/blob/${snapshot.workingBranch}/${path}` : undefined;
   const preflightUrl = snapshot.files.preflight.available
@@ -321,7 +325,7 @@ export default async function ProjectPage({
           </div>
           {valuation.arrExpected > 0 && (
             <div className="mt-3">
-              <ValuationView v={valuation} />
+              <ValuationView v={valuation} arrTrend={arrTrend} />
               {valuation.rationale && (
                 <p className="mt-1 text-xs italic text-muted">{valuation.rationale}</p>
               )}
@@ -530,6 +534,7 @@ export default async function ProjectPage({
               growth={snapshot.growth}
               waitlistDelta={delta.dWaitlist}
               mrrDelta={delta.dMrr}
+              retentionTrend={retentionTrend}
             />
           </SectionCard>
 
@@ -648,7 +653,10 @@ export default async function ProjectPage({
           >
             {snapshot.loopHealth.available && (
               <div className="mb-4 border-b border-hairline pb-4">
-                <LoopHealthPanel loop={snapshot.loopHealth} />
+                <LoopHealthPanel
+                  loop={snapshot.loopHealth}
+                  signalTrend={loopSignalTrend}
+                />
               </div>
             )}
             <LoopHealth snapshot={snapshot} />

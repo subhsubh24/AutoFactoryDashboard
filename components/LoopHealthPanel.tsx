@@ -27,6 +27,45 @@ function shortDate(iso?: string | null): string | null {
 
 const fmt = (n: number | null): string => (n === null ? "—" : n.toLocaleString("en-US"));
 
+const SIGNAL_FILL: Record<LoopSignal, string> = {
+  bootstrapping: "bg-muted/40",
+  improving: "bg-sage",
+  steady: "bg-sage",
+  churning: "bg-amber",
+  stuck: "bg-clay",
+};
+
+/**
+ * A per-day strip of the loop's signal over recent polls — the trajectory the
+ * owner actually cares about ("is this loop getting healthier?"). Hidden until
+ * there are ≥2 recorded days, so it never shows a misleading single point.
+ */
+function SignalStrip({ trend }: { trend: Array<string | null> }) {
+  const recent = trend.slice(-14);
+  if (recent.filter(Boolean).length < 2) return null;
+  return (
+    <div>
+      <div className="flex items-end gap-0.5" aria-hidden>
+        {recent.map((s, i) => (
+          <span
+            key={i}
+            title={s ?? undefined}
+            className={cn(
+              "h-4 flex-1 rounded-sm",
+              s && s in SIGNAL_FILL
+                ? SIGNAL_FILL[s as LoopSignal]
+                : "bg-[var(--ring-track)]",
+            )}
+          />
+        ))}
+      </div>
+      <p className="mt-1 text-[10px] text-muted">
+        Signal trajectory · last {recent.length} days
+      </p>
+    </div>
+  );
+}
+
 function LStat({
   label,
   value,
@@ -54,7 +93,14 @@ function LStat({
  * — the recurring walls it can't clear on its own (the "loop needs you" detail).
  * 0/null/bootstrapping read as "not reported", never inflated.
  */
-export function LoopHealthPanel({ loop }: { loop: LoopHealth }) {
+export function LoopHealthPanel({
+  loop,
+  signalTrend = [],
+}: {
+  loop: LoopHealth;
+  /** The loop signal recorded on each recent poll (oldest→newest). */
+  signalTrend?: Array<string | null>;
+}) {
   if (!loop.available) {
     return (
       <p className="text-sm text-muted">
@@ -72,6 +118,8 @@ export function LoopHealthPanel({ loop }: { loop: LoopHealth }) {
         <LoopSignalChip signal={loop.signal} />
         {asOf && <span className="text-xs text-muted">as of {asOf}</span>}
       </div>
+
+      <SignalStrip trend={signalTrend} />
 
       <div>
         <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-muted">

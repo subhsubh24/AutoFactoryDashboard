@@ -9,6 +9,7 @@ import {
   type FactoryDailyMetric,
 } from "@/lib/kv";
 import { headlinePct } from "@/lib/utils";
+import { getValuation } from "@/lib/narrative";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,6 +46,9 @@ export async function GET(req: Request) {
 
   const results = await Promise.all(
     snapshots.map(async (s) => {
+      // Business-case ARR is deterministic + cached when the file exists; only
+      // the authoritative business-case number is trended (not the heuristic).
+      const valuation = await getValuation(s);
       const metric: DailyMetric = {
         date,
         prs: s.merged24h,
@@ -62,6 +66,19 @@ export async function GET(req: Request) {
         pnlPaper: s.growth.available
           ? s.growth.metrics?.weeklyPnlPaper ?? undefined
           : undefined,
+        // Point-in-time blocks → trajectory. Null/absent values are skipped, so
+        // a trend only forms once a real number/state is reported.
+        arr:
+          valuation.source === "business_case" && valuation.arrExpected > 0
+            ? valuation.arrExpected
+            : undefined,
+        pmfRetentionD7: s.growth.available
+          ? s.growth.pmf?.retentionD7 ?? undefined
+          : undefined,
+        pmfActivation: s.growth.available
+          ? s.growth.pmf?.activationRate ?? undefined
+          : undefined,
+        loopSignal: s.loopHealth.available ? s.loopHealth.signal ?? undefined : undefined,
       };
       const written = await recordDailyMetric(s.slug, metric);
       return { slug: s.slug, written, metric };
