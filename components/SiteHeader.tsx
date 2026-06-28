@@ -43,16 +43,25 @@ export function SiteHeader() {
 
 function RingMark() {
   return (
+    // Colours come from CSS vars so the mark tracks the theme — the ink chip it
+    // sits in inverts between light/dark, and these invert with it.
     <svg viewBox="0 0 32 32" className="h-4 w-4" aria-hidden="true">
-      <circle cx="16" cy="16" r="9" fill="none" stroke="#4a423b" strokeWidth="3" />
+      <circle
+        cx="16"
+        cy="16"
+        r="9"
+        fill="none"
+        style={{ stroke: "var(--muted)" }}
+        strokeWidth="3"
+      />
       <path
         d="M16 7a9 9 0 0 1 7.8 13.5"
         fill="none"
-        stroke="#c2683f"
+        style={{ stroke: "var(--clay)" }}
         strokeWidth="3"
         strokeLinecap="round"
       />
-      <circle cx="16" cy="16" r="2.4" fill="#faf8f5" />
+      <circle cx="16" cy="16" r="2.4" style={{ fill: "var(--bg)" }} />
     </svg>
   );
 }

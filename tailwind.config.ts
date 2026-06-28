@@ -24,6 +24,7 @@ const config: Config = {
         ink: "var(--text)",
         muted: "var(--muted)",
         hairline: "var(--hairline)",
+        "on-accent": "var(--on-accent)",
         clay: {
           DEFAULT: "var(--clay)",
           soft: "var(--clay-soft)",

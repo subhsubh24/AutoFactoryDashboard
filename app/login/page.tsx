@@ -70,7 +70,7 @@ export default async function LoginPage({
 
           <button
             type="submit"
-            className="mt-5 w-full rounded-lg bg-clay px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            className="mt-5 w-full rounded-lg bg-clay px-4 py-2.5 text-sm font-semibold text-on-accent transition-opacity hover:opacity-90"
           >
             Sign in
           </button>

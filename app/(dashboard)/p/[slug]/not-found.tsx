@@ -15,7 +15,7 @@ export default function NotFound() {
       </div>
       <Link
         href="/"
-        className="inline-flex items-center gap-2 rounded-lg bg-clay px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+        className="inline-flex items-center gap-2 rounded-lg bg-clay px-4 py-2 text-sm font-semibold text-on-accent transition-opacity hover:opacity-90"
       >
         <ArrowLeftIcon className="h-4 w-4" />
         Factory Floor

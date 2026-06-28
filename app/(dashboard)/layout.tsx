@@ -11,9 +11,9 @@ export default function DashboardLayout({
     <div className="flex min-h-screen flex-col">
       <IntroCurtain />
       <SiteHeader />
-      <div className="relative z-10 mx-auto w-full max-w-shell flex-1 px-5 py-8">
+      <main className="relative z-10 mx-auto w-full max-w-shell flex-1 px-5 py-8">
         {children}
-      </div>
+      </main>
       <SiteFooter />
     </div>
   );

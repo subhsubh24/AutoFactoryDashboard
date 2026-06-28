@@ -29,6 +29,9 @@
   --ring-track: #ece7e0;
   --selection: #f6e8df;
 
+  /* Text that sits on a saturated accent fill (clay/sage) or the ink chip. */
+  --on-accent: #ffffff;
+
   color-scheme: light;
 }
 
@@ -54,6 +57,9 @@
 
   --ring-track: #332d24;
   --selection: #38271c;
+
+  /* The accents lighten in dark mode, so dark ink (not white) reads softer. */
+  --on-accent: #17140f;
 
   color-scheme: dark;
 }

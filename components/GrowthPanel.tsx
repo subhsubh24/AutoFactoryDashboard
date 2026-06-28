@@ -134,7 +134,7 @@ function PmfTile({ pmf }: { pmf: GrowthPmf }) {
           <Fragment key={p.k}>
             {i > 0 && (
               <span className="flex items-center">
-                <ArrowRightIcon className="h-3 w-3 shrink-0 text-muted/40" />
+                <ArrowRightIcon className="h-3 w-3 shrink-0 text-muted/60" />
               </span>
             )}
             <div className="flex flex-1 flex-col items-center rounded-lg bg-card px-2 py-1.5 text-center">
@@ -202,9 +202,9 @@ function OutreachTile({ outreach }: { outreach: GrowthOutreach }) {
 
       <div className="mt-2.5 flex items-center gap-2">
         <FunnelStep n={fmt(drafted)} label="drafted" />
-        <ArrowRightIcon className="h-3.5 w-3.5 shrink-0 text-muted/40" />
+        <ArrowRightIcon className="h-3.5 w-3.5 shrink-0 text-muted/60" />
         <FunnelStep n={fmt(sent)} label="sent" />
-        <ArrowRightIcon className="h-3.5 w-3.5 shrink-0 text-muted/40" />
+        <ArrowRightIcon className="h-3.5 w-3.5 shrink-0 text-muted/60" />
         <FunnelStep n={fmt(replies)} label="replied" tone={(replies ?? 0) > 0 ? "sage" : undefined} />
       </div>
 

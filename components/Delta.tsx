@@ -67,7 +67,7 @@ export function Delta24h({
       </span>
       {hasBaseline ? (
         <>
-          <span aria-hidden className="text-muted/40">
+          <span aria-hidden className="text-muted/60">
             ·
           </span>
           <DeltaPill value={dReadinessPct} label="ready" unit="pts" />

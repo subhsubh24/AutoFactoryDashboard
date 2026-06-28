@@ -210,7 +210,7 @@ export default async function OverviewPage() {
             </span>
             {overview.closestToLaunch && (
               <>
-                <span aria-hidden className="text-muted/40">·</span>
+                <span aria-hidden className="text-muted/60">·</span>
                 <span className="text-muted">
                   closest to launch{" "}
                   <Link
@@ -517,7 +517,7 @@ function PrimaryStat({
       >
         {value}
       </p>
-      <p className="mt-1.5 truncate text-[11px] text-muted">{unit}</p>
+      <p className="mt-1.5 text-[11px] leading-tight text-muted">{unit}</p>
     </div>
   );
 }
@@ -554,7 +554,7 @@ function Verdict({ count }: { count: number }) {
   }
   return (
     <div className="mt-4 flex items-center gap-2 rounded-xl bg-clay-soft/70 px-3.5 py-2.5 text-sm font-medium text-clay-strong">
-      <span className="grid h-5 min-w-5 place-items-center rounded-full bg-clay px-1 text-xs font-semibold text-white">
+      <span className="grid h-5 min-w-5 place-items-center rounded-full bg-clay px-1 text-xs font-semibold text-on-accent">
         {count}
       </span>
       <span>
@@ -734,7 +734,9 @@ function ProjectTile({
           <p className="text-[15px] font-semibold leading-snug text-ink">
             {narrative.headline}
           </p>
-          <p className="text-sm leading-relaxed text-muted">{narrative.text}</p>
+          <p className="line-clamp-3 text-sm leading-relaxed text-muted">
+            {narrative.text}
+          </p>
         </div>
       )}
 
@@ -789,7 +791,7 @@ function ProjectTile({
           title={narrative?.llmReason ? `LLM fallback — ${narrative.llmReason}` : undefined}
         >
           <SparkleIcon className="h-3 w-3 shrink-0" />
-          {narrative?.source === "llm" ? "AI digest" : "Summary"}
+          {narrative?.source === "llm" ? "AI" : "Template"}
           {narrative?.source !== "llm" && narrative?.llmReason && (
             <span className="truncate text-muted/70">· {narrative.llmReason}</span>
           )}
@@ -810,7 +812,7 @@ function Header({ fetchedAt }: { fetchedAt: string | null }) {
   return (
     <div className="mb-8 flex flex-wrap items-end justify-between gap-3">
       <div>
-        <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted">
           Autonomous product factory
         </p>
         <h1 className="mt-1 font-serif text-3xl font-medium tracking-tight text-ink sm:text-4xl">

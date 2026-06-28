@@ -108,7 +108,7 @@ export function GoLivePanel({
           <span
             className={cn(
               "grid h-9 w-9 place-items-center rounded-xl",
-              eligible ? "bg-sage text-white" : "bg-ink/85 text-white",
+              eligible ? "bg-sage text-on-accent" : "bg-ink/85 text-on-accent",
             )}
           >
             {eligible ? <RocketIcon className="h-5 w-5" /> : <LockIcon className="h-[18px] w-[18px]" />}

@@ -64,8 +64,8 @@ export function CheckBox({
         "mt-0.5 grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[6px] border transition-colors",
         checked
           ? accent === "sage"
-            ? "border-sage bg-sage text-white"
-            : "border-clay bg-clay text-white"
+            ? "border-sage bg-sage text-on-accent"
+            : "border-clay bg-clay text-on-accent"
           : "border-hairline bg-card hover:border-muted",
       )}
     >
