@@ -1,9 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { PROJECTS, getProjectBySlug } from "@/config/projects";
+import { getProjectBySlug } from "@/config/projects";
 import { getProjectSnapshot } from "@/lib/github";
-import { getNarrative, getLaunchSummary, getValuation } from "@/lib/narrative";
+import {
+  getActionPlan,
+  getNarrative,
+  getLaunchSummary,
+  getValuation,
+} from "@/lib/narrative";
 import { getHistory } from "@/lib/kv";
 import { projectDelta } from "@/lib/aggregate";
 import type { FeedEntry, ProjectSnapshot } from "@/lib/types";
@@ -29,6 +34,7 @@ import { ThemeChips } from "@/components/ThemeChips";
 import { ValuationView } from "@/components/ValuationView";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { ActionItemsPanel } from "@/components/ActionItemsPanel";
+import { ActionPlan } from "@/components/ActionPlan";
 import { CIHealth } from "@/components/CIHealth";
 import { HistoryCharts } from "@/components/HistoryCharts";
 import { RelativeTime } from "@/components/RelativeTime";
@@ -52,17 +58,11 @@ import {
   SparkleIcon,
 } from "@/components/icons";
 
-// Short ISR window so the AI digest replaces the build-time "Summary"
-// placeholder within minutes of a deploy (the LLM/GitHub work stays cached in
-// unstable_cache regardless). Agents only ship ~every 6h, so this is cheap.
-export const revalidate = 120;
-// Projects are a fixed config list — only configured slugs are valid routes;
-// anything else is a real 404.
-export const dynamicParams = false;
-
-export function generateStaticParams() {
-  return PROJECTS.map((p) => ({ slug: p.slug }));
-}
+// Render dynamically (like the Floor) so the AI digest + action plan show on
+// the first load after a deploy instead of the build-time "Summary" placeholder.
+// The GitHub + Gemini work stays memoised in unstable_cache, so a warm load is
+// just cache reads. Unknown slugs still 404 via the notFound() check below.
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,
@@ -84,10 +84,11 @@ export default async function ProjectPage({
   if (!project) notFound();
 
   const snapshot = await getProjectSnapshot(project);
-  const [narrative, history, valuation] = await Promise.all([
+  const [narrative, history, valuation, actionPlan] = await Promise.all([
     getNarrative(snapshot),
     getHistory(slug),
     getValuation(snapshot),
+    getActionPlan(snapshot),
   ]);
   // "What the factory built" — only meaningful once flagged ready to submit.
   const launch = snapshot.readyForSubmission
@@ -408,6 +409,36 @@ export default async function ProjectPage({
             </div>
           </SectionCard>
 
+          {actionPlan.available && (
+            <SectionCard
+              title="Action plan"
+              subtitle="What needs you — organized from PENDING_OPS.md"
+              aside={
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
+                    actionPlan.source === "llm"
+                      ? "bg-clay-soft text-clay-strong"
+                      : "bg-bg text-muted",
+                  )}
+                >
+                  <SparkleIcon className="h-3 w-3" />
+                  {actionPlan.source === "llm" ? "AI-organized" : "Organized"}
+                </span>
+              }
+            >
+              <ActionPlan
+                plan={actionPlan}
+                storageKey={`afd-actions-${slug}`}
+                sourceUrl={
+                  snapshot.files.pendingOps.available
+                    ? fileHref(snapshot.files.pendingOps.path)
+                    : undefined
+                }
+              />
+            </SectionCard>
+          )}
+
           <SectionCard
             title="Growth & marketing"
             subtitle="From the Growth Agent (docs/growth/GROWTH_STATUS.md)"
@@ -596,23 +627,6 @@ export default async function ProjectPage({
               </p>
             </SectionCard>
           )}
-          <SectionCard
-            title="Action items"
-            subtitle="From PENDING_OPS.md"
-            aside={
-              snapshot.actionItems.items.length > 0 ? (
-                <span className="grid h-6 min-w-6 place-items-center rounded-full bg-clay px-1.5 text-xs font-semibold text-white">
-                  {snapshot.actionItems.items.length}
-                </span>
-              ) : undefined
-            }
-          >
-            <ActionItemsPanel
-              info={snapshot.actionItems}
-              storageKey={`afd-actions-${slug}`}
-            />
-          </SectionCard>
-
           <SectionCard title="Loop health" subtitle="Attention & harness signals">
             <LoopHealth snapshot={snapshot} />
           </SectionCard>

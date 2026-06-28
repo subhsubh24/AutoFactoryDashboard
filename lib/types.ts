@@ -62,6 +62,32 @@ export interface ActionItem {
   raw?: boolean;
 }
 
+/** One action, re-organised for calm reading (LLM-cleaned or deterministic). */
+export interface PlanItem {
+  /** Original ActionItem id — preserves checkbox state + the source mapping. */
+  id: string;
+  /** Crisp imperative (≤ ~8 words). */
+  title: string;
+  /** One plain-language sentence: what to do and why it matters. */
+  detail: string;
+  /** The original text (+ how-to) — the exact instructions, shown on expand. */
+  fullText: string;
+  priority: ActionPriority;
+  /** One-word category, e.g. deploy / billing / store / ci / security. */
+  tag?: string;
+  /** Needs human-only access (secrets, signing, prod, billing, store accounts). */
+  humanOnly: boolean;
+}
+
+/** PENDING_OPS re-organised into a prioritised, scannable plan. */
+export interface ActionPlan {
+  available: boolean;
+  /** One-line triage: what to tackle first. */
+  summary?: string;
+  items: PlanItem[];
+  source: "llm" | "template";
+}
+
 export type AttentionKind = "harness_proposal" | "fyi" | "blocker" | "other";
 
 export interface AttentionIssue {

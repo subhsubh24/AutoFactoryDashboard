@@ -1,5 +1,11 @@
 import { unstable_cache } from "next/cache";
-import type { ProjectSnapshot } from "@/lib/types";
+import type {
+  ActionItem,
+  ActionPlan,
+  ActionPriority,
+  PlanItem,
+  ProjectSnapshot,
+} from "@/lib/types";
 import { humanAsksFor } from "@/lib/aggregate";
 import { extractThemes, themeSummary } from "@/lib/themes";
 import { parseBusinessCase, type Valuation } from "@/lib/businesscase";
@@ -703,6 +709,180 @@ export function getLaunchSummary(s: ProjectSnapshot): Promise<LaunchSummary> {
         if (features.length > 0) return { overview, features, source: "llm" };
       }
       return templateLaunch(s);
+    },
+    cacheKey,
+    { revalidate: 600 },
+  )();
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Action plan — PENDING_OPS re-organised into a calm, prioritised checklist
+// ────────────────────────────────────────────────────────────────────────────
+
+const PLAN_PRIORITY_ORDER: Record<ActionPriority, number> = {
+  urgent: 0,
+  high: 1,
+  normal: 2,
+};
+
+const PRIORITIES: ActionPriority[] = ["urgent", "high", "normal"];
+
+// Needs human-only access — credentials, signing, billing, production, stores.
+const HUMAN_RE =
+  /\b(human|manual|secret|credential|signing|sign-?off|app ?store|play ?store|testflight|billing|spend|prod(?:uction)?\b.*\bmigrat|api[- ]?key|token|2fa|owner|store account)\b/i;
+
+function firstSentence(s: string, max = 150): string {
+  const t = s.replace(/\s+/g, " ").trim();
+  const m = t.match(/^(.*?[.!?])(?:\s|$)/);
+  const out = m ? m[1] : t;
+  return out.length > max ? `${out.slice(0, max).trim()}…` : out;
+}
+
+function cleanTitle(text: string, max = 56): string {
+  const t = text.replace(/\s+/g, " ").trim().replace(/[.:]+$/, "");
+  return t.length > max ? `${t.slice(0, max).trim()}…` : t;
+}
+
+/** Heuristic one-word category from the item text. */
+function inferTag(text: string): string {
+  const t = text.toLowerCase();
+  if (/\b(app ?store|play ?store|eas|testflight|submit|signing)\b/.test(t)) return "store";
+  if (/\b(bill|spend|cost|budget|stripe|quota|cap)\b/.test(t)) return "billing";
+  if (/\b(secret|api[- ]?key|token|auth|security|expose|credential)\b/.test(t)) return "security";
+  if (/\b(deploy|vercel|prod|domain|env\b)\b/.test(t)) return "deploy";
+  if (/\b(ci|workflow|pipeline|e2e|lint|test suite)\b/.test(t)) return "ci";
+  if (/\b(migrat|database|postgres|schema|\bdb\b)\b/.test(t)) return "data";
+  if (/\b(waitlist|launch|market|email|seo|growth)\b/.test(t)) return "growth";
+  return "ops";
+}
+
+/** Deterministic cleanup — always available, used when the LLM can't run. */
+function templateActionPlan(items: ActionItem[]): ActionPlan {
+  const planItems: PlanItem[] = items.map((it) => {
+    const fullText = [it.text, it.howTo].filter(Boolean).join(" — ");
+    const detail = it.why
+      ? firstSentence(it.why)
+      : it.howTo
+        ? firstSentence(it.howTo)
+        : "";
+    return {
+      id: it.id,
+      title: cleanTitle(it.text),
+      detail,
+      fullText,
+      priority: it.priority ?? "normal",
+      tag: inferTag(fullText),
+      humanOnly: HUMAN_RE.test(fullText),
+    };
+  });
+  planItems.sort((a, b) => PLAN_PRIORITY_ORDER[a.priority] - PLAN_PRIORITY_ORDER[b.priority]);
+  return { available: planItems.length > 0, items: planItems, source: "template" };
+}
+
+const PLAN_SYSTEM =
+  "You are an operations editor for an autonomous software project's action " +
+  "queue. You'll get a numbered list of raw action items (each may have a " +
+  "title, how-to detail, why, and priority). Re-organise the queue to be calm " +
+  "and scannable WITHOUT losing meaning or inventing anything. For EACH input " +
+  "item output an object with:\n" +
+  '- "n": the item number, echoed exactly\n' +
+  '- "title": a crisp imperative, 8 words or fewer\n' +
+  '- "detail": ONE plain-language sentence — what to do and why it matters\n' +
+  '- "priority": "urgent" | "high" | "normal" (keep the given one if present)\n' +
+  '- "tag": one short category word (deploy, billing, store, ci, security, data, growth, ops)\n' +
+  '- "humanOnly": true if it needs human-only access (production secrets, ' +
+  "signing, billing, store accounts, prod migrations), else false\n" +
+  'Also output "summary": ONE sentence on what to tackle first and the theme ' +
+  "of the rest. Return ONLY valid minified JSON: " +
+  '{"summary":"...","items":[{"n":1,"title":"...","detail":"...","priority":"...","tag":"...","humanOnly":false}]}. ' +
+  "Every input item must appear exactly once; do not add or drop items.";
+
+interface RawPlanItem {
+  n?: number;
+  title?: string;
+  detail?: string;
+  priority?: string;
+  tag?: string;
+  humanOnly?: boolean;
+}
+
+/** Extract the JSON object from a model reply (tolerant of code fences/prose). */
+function parsePlanJson(raw: string): { summary?: string; items: RawPlanItem[] } | null {
+  const a = raw.indexOf("{");
+  const b = raw.lastIndexOf("}");
+  if (a < 0 || b <= a) return null;
+  try {
+    const o = JSON.parse(raw.slice(a, b + 1)) as { summary?: string; items?: RawPlanItem[] };
+    return o && Array.isArray(o.items) ? { summary: o.summary, items: o.items } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Re-organise PENDING_OPS into a prioritised, scannable plan. The LLM only
+ * *clarifies and orders* — every entry maps back to a real action item (its id,
+ * full original text, and checkbox state are preserved), so nothing is invented
+ * or lost. Falls back to a deterministic cleanup when the LLM can't run. Cached.
+ */
+export function getActionPlan(s: ProjectSnapshot): Promise<ActionPlan> {
+  const items = (s.actionItems.available ? s.actionItems.items : []).slice(0, 20);
+  if (items.length === 0) {
+    return Promise.resolve({ available: false, items: [], source: "template" });
+  }
+  if (buildPhase()) return Promise.resolve(templateActionPlan(items));
+
+  const cacheKey = [
+    "afd-actionplan",
+    CACHE_VERSION,
+    s.slug,
+    currentModel(),
+    items.map((i) => i.id).join(","),
+  ];
+
+  return unstable_cache(
+    async (): Promise<ActionPlan> => {
+      const numbered = items
+        .map((it, i) => {
+          const lines = [`${i + 1}. ${it.text}`];
+          if (it.howTo) lines.push(`   detail: ${clip(it.howTo, 360)}`);
+          if (it.why) lines.push(`   why: ${clip(it.why, 200)}`);
+          if (it.priority) lines.push(`   priority: ${it.priority}`);
+          return lines.join("\n");
+        })
+        .join("\n");
+
+      const out = await callLLM(
+        [
+          { role: "system", content: PLAN_SYSTEM },
+          { role: "user", content: `Action items:\n${numbered}` },
+        ],
+        950,
+      );
+      const parsed = out.text ? parsePlanJson(out.text) : null;
+      if (!parsed) return templateActionPlan(items);
+
+      const byN = new Map(parsed.items.filter((p) => typeof p.n === "number").map((p) => [p.n, p]));
+      const planItems: PlanItem[] = items.map((it, i) => {
+        const p = byN.get(i + 1);
+        const fullText = [it.text, it.howTo].filter(Boolean).join(" — ");
+        const priority = (PRIORITIES as string[]).includes(p?.priority ?? "")
+          ? (p!.priority as ActionPriority)
+          : it.priority ?? "normal";
+        return {
+          id: it.id,
+          title: p?.title?.trim() || cleanTitle(it.text),
+          detail:
+            p?.detail?.trim() ||
+            (it.why ? firstSentence(it.why) : it.howTo ? firstSentence(it.howTo) : ""),
+          fullText,
+          priority,
+          tag: p?.tag?.trim().toLowerCase() || inferTag(fullText),
+          humanOnly: typeof p?.humanOnly === "boolean" ? p.humanOnly : HUMAN_RE.test(fullText),
+        };
+      });
+      planItems.sort((a, b) => PLAN_PRIORITY_ORDER[a.priority] - PLAN_PRIORITY_ORDER[b.priority]);
+      return { available: true, summary: parsed.summary?.trim(), items: planItems, source: "llm" };
     },
     cacheKey,
     { revalidate: 600 },
