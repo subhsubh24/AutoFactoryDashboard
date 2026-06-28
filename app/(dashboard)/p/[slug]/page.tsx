@@ -7,6 +7,7 @@ import {
   getActionPlan,
   getNarrative,
   getLaunchSummary,
+  getProjectTagline,
   getValuation,
 } from "@/lib/narrative";
 import { getHistory } from "@/lib/kv";
@@ -86,11 +87,12 @@ export default async function ProjectPage({
   if (!project) notFound();
 
   const snapshot = await getProjectSnapshot(project);
-  const [narrative, history, valuation, actionPlan] = await Promise.all([
+  const [narrative, history, valuation, actionPlan, tagline] = await Promise.all([
     getNarrative(snapshot),
     getHistory(slug),
     getValuation(snapshot),
     getActionPlan(snapshot),
+    getProjectTagline(snapshot),
   ]);
   // "What the factory built" — only meaningful once flagged ready to submit.
   const launch = snapshot.readyForSubmission
@@ -145,6 +147,11 @@ export default async function ProjectPage({
               </h1>
               <StatusBadge status={snapshot.status} />
             </div>
+            {tagline && (
+              <p className="mt-1.5 max-w-xl text-[15px] leading-snug text-muted">
+                {tagline}
+              </p>
+            )}
             {narrative.headline && (
               <p className="mt-1.5 font-serif text-lg italic text-muted">
                 {narrative.headline}
