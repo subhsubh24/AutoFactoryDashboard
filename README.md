@@ -190,6 +190,16 @@ preference: **Gemini first, then OpenRouter**, then deterministic templates.
   templated summary. Cards show an **AI digest** vs **Summary** chip so you always
   know which you're seeing. If you see **Summary** everywhere, the key isn't set
   in your deploy's environment (or the model is rate-limited).
+- **Fact-check guardrails (`lib/llm-guard.ts`).** Every digest/briefing is
+  validated against the real numbers before it's shown: a draft that overstates
+  progress (e.g. "nearing completion" / "ready to ship" while submission
+  readiness is low, or "launched" before it has) triggers one corrective retry,
+  then falls back to the grounded template. The chip then reads `Summary ·
+  guard:<rule>` so the catch is visible. The rules are pure functions with evals
+  in `lib/llm-guard.test.ts` — run `npm test` (Node 22.6+). The **Action plan**
+  has its own structural guard: the LLM only re-orders/clarifies PENDING_OPS, and
+  every item is mapped back to a real entry (id + original text preserved), so it
+  can't invent or drop a task.
 
 ---
 

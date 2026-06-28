@@ -6,6 +6,7 @@ import type {
   PlanItem,
   ProjectSnapshot,
 } from "@/lib/types";
+import { checkBriefing, checkNarrative, type Violation } from "@/lib/llm-guard";
 import { humanAsksFor } from "@/lib/aggregate";
 import { extractThemes, themeSummary } from "@/lib/themes";
 import { parseBusinessCase, type Valuation } from "@/lib/businesscase";
@@ -36,7 +37,7 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 // Bump to invalidate cached narratives/briefings/valuations after a logic
 // change — unstable_cache entries otherwise survive across deploys (which is
 // why an old wrong ARR could persist even after fixing the parser).
-const CACHE_VERSION = "v7";
+const CACHE_VERSION = "v8";
 
 /** True during `next build` (prerender). Used to skip external LLM calls. */
 function buildPhase(): boolean {
@@ -69,8 +70,20 @@ const SYSTEM_PROMPT =
   "else:\n" +
   "HEADLINE: <a punchy 3-7 word headline, no trailing period>\n" +
   "DIGEST: <2 sentences — what shipped in the last 24h and where it stands; " +
-  "then what's coming next>\n" +
-  "Be specific and grounded only in the data given; do not invent features. " +
+  "then what's coming next>\n\n" +
+  "GROUNDING RULES (critical — accuracy over enthusiasm):\n" +
+  "- There are THREE independent axes; never conflate them: submission " +
+  "readiness % (the Definition-of-Done gate — the real 'how done is it'), build " +
+  "completeness % (track checkboxes), and estimated revenue. Shipping many PRs " +
+  "does NOT mean it's almost done.\n" +
+  "- Do NOT say 'nearing completion', 'almost done', 'ready', 'launch-ready', " +
+  "'production-ready', or similar UNLESS submission readiness is at least 80% " +
+  "or it is explicitly flagged ready for submission. When readiness is low it " +
+  "is EARLY — frame it as momentum and what's next, not nearness to done.\n" +
+  "- Never say the product is launched/live/in production; it has not shipped " +
+  "to users.\n" +
+  "- Be specific and grounded only in the data given; never invent features or " +
+  "numbers.\n" +
   "Warm but concise. Plain prose, no markdown or lists. If nothing shipped in " +
   "24h, say so plainly and focus on current state and next.";
 
@@ -395,6 +408,37 @@ async function callLLM(messages: ChatMessage[], maxTokens: number): Promise<LlmO
   return callOpenRouter(messages, maxTokens);
 }
 
+/**
+ * Generate text, then fact-check it against the real numbers. A violation
+ * triggers ONE corrective retry that names the specific problem; if the retry
+ * still fails (or the model is unavailable), we return no text so the caller
+ * falls back to the grounded template — an honest template beats an overstated
+ * digest (e.g. "nearing completion" at 0% submission-ready). The diagnostic
+ * reason becomes `guard:<rule>`, which the UI surfaces next to "Summary".
+ */
+async function generateGuarded(
+  messages: ChatMessage[],
+  maxTokens: number,
+  validate: (text: string) => Violation[],
+): Promise<LlmOutcome> {
+  const first = await callLLM(messages, maxTokens);
+  if (!first.text) return first;
+  const violations = validate(first.text);
+  if (violations.length === 0) return first;
+
+  const note =
+    "REVISION NEEDED — your previous draft was inaccurate:\n" +
+    violations.map((v) => `- ${v.message}`).join("\n") +
+    "\nRewrite it in the same required format, fixing these problems. Stay strictly grounded in the numbers given.";
+  const retry = await callLLM(
+    [...messages, { role: "user", content: `Your previous draft:\n${first.text}\n\n${note}` }],
+    maxTokens,
+  );
+  if (retry.text && validate(retry.text).length === 0) return { ...retry, reason: "ok" };
+
+  return { reason: `guard:${violations[0].rule}` };
+}
+
 export interface LlmHealth {
   /** True when the configured provider returned text. */
   ok: boolean;
@@ -486,12 +530,18 @@ export function getNarrative(s: ProjectSnapshot): Promise<Narrative> {
 
   return unstable_cache(
     async (): Promise<Narrative> => {
-      const out = await callLLM(
+      const out = await generateGuarded(
         [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: `Write the update from these metrics:\n\n${llmContext(s)}` },
         ],
         320, // headroom so a 2-sentence digest never gets cut off mid-thought
+        (text) =>
+          checkNarrative(text, {
+            readinessPct: headlinePct(s),
+            buildPct: s.progress.buildPct,
+            readyForSubmission: s.readyForSubmission,
+          }),
       );
       if (out.text) {
         const { headline, text } = parseHeadlineDigest(out.text);
@@ -525,7 +575,10 @@ const FACTORY_SYSTEM =
   "what shipped and what it focused on). Sentence two: the one or two things " +
   "most worth their attention (a blocker, red CI, something ready to ship) — or " +
   "that nothing needs them. Specific, warm, concise. Plain prose only: no " +
-  "markdown, no lists, no preamble.";
+  "markdown, no lists, no preamble.\n" +
+  "Accuracy over enthusiasm: only call a project ready/done/launched if the " +
+  "data marks it ready for submission. These are works in progress — do not " +
+  "imply they are finished or live.";
 
 function factoryContext(snapshots: ProjectSnapshot[]): string {
   return snapshots
@@ -592,7 +645,8 @@ export function getFactoryBriefing(
 
   return unstable_cache(
     async (): Promise<FactoryBriefing> => {
-      const llm = await callLLM(
+      const anyReady = snapshots.some((s) => s.readyForSubmission);
+      const llm = await generateGuarded(
         [
           { role: "system", content: FACTORY_SYSTEM },
           {
@@ -603,6 +657,7 @@ export function getFactoryBriefing(
           },
         ],
         200,
+        (text) => checkBriefing(text, { anyReady }),
       );
       if (llm.text) return { text: llm.text, source: "llm" };
       return { text: templateBriefing(snapshots), source: "template" };
