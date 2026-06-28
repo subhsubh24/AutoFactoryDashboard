@@ -19,6 +19,7 @@ import {
   headlinePct,
   kindLabel,
   livenessMeta,
+  milestoneTitle,
   nextMilestone,
   pluralize,
   toneClasses,
@@ -283,8 +284,15 @@ export default async function ProjectPage({
           <p className="text-xs font-medium uppercase tracking-wide text-muted">
             Next milestone
           </p>
-          <p className="mt-1 font-serif text-2xl text-ink">
-            {milestone ?? (prog.tracks.length ? "All tracks complete" : "—")}
+          <p
+            className="mt-1 font-serif text-2xl leading-snug text-ink"
+            title={milestone ?? undefined}
+          >
+            {milestone
+              ? milestoneTitle(milestone)
+              : prog.tracks.length
+                ? "All tracks complete"
+                : "—"}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
             {prog.buildAvailable && (

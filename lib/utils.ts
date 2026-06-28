@@ -146,6 +146,28 @@ export function kindLabel(kind: ProjectKind): string {
   }
 }
 
+/**
+ * A short, glanceable milestone title for the hero. Roadmap checkbox items can
+ * be long run-ons (and we only capture the first physical line, so they can end
+ * mid-sentence) — so take the first real sentence (keeping a leading "A5."/"P0."
+ * id), else clip at a word boundary with an ellipsis. Never cuts mid-word.
+ */
+export function milestoneTitle(s: string, max = 120): string {
+  const t = s.replace(/\s+/g, " ").trim();
+  // Strip a leading id like "A5." or "P0)" so the first period isn't mistaken
+  // for a sentence end.
+  const idMatch = t.match(/^([A-Za-z]?\d+[.)])\s+/);
+  const id = idMatch ? idMatch[0] : "";
+  const body = t.slice(id.length);
+  const sentence = body.match(/^(.*?[.!?])(?:\s|$)/);
+  let out =
+    sentence && sentence[1].trim().length >= 10 ? id + sentence[1] : t;
+  if (out.length > max) {
+    out = `${out.slice(0, max).replace(/\s+\S*$/, "").trim()}…`;
+  }
+  return out.trim();
+}
+
 /** The next concrete thing — first unchecked item (full), else lowest-% track. */
 export function nextMilestone(s: ProjectSnapshot): string | null {
   if (s.progress.nextItem) return s.progress.nextItem;
