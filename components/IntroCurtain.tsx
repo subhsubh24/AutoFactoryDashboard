@@ -55,6 +55,18 @@ function Mechanism({ side }: { side: "left" | "right" }) {
       <svg viewBox="0 0 120 120" width={188} height={188} aria-hidden="true">
         {/* Housing — the metal rim the lock is mounted in (stays neutral). */}
         <circle cx={C} cy={C} r={52} fill="none" stroke="var(--hairline)" strokeWidth={2.5} />
+        {/* Charge — fills the rim as the lock spins up, completing on lock. */}
+        <circle
+          className="intro-charge"
+          cx={C}
+          cy={C}
+          r={52}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          strokeDasharray={327}
+        />
         {bolts}
         {/* The cog — spins into alignment, then tints with the rest. */}
         <g className="intro-cog" fill="currentColor">
