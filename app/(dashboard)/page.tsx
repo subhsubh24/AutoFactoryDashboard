@@ -21,6 +21,7 @@ import { getHistory, getFactoryHistory } from "@/lib/kv";
 import { estimateCompletion, formatEtaDate, formatHorizon, type Estimate } from "@/lib/estimate";
 import { formatCycle } from "@/lib/quality";
 import { floorLoopSignal } from "@/lib/loophealth";
+import { nextRoutineRun } from "@/lib/routine";
 import { getProjectBySlug } from "@/config/projects";
 import type { ProjectSnapshot } from "@/lib/types";
 import {
@@ -39,6 +40,7 @@ import { ActivityFeed } from "@/components/ActivityFeed";
 import { Delta24h, DeltaPill } from "@/components/Delta";
 import { GrowthLine } from "@/components/GrowthPanel";
 import { LoopSignalChip } from "@/components/LoopHealthPanel";
+import { NextRun } from "@/components/NextRun";
 import { LivenessDot } from "@/components/LivenessDot";
 import { WeekBars } from "@/components/WeekBars";
 import { ProgressTrend, type ProjectTrend } from "@/components/ProgressTrend";
@@ -700,6 +702,9 @@ function ProjectTile({
   const pct = headlinePct(s); // submission readiness (headline)
   const build = s.progress.buildPct; // build completeness (secondary)
   const loopSignal = floorLoopSignal(s.loopHealth); // null while bootstrapping
+  const nextRun = s.routine.available
+    ? nextRoutineRun(s.routine, s.liveness.lastShipAt, s.liveness.stalled)
+    : null;
 
   return (
     <div className="card flex flex-col gap-3 p-5 shadow-card transition-shadow hover:shadow-lift">
@@ -738,6 +743,14 @@ function ProjectTile({
               <span>{kindLabel(s.kind)}</span>
               <span aria-hidden>·</span>
               <LivenessDot liveness={s.liveness} showLabel />
+              {nextRun && (nextRun.at || nextRun.overdue) && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span>
+                    next <NextRun at={nextRun.at} overdue={nextRun.overdue} />
+                  </span>
+                </>
+              )}
               {loopSignal && <LoopSignalChip signal={loopSignal} />}
             </div>
           </div>

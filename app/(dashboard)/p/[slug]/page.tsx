@@ -657,6 +657,9 @@ export default async function ProjectPage({
                 <LoopHealthPanel
                   loop={snapshot.loopHealth}
                   signalTrend={loopSignalTrend}
+                  routine={snapshot.routine}
+                  lastShipAt={snapshot.liveness.lastShipAt}
+                  stalled={snapshot.liveness.stalled}
                 />
               </div>
             )}
