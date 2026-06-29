@@ -21,8 +21,9 @@ import { getHistory, getFactoryHistory } from "@/lib/kv";
 import { estimateCompletion, formatEtaDate, formatHorizon, type Estimate } from "@/lib/estimate";
 import { formatCycle } from "@/lib/quality";
 import { floorLoopSignal } from "@/lib/loophealth";
-import { nextRoutineRun } from "@/lib/routine";
+import { runsFor, soonestRun } from "@/lib/routine";
 import { getProjectBySlug } from "@/config/projects";
+import { crossProjectRoutines, routinesForSlug } from "@/config/routines";
 import type { ProjectSnapshot } from "@/lib/types";
 import {
   cn,
@@ -41,6 +42,7 @@ import { Delta24h, DeltaPill } from "@/components/Delta";
 import { GrowthLine } from "@/components/GrowthPanel";
 import { LoopSignalChip } from "@/components/LoopHealthPanel";
 import { NextRun } from "@/components/NextRun";
+import { RoutineSchedule } from "@/components/RoutineSchedule";
 import { LivenessDot } from "@/components/LivenessDot";
 import { WeekBars } from "@/components/WeekBars";
 import { ProgressTrend, type ProjectTrend } from "@/components/ProgressTrend";
@@ -508,6 +510,48 @@ export default async function OverviewPage() {
         </div>
       </section>
 
+      {/* The full routine schedule — every project's routines + the cross-project
+          digest — folded away by default. Times are live (UTC), uncached. */}
+      <details className="group mb-6 rounded-2xl border border-hairline bg-card">
+        <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3.5 text-sm font-medium text-ink">
+          <span className="flex items-center gap-2">
+            <RefreshIcon className="h-3.5 w-3.5 text-muted" />
+            Routine schedule{" "}
+            <span className="text-muted">· when each loop next runs</span>
+          </span>
+          <ArrowRightIcon className="h-4 w-4 text-muted transition-transform group-open:rotate-90" />
+        </summary>
+        <div className="space-y-4 border-t border-hairline px-5 py-4">
+          {ranked.map((s) => (
+            <div key={s.slug}>
+              <Link
+                href={`/p/${s.slug}`}
+                className="text-[11px] font-semibold uppercase tracking-wide text-muted transition-colors hover:text-clay"
+              >
+                {s.displayName}
+              </Link>
+              <div className="mt-1.5">
+                <RoutineSchedule runs={runsFor(routinesForSlug(s.slug))} />
+              </div>
+            </div>
+          ))}
+          <div className="border-t border-hairline pt-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+              Cross-project
+            </p>
+            <div className="mt-1.5">
+              <RoutineSchedule runs={runsFor(crossProjectRoutines())} />
+            </div>
+          </div>
+          <p className="border-t border-hairline pt-3 text-[11px] leading-relaxed text-muted">
+            Scheduled cloud agents (UTC). Factories run every 6h (staggered),
+            growth &amp; research daily, auditors every other day. Times are
+            computed from each routine&apos;s cron and can lag the slot by a couple
+            of minutes.
+          </p>
+        </div>
+      </details>
+
       {/* The detail, kept out of the way until you want it. */}
       {overnightCount > 0 && (
         <details className="group rounded-2xl border border-hairline bg-card">
@@ -702,9 +746,9 @@ function ProjectTile({
   const pct = headlinePct(s); // submission readiness (headline)
   const build = s.progress.buildPct; // build completeness (secondary)
   const loopSignal = floorLoopSignal(s.loopHealth); // null while bootstrapping
-  const nextRun = s.routine.available
-    ? nextRoutineRun(s.routine, s.liveness.lastShipAt, s.liveness.stalled)
-    : null;
+  // The soonest routine to fire (usually the 6h factory) — from the authoritative
+  // cron schedule, computed live in UTC.
+  const soonest = soonestRun(runsFor(routinesForSlug(s.slug)));
 
   return (
     <div className="card flex flex-col gap-3 p-5 shadow-card transition-shadow hover:shadow-lift">
@@ -743,11 +787,12 @@ function ProjectTile({
               <span>{kindLabel(s.kind)}</span>
               <span aria-hidden>·</span>
               <LivenessDot liveness={s.liveness} showLabel />
-              {nextRun && (nextRun.at || nextRun.overdue) && (
+              {soonest?.nextAt && (
                 <>
                   <span aria-hidden>·</span>
-                  <span>
-                    next <NextRun at={nextRun.at} overdue={nextRun.overdue} />
+                  <span title={`Next ${soonest.routine.type} run`}>
+                    next {soonest.routine.type}{" "}
+                    <NextRun at={soonest.nextAt} cron={soonest.routine.cron} />
                   </span>
                 </>
               )}

@@ -13,7 +13,6 @@ import {
 import { parseGrowth } from "@/lib/growth";
 import { parseLoopHealth } from "@/lib/loophealth";
 import { parseScorecard } from "@/lib/scorecard";
-import { parseRoutineSchedule } from "@/lib/routine";
 import type {
   AttentionIssue,
   AttentionKind,
@@ -42,7 +41,9 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 // v8: build tracks now recognise the "## Tracks" + "### A —" heading style.
 // v9: loopHealth (LOOP_HEALTH.md) + qualityScorecard (QUALITY_SCORECARD.md).
 // v10: routine schedule (docs/autonomous-loop README/PROMPT cadence).
-const SNAPSHOT_CACHE_VERSION = "v10";
+// v11: dropped snapshot.routine — next-run now comes from the authoritative
+//      cron schedule (config/routines.ts), computed live, not from repo docs.
+const SNAPSHOT_CACHE_VERSION = "v11";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
@@ -543,7 +544,6 @@ function degraded(
     liveness: { level: "unknown", hoursSinceShip: null, lastShipAt: null, stalled: false },
     loopMemoryHealth: { available: false, hasAudit: false },
     loopHealth: parseLoopHealth(null),
-    routine: parseRoutineSchedule(null),
     growth: parseGrowth(null),
     qualityScorecard: parseScorecard(null),
     mergedToday: 0,
@@ -635,7 +635,6 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     readmeFile,
     loopHealthFile,
     scorecardFile,
-    routineDocFile,
   ] = await Promise.all([
     fetchPulls(octokit, owner, repo, errors),
     fetchCommits(octokit, owner, repo, workingBranch, errors),
@@ -658,11 +657,6 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     fetchFileWithHistory(octokit, owner, repo, workingBranch, "README.md"),
     fetchFile(octokit, owner, repo, workingBranch, "docs/autonomous-loop/LOOP_HEALTH.md"),
     fetchFile(octokit, owner, repo, workingBranch, "docs/quality/QUALITY_SCORECARD.md"),
-    // The loop's published run cadence lives in the autonomous-loop charter.
-    fetchFirstFile(octokit, owner, repo, workingBranch, [
-      "docs/autonomous-loop/README.md",
-      "docs/autonomous-loop/PROMPT.md",
-    ]),
   ]);
 
   // Growth status — parsed exactly like the business case (link, never a guess).
@@ -686,12 +680,6 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     scorecardFile.available ? scorecardFile.content : null,
     scorecardFile.available
       ? `${repoUrl}/blob/${workingBranch}/docs/quality/QUALITY_SCORECARD.md`
-      : undefined,
-  );
-  const routine = parseRoutineSchedule(
-    routineDocFile.available ? routineDocFile.content : null,
-    routineDocFile.available && routineDocFile.path
-      ? `${repoUrl}/blob/${workingBranch}/${routineDocFile.path}`
       : undefined,
   );
 
@@ -812,7 +800,6 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     liveness,
     loopMemoryHealth,
     loopHealth,
-    routine,
     growth,
     qualityScorecard,
     mergedToday: pulls?.mergedToday ?? 0,

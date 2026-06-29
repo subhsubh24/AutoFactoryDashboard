@@ -30,6 +30,25 @@ export function relativeTime(iso: string | null | undefined): string {
   return fmt(Math.round(d / 365), "y");
 }
 
+/**
+ * The absolute scheduled time in UTC, with a weekday for context, e.g.
+ * "Wed 14:00 UTC". Derived purely from the ISO (no "now"), so it's stable
+ * across server/client render. Pairs with relativeTime for "Wed 14:00 UTC · in 3h".
+ */
+export function formatRunClock(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const wd = d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
+  const hm = d.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: "UTC",
+  });
+  return `${wd} ${hm} UTC`;
+}
+
 /** Whole hours/days for PR ages. */
 export function formatAge(hours: number | undefined): string {
   if (hours === undefined || Number.isNaN(hours)) return "—";

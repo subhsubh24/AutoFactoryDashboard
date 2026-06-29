@@ -1,25 +1,15 @@
 /**
- * The autonomous loop's published schedule, read from docs/autonomous-loop/
- * (README.md / PROMPT.md). The loop is a scheduled cloud Claude Code routine;
- * its cadence is documented there — either as an explicit cron (a "Routine
- * cadence:" line in backticks) or in prose ("runs every 6h"). We read it from
- * the repo and compute the next run authoritatively; when a repo doesn't publish a
- * cadence we show nothing rather than guess (the cadence varies per project —
- * a global assumption would be wrong).
+ * Cron helpers for the autonomous routine schedule (config/routines.ts).
+ *
+ * Standard 5-field crons (minute hour day-of-month month day-of-week), UTC.
+ * `nextCron` is the dashboard's source for "next run": a minute-resolution
+ * forward scan, fine for the sub-daily cadences here. Next-run is computed
+ * relative to now at render time (the pages are dynamic) — never cached.
  */
-import type { Availability } from "@/lib/types";
+import type { Routine } from "@/config/routines";
 
-export interface RoutineSchedule extends Availability {
-  sourceUrl?: string;
-  /** 5-field cron string when published (every-N-hours, daily, etc.); else null. */
-  cron: string | null;
-  /** Cadence in hours when stated (prose "every 6h", or derived from cron). */
-  cadenceHours: number | null;
-  /** Short human label, e.g. "every 3h". */
-  label: string | null;
-}
-
-/** Expand one cron field (star, step, range "1-5", list "0,30", or value) into a set. */
+// Expand one cron field (star, step "x/n", range "a-b", list "a,b", value "a")
+// into the set of matching numbers within [min, max].
 function cronField(spec: string, min: number, max: number): Set<number> {
   const out = new Set<number>();
   for (const part of spec.split(",")) {
@@ -42,8 +32,7 @@ function cronField(spec: string, min: number, max: number): Set<number> {
 
 /**
  * Next UTC fire time (ms) for a standard 5-field cron at/after `fromMs`, or null
- * if it doesn't parse / doesn't fire within a year. Minute-resolution scan —
- * fine for the sub-daily cadences here.
+ * if it doesn't parse / doesn't fire within a year. Minute-resolution scan.
  */
 export function nextCron(expr: string, fromMs: number): number | null {
   const parts = expr.trim().split(/\s+/);
@@ -74,93 +63,58 @@ export function nextCron(expr: string, fromMs: number): number | null {
   return null;
 }
 
-/** Pull the cron / cadence out of the autonomous-loop docs. */
-export function parseRoutineSchedule(
-  md: string | null | undefined,
-  fileUrl?: string,
-): RoutineSchedule {
-  const blank: RoutineSchedule = {
-    available: false,
-    cron: null,
-    cadenceHours: null,
-    label: null,
-    sourceUrl: fileUrl,
-  };
-  if (!md || !md.trim()) {
-    return { ...blank, reason: "autonomous-loop docs not found" };
-  }
-
-  // Explicit cron near the word "cadence", in backticks: `0 */3 * * *`.
-  let cron: string | null = null;
-  const m = md.match(/cadence[^\n`]*`([0-9*/,\s-]+)`/i);
-  if (m) {
-    const cand = m[1].trim().replace(/\s+/g, " ");
-    if (cand.split(" ").length === 5) cron = cand;
-  }
-
-  // Prose cadence: "every 6h" / "every 3 hours".
-  let cadenceHours: number | null = null;
-  const p = md.match(/every\s+(\d+)\s*(?:h\b|hours?\b|-?\s*hours?\b)/i);
-  if (p) cadenceHours = parseInt(p[1], 10);
-
-  // Derive cadence from a simple "0 */N * * *" cron when prose didn't state it.
-  if (cadenceHours === null && cron) {
-    const hm = cron.split(" ")[1].match(/^\*\/(\d+)$/);
-    if (hm) cadenceHours = parseInt(hm[1], 10);
-  }
-
-  if (!cron && cadenceHours === null) return { ...blank, reason: "no cadence stated" };
-
-  return {
-    available: true,
-    cron,
-    cadenceHours,
-    label: cadenceHours ? `every ${cadenceHours}h` : cron,
-    sourceUrl: fileUrl,
-  };
-}
-
-export interface NextRunInfo {
-  /** ISO of the next run; null when unknown or overdue. */
-  at: string | null;
-  /** How `at` was derived: exact from cron, or interval from cadence. */
-  basis: "cron" | "cadence" | null;
-  /** The loop is stalled / past due — show "overdue", not a fake future time. */
-  overdue: boolean;
-}
-
 /**
- * The next run: exact from cron when published, else last-ship + cadence, else
- * unknown. A stalled loop reads "overdue" (the schedule says it should have run).
+ * A short, human cadence label derived from the cron itself (so it can never
+ * drift from the schedule): "every 6h", "daily", "every other day", or "Nx/day".
  */
-export function nextRoutineRun(
-  r: RoutineSchedule,
-  lastShipAt: string | null,
-  stalled: boolean,
-  nowMs: number = Date.now(),
-): NextRunInfo {
-  if (!r.available) return { at: null, basis: null, overdue: false };
-  const cadenceMs = (r.cadenceHours ?? 0) * 3_600_000;
-  const lastMs = lastShipAt ? Date.parse(lastShipAt) : NaN;
-  // Guardrail — validate the documented cadence against reality: if the loop
-  // hasn't actually shipped within ~1.5× its own stated cadence (or is globally
-  // stalled), it's behind schedule. Show "overdue", never a confident future time
-  // implied by a cadence the loop clearly isn't keeping.
-  const behindCadence =
-    cadenceMs > 0 && !Number.isNaN(lastMs) && nowMs - lastMs > cadenceMs * 1.5;
-  if (stalled || behindCadence) {
-    return { at: null, basis: r.cron ? "cron" : "cadence", overdue: true };
+export function cadenceLabel(cron: string): string {
+  const parts = cron.trim().split(/\s+/);
+  if (parts.length !== 5) return "on a schedule";
+  const [, hourSpec, domSpec] = parts;
+  const domStep = domSpec.match(/^\*\/(\d+)$/);
+  if (domStep) {
+    const n = parseInt(domStep[1], 10);
+    return n === 2 ? "every other day" : `every ${n} days`;
   }
-  if (r.cron) {
-    const t = nextCron(r.cron, nowMs);
-    if (t !== null) return { at: new Date(t).toISOString(), basis: "cron", overdue: false };
+  const hours = [...cronField(hourSpec, 0, 23)].sort((a, b) => a - b);
+  if (hours.length <= 1) return "daily";
+  const gaps = hours.slice(1).map((h, i) => h - hours[i]);
+  const even = gaps.every((g) => g === gaps[0]);
+  if (even && 24 % hours.length === 0 && gaps[0] === 24 / hours.length) {
+    return `every ${gaps[0]}h`;
   }
-  if (cadenceMs > 0 && !Number.isNaN(lastMs)) {
-    return {
-      at: new Date(lastMs + cadenceMs).toISOString(),
-      basis: "cadence",
-      overdue: false,
-    };
+  return `${hours.length}x/day`;
+}
+
+export interface RoutineRun {
+  routine: Routine;
+  /** ISO of the next scheduled fire (UTC); null when disabled/unschedulable. */
+  nextAt: string | null;
+  /** Friendly cadence, e.g. "every 6h". */
+  cadence: string;
+}
+
+/** Next fire for each routine, computed relative to `nowMs` (UTC). */
+export function runsFor(routines: Routine[], nowMs: number = Date.now()): RoutineRun[] {
+  return routines.map((routine) => {
+    const cadence = cadenceLabel(routine.cron);
+    if (!routine.enabled) return { routine, nextAt: null, cadence };
+    const t = nextCron(routine.cron, nowMs);
+    return { routine, nextAt: t === null ? null : new Date(t).toISOString(), cadence };
+  });
+}
+
+/** The soonest upcoming run among `runs` (skips disabled / unschedulable). */
+export function soonestRun(runs: RoutineRun[]): RoutineRun | null {
+  let best: RoutineRun | null = null;
+  let bestT = Infinity;
+  for (const r of runs) {
+    if (!r.nextAt) continue;
+    const t = Date.parse(r.nextAt);
+    if (t < bestT) {
+      best = r;
+      bestT = t;
+    }
   }
-  return { at: null, basis: null, overdue: false };
+  return best;
 }

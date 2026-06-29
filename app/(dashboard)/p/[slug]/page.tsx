@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getProjectBySlug } from "@/config/projects";
+import { routinesForSlug } from "@/config/routines";
+import { runsFor } from "@/lib/routine";
 import { getProjectSnapshot } from "@/lib/github";
 import {
   getActionPlan,
@@ -48,6 +50,7 @@ import { Delta24h } from "@/components/Delta";
 import { GrowthPanel } from "@/components/GrowthPanel";
 import { GoLivePanel } from "@/components/GoLivePanel";
 import { LoopHealthPanel } from "@/components/LoopHealthPanel";
+import { RoutineSchedule } from "@/components/RoutineSchedule";
 import { QualityScorecardView } from "@/components/QualityScorecard";
 import { LivenessDot } from "@/components/LivenessDot";
 import { ReadinessGatesView } from "@/components/ReadinessGates";
@@ -119,6 +122,9 @@ export default async function ProjectPage({
   const arrTrend = history?.map((h) => h.arr ?? null) ?? [];
   const retentionTrend = history?.map((h) => h.pmfRetentionD7 ?? null) ?? [];
   const loopSignalTrend = history?.map((h) => h.loopSignal ?? null) ?? [];
+  // The project's autonomous routines + their next runs — from the authoritative
+  // cron schedule (config/routines.ts), computed live in UTC (never cached).
+  const routineRuns = runsFor(routinesForSlug(slug));
   const fileHref = (path?: string): string | undefined =>
     path ? `${snapshot.repoUrl}/blob/${snapshot.workingBranch}/${path}` : undefined;
   const preflightUrl = snapshot.files.preflight.available
@@ -657,14 +663,25 @@ export default async function ProjectPage({
                 <LoopHealthPanel
                   loop={snapshot.loopHealth}
                   signalTrend={loopSignalTrend}
-                  routine={snapshot.routine}
-                  lastShipAt={snapshot.liveness.lastShipAt}
-                  stalled={snapshot.liveness.stalled}
                 />
               </div>
             )}
             <LoopHealth snapshot={snapshot} />
           </SectionCard>
+
+          {routineRuns.length > 0 && (
+            <SectionCard
+              title="Run schedule"
+              subtitle="When this project's autonomous routines next fire · UTC"
+            >
+              <RoutineSchedule runs={routineRuns} />
+              <p className="mt-4 border-t border-hairline pt-3 text-[11px] leading-relaxed text-muted">
+                Scheduled cloud agents. Times are the scheduled UTC slot computed
+                from each routine&apos;s cron — an actual run can lag a couple of
+                minutes. Whether the loop is keeping pace is the liveness signal above.
+              </p>
+            </SectionCard>
+          )}
 
           <SectionCard title="Data sources" subtitle="What the dashboard found">
             <ul className="space-y-2 text-sm">

@@ -1,9 +1,7 @@
 import type { LoopHealth, LoopSignal } from "@/lib/loophealth";
-import { nextRoutineRun, type RoutineSchedule } from "@/lib/routine";
 import { cn, type Tone } from "@/lib/utils";
 import { Chip } from "@/components/Chip";
-import { NextRun } from "@/components/NextRun";
-import { AlertIcon, ExternalLinkIcon, RefreshIcon } from "@/components/icons";
+import { AlertIcon, ExternalLinkIcon } from "@/components/icons";
 
 /** Signal → label + tone. bootstrapping reads quiet ("not reported yet"). */
 export const LOOP_SIGNAL_META: Record<LoopSignal, { label: string; tone: Tone }> = {
@@ -98,19 +96,10 @@ function LStat({
 export function LoopHealthPanel({
   loop,
   signalTrend = [],
-  routine,
-  lastShipAt = null,
-  stalled = false,
 }: {
   loop: LoopHealth;
   /** The loop signal recorded on each recent poll (oldest→newest). */
   signalTrend?: Array<string | null>;
-  /** The loop's published run schedule (cadence/cron), for "next run". */
-  routine?: RoutineSchedule;
-  /** Most recent ship — anchors the cadence-based next run. */
-  lastShipAt?: string | null;
-  /** Loop stalled → next run reads "overdue", not a future time. */
-  stalled?: boolean;
 }) {
   if (!loop.available) {
     return (
@@ -122,7 +111,6 @@ export function LoopHealthPanel({
   const tr = loop.thisRun;
   const r7 = loop.rolling7d;
   const asOf = shortDate(loop.asOf);
-  const next = routine?.available ? nextRoutineRun(routine, lastShipAt, stalled) : null;
   const deepAudit = shortDate(loop.lastDeepAudit);
 
   return (
@@ -132,40 +120,6 @@ export function LoopHealthPanel({
         {asOf && <span className="text-xs text-muted">as of {asOf}</span>}
       </div>
 
-      {/* Cadence + next run — read from the loop's published charter, framed as
-          approximate, and validated against its actual last run (overdue when it
-          falls behind its own cadence). The cadence links to its source. */}
-      {routine?.available && (
-        <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted">
-          <RefreshIcon className="h-3 w-3 shrink-0" />
-          <span>
-            Runs{" "}
-            {routine.sourceUrl ? (
-              <a
-                href={routine.sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-                title="Source — the loop's charter (docs/autonomous-loop)"
-                className="underline decoration-dotted underline-offset-2 transition-colors hover:text-clay"
-              >
-                ~{routine.label ?? "on a schedule"}
-              </a>
-            ) : (
-              <>~{routine.label ?? "on a schedule"}</>
-            )}
-          </span>
-          {next && (next.at || next.overdue) && (
-            <>
-              <span aria-hidden>·</span>
-              <span>
-                next run{" "}
-                <NextRun at={next.at} overdue={next.overdue} className="font-medium text-ink" />
-              </span>
-              {next.basis === "cadence" && <span className="text-muted/70">· est.</span>}
-            </>
-          )}
-        </p>
-      )}
       {deepAudit && (
         <p className="text-[11px] text-muted">Last deep audit · {deepAudit}</p>
       )}
