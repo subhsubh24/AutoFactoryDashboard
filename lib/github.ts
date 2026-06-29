@@ -43,7 +43,9 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 // v10: routine schedule (docs/autonomous-loop README/PROMPT cadence).
 // v11: dropped snapshot.routine — next-run now comes from the authoritative
 //      cron schedule (config/routines.ts), computed live, not from repo docs.
-const SNAPSHOT_CACHE_VERSION = "v11";
+// v12: status semantics — "blocked" now means CI red or an explicit blocker
+//      issue only (a stale PR / FYI no longer flips a shipping project to blocked).
+const SNAPSHOT_CACHE_VERSION = "v12";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
@@ -482,12 +484,15 @@ async function fetchFirstFile(
 function computeStatus(args: {
   readyForSubmission: boolean;
   ciFailing: boolean;
-  stuckPRs: number;
-  attentionCount: number;
+  hasBlocker: boolean;
   active24h: boolean;
 }): ProjectStatus {
   if (args.readyForSubmission) return "ready";
-  if (args.ciFailing || args.stuckPRs > 0 || args.attentionCount > 0) return "blocked";
+  // "Blocked" is reserved for a genuine block — CI red, or an explicit blocker
+  // issue. A stale open PR or an FYI / harness proposal is a nudge, not a block,
+  // and must not flip an actively-shipping project to "blocked" (it shows up as
+  // a stuck-PR signal + a "needs you" ask instead).
+  if (args.ciFailing || args.hasBlocker) return "blocked";
   if (args.active24h) return "building";
   return "idle";
 }
@@ -767,8 +772,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
   const status = computeStatus({
     readyForSubmission,
     ciFailing: ci.status === "failing",
-    stuckPRs: pulls?.stuckPRs ?? 0,
-    attentionCount: issues?.attentionIssues.length ?? 0,
+    hasBlocker: (issues?.attentionIssues ?? []).some((a) => a.kind === "blocker"),
     active24h,
   });
 

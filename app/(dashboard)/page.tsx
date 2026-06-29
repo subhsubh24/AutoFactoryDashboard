@@ -32,6 +32,7 @@ import {
   formatMoney,
   headlinePct,
   kindLabel,
+  leadSentences,
   livenessMeta,
   pluralize,
   statusMeta,
@@ -403,9 +404,11 @@ export default async function OverviewPage() {
           <MiniStat
             label="WIP"
             value={
-              overview.factory.wipStuck > 0
-                ? `${overview.factory.wipOpen} · ${overview.factory.wipStuck} stuck`
-                : String(overview.factory.wipOpen)
+              overview.factory.wipStuck === 0
+                ? String(overview.factory.wipOpen)
+                : overview.factory.wipStuck === overview.factory.wipOpen
+                  ? `${overview.factory.wipOpen} stuck`
+                  : `${overview.factory.wipOpen} · ${overview.factory.wipStuck} stuck`
             }
             tone={overview.factory.wipStuck > 0 ? "clay" : undefined}
           />
@@ -830,8 +833,8 @@ function ProjectTile({
           <p className="text-[15px] font-semibold leading-snug text-ink">
             {narrative.headline}
           </p>
-          <p className="line-clamp-3 text-sm leading-relaxed text-muted">
-            {narrative.text}
+          <p className="text-sm leading-relaxed text-muted">
+            {leadSentences(narrative.text)}
           </p>
         </div>
       )}

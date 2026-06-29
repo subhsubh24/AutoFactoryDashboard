@@ -128,17 +128,13 @@ export function statusMeta(status: ProjectStatus): StatusMeta {
   }
 }
 
-/** Short human reason behind a "blocked"/"needs you" status. */
+/** Short human reason behind a "blocked" status (CI red or an explicit blocker). */
 export function describeBlock(s: ProjectSnapshot): string | null {
   if (s.status !== "blocked") return null;
   const reasons: string[] = [];
   if (s.ci.status === "failing") reasons.push("CI failing");
-  if (s.stuckPRs > 0)
-    reasons.push(`${s.stuckPRs} stuck ${pluralize(s.stuckPRs, "PR")}`);
-  if (s.attentionIssues.length > 0)
-    reasons.push(
-      `${s.attentionIssues.length} ${pluralize(s.attentionIssues.length, "issue")}`,
-    );
+  const blockers = s.attentionIssues.filter((a) => a.kind === "blocker").length;
+  if (blockers > 0) reasons.push(`${blockers} ${pluralize(blockers, "blocker")}`);
   return reasons.length ? reasons.join(" · ") : "Needs attention";
 }
 
@@ -215,6 +211,28 @@ export function milestoneTitle(s: string, max = 120): string {
     out = `${out.slice(0, max).replace(/\s+\S*$/, "").trim()}…`;
   }
   return out.trim();
+}
+
+/**
+ * The opening of a longer narrative, clipped to whole sentences within a
+ * character budget — so a tile teaser always ends on a period, never mid-
+ * sentence (which is what a CSS line-clamp does). Returns the whole string when
+ * it's already within budget; only falls back to a word-boundary ellipsis if
+ * the very first sentence alone exceeds the budget.
+ */
+export function leadSentences(text: string | null | undefined, maxChars = 180): string {
+  if (!text) return "";
+  const t = text.replace(/\s+/g, " ").trim();
+  if (t.length <= maxChars) return t;
+  const sentences = t.match(/[^.!?]+[.!?]+(?:\s|$)/g) ?? [];
+  let out = "";
+  for (const s of sentences) {
+    if (out && (out + s).trim().length > maxChars) break;
+    out += s;
+  }
+  out = out.trim();
+  if (!out) out = `${t.slice(0, maxChars).replace(/\s+\S*$/, "").trim()}…`;
+  return out;
 }
 
 /** The next concrete thing — first unchecked item (full), else lowest-% track. */

@@ -472,10 +472,15 @@ export default async function ProjectPage({
                 label="Open PRs"
                 value={snapshot.openPRs.length}
                 accent={snapshot.stuckPRs > 0 ? "clay" : undefined}
+                // Avoid the confusing "1 1 stuck": when every open PR is stuck,
+                // the count already says it — qualify with just "stuck". When
+                // only some are, separate the two numbers with a middot.
                 sub={
-                  snapshot.stuckPRs > 0
-                    ? `${snapshot.stuckPRs} stuck`
-                    : undefined
+                  snapshot.stuckPRs === 0
+                    ? undefined
+                    : snapshot.stuckPRs === snapshot.openPRs.length
+                      ? "stuck"
+                      : `· ${snapshot.stuckPRs} stuck`
                 }
               />
             </div>
