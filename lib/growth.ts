@@ -301,6 +301,26 @@ function parseFlow(s: string): Yaml {
 
 const KEY_RE = /^([A-Za-z0-9_]+)\s*:\s*([\s\S]*)$/;
 const isSeqLine = (t: string) => t === "-" || t.startsWith("- ");
+/** A YAML block-scalar header: `|` or `>`, with optional chomping/indent ("|-", ">-", "|2"). */
+const BLOCK_SCALAR_RE = /^[|>]([+-]|\d)*$/;
+
+/**
+ * Read a block scalar's body — the lines indented deeper than its key — and fold
+ * them into one space-joined string. (toLines already drops blank lines and
+ * leading indentation, so literal `|` and folded `>` both collapse to clean
+ * prose, which is what our single-string display fields want.) Without this, a
+ * `gap: >-` / `how: |` value would be parsed as the literal indicator (">-", "|")
+ * and that indicator would leak into the UI. Returns [text, nextLineIndex].
+ */
+function readBlockScalar(lines: Ln[], start: number, parentIndent: number): [string, number] {
+  let i = start;
+  const parts: string[] = [];
+  while (i < lines.length && lines[i].indent > parentIndent) {
+    parts.push(lines[i].text);
+    i++;
+  }
+  return [parts.join(" ").trim(), i];
+}
 
 /** Parse a mapping or sequence at `indent`, returning [value, nextLineIndex]. */
 function parseNode(lines: Ln[], start: number, indent: number): [Yaml, number] {
@@ -364,6 +384,10 @@ function parseNode(lines: Ln[], start: number, indent: number): [Yaml, number] {
         map[key] = null;
         i++;
       }
+    } else if (BLOCK_SCALAR_RE.test(val)) {
+      const [text, ni] = readBlockScalar(lines, i + 1, indent);
+      map[key] = text;
+      i = ni;
     } else if (val.startsWith("[") || val.startsWith("{")) {
       map[key] = parseFlow(val);
       i++;

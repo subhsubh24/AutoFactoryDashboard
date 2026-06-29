@@ -45,7 +45,9 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 //      cron schedule (config/routines.ts), computed live, not from repo docs.
 // v12: status semantics — "blocked" now means CI red or an explicit blocker
 //      issue only (a stale PR / FYI no longer flips a shipping project to blocked).
-const SNAPSHOT_CACHE_VERSION = "v12";
+// v13: YAML parser folds block scalars (`>-` / `|`) — scorecard gaps + OWNER_ACTIONS
+//      how-to no longer leak the raw indicator into the UI.
+const SNAPSHOT_CACHE_VERSION = "v13";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
