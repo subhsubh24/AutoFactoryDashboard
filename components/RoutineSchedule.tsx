@@ -31,14 +31,18 @@ export function RoutineSchedule({ runs }: { runs: RoutineRun[] }) {
         return (
           <li
             key={`${run.routine.type}-${run.routine.cron}`}
-            className="flex items-center justify-between gap-3"
+            // Stack on phones so the long local-time string ("Mon, 4:00 PM EDT ·
+            // in 4h") never squeezes the cadence into an ellipsis. One row on sm+.
+            className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
           >
             <span className="flex min-w-0 items-center gap-2 text-sm">
               <Icon className="h-3.5 w-3.5 shrink-0 text-muted" />
               <span className="font-medium text-ink">{meta.label}</span>
-              <span className="truncate text-xs text-muted">· {run.cadence}</span>
+              <span className="text-xs text-muted">· {run.cadence}</span>
             </span>
-            <span className="shrink-0 text-right text-xs">
+            {/* pl on mobile aligns the time under the label (past the 14px icon
+                + 8px gap); reset to a right-aligned column on sm+. */}
+            <span className="pl-[1.375rem] text-xs sm:shrink-0 sm:pl-0 sm:text-right">
               {run.routine.enabled ? (
                 <NextRun
                   at={run.nextAt}
