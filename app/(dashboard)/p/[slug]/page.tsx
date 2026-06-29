@@ -51,6 +51,7 @@ import { GrowthPanel } from "@/components/GrowthPanel";
 import { GoLivePanel } from "@/components/GoLivePanel";
 import { LoopHealthPanel } from "@/components/LoopHealthPanel";
 import { RoutineSchedule } from "@/components/RoutineSchedule";
+import { SelfValidationPanel } from "@/components/SelfValidationPanel";
 import { QualityScorecardView } from "@/components/QualityScorecard";
 import { LivenessDot } from "@/components/LivenessDot";
 import { ReadinessGatesView } from "@/components/ReadinessGates";
@@ -688,6 +689,13 @@ export default async function ProjectPage({
               </p>
             </SectionCard>
           )}
+
+          <SectionCard
+            title="Self-validation"
+            subtitle="Capability gate — what the loop can verify without you"
+          >
+            <SelfValidationPanel sv={snapshot.selfValidation} />
+          </SectionCard>
 
           <SectionCard title="Data sources" subtitle="What the dashboard found">
             <ul className="space-y-2 text-sm">

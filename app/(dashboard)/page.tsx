@@ -44,6 +44,7 @@ import { GrowthLine } from "@/components/GrowthPanel";
 import { LoopSignalChip } from "@/components/LoopHealthPanel";
 import { NextRun } from "@/components/NextRun";
 import { RoutineSchedule } from "@/components/RoutineSchedule";
+import { SelfValidationLine } from "@/components/SelfValidationPanel";
 import { LivenessDot } from "@/components/LivenessDot";
 import { WeekBars } from "@/components/WeekBars";
 import { ProgressTrend, type ProjectTrend } from "@/components/ProgressTrend";
@@ -157,6 +158,15 @@ export default async function OverviewPage() {
   // Cool extras: how many of the last 7 days shipped, and the busiest day.
   const activeDays = overview.velocity.filter((d) => d.count > 0).length;
   const readyToShip = snapshots.filter((s) => s.readyForSubmission).length;
+  // Self-validation rollup: how many repos enforce the capabilities gate, and how
+  // many capabilities are owner-blocked (the loop can't validate without a secret).
+  const validationGates = snapshots.filter(
+    (s) => s.selfValidation.enforcedInCi === true,
+  ).length;
+  const ownerBlocked = snapshots.reduce(
+    (n, s) => n + (s.selfValidation.available ? s.selfValidation.unmet.length : 0),
+    0,
+  );
 
   return (
     <div className="animate-fade-in mx-auto max-w-3xl">
@@ -420,6 +430,14 @@ export default async function OverviewPage() {
             label="Ready to ship"
             value={`${readyToShip}/${overview.factory.totalProjects}`}
             tone={readyToShip > 0 ? "sage" : undefined}
+          />
+          <MiniStat
+            label="Self-validation"
+            value={
+              `${validationGates}/${overview.factory.totalProjects} gates` +
+              (ownerBlocked > 0 ? ` · ${ownerBlocked} blocked` : "")
+            }
+            tone={ownerBlocked > 0 ? "clay" : undefined}
           />
         </div>
 
@@ -881,6 +899,8 @@ function ProjectTile({
       )}
 
       <GrowthLine growth={s.growth} />
+
+      <SelfValidationLine sv={s.selfValidation} />
 
       {valuation && <ValuationView v={valuation} />}
 

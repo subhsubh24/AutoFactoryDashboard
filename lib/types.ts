@@ -2,6 +2,7 @@ import type { ProjectKind } from "@/config/projects";
 import type { Growth } from "@/lib/growth";
 import type { LoopHealth } from "@/lib/loophealth";
 import type { QualityScorecard } from "@/lib/scorecard";
+import type { SelfValidation } from "@/lib/validation";
 
 /** Computed project state. */
 export type ProjectStatus = "ready" | "blocked" | "building" | "idle";
@@ -265,6 +266,8 @@ export interface ProjectSnapshot {
   loopMemoryHealth: LoopMemoryHealth;
   /** docs/autonomous-loop/LOOP_HEALTH.md → the loop's self-reported health. */
   loopHealth: LoopHealth;
+  /** Capability self-validation gate (LOOP_HEALTH `validation` block / manifest). */
+  selfValidation: SelfValidation;
 
   // growth
   /** docs/growth/GROWTH_STATUS.md → growth & marketing progress (Growth Agent). */

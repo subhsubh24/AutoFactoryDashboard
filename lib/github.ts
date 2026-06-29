@@ -13,6 +13,7 @@ import {
 import { parseGrowth } from "@/lib/growth";
 import { parseLoopHealth } from "@/lib/loophealth";
 import { parseScorecard } from "@/lib/scorecard";
+import { parseSelfValidation } from "@/lib/validation";
 import type {
   AttentionIssue,
   AttentionKind,
@@ -47,7 +48,8 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 //      issue only (a stale PR / FYI no longer flips a shipping project to blocked).
 // v13: YAML parser folds block scalars (`>-` / `|`) — scorecard gaps + OWNER_ACTIONS
 //      how-to no longer leak the raw indicator into the UI.
-const SNAPSHOT_CACHE_VERSION = "v13";
+// v14: selfValidation (LOOP_HEALTH `validation` block / CAPABILITIES.yml manifest).
+const SNAPSHOT_CACHE_VERSION = "v14";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
@@ -551,6 +553,7 @@ function degraded(
     liveness: { level: "unknown", hoursSinceShip: null, lastShipAt: null, stalled: false },
     loopMemoryHealth: { available: false, hasAudit: false },
     loopHealth: parseLoopHealth(null),
+    selfValidation: parseSelfValidation(null, undefined, null, undefined),
     growth: parseGrowth(null),
     qualityScorecard: parseScorecard(null),
     mergedToday: 0,
@@ -642,6 +645,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     readmeFile,
     loopHealthFile,
     scorecardFile,
+    capabilitiesFile,
   ] = await Promise.all([
     fetchPulls(octokit, owner, repo, errors),
     fetchCommits(octokit, owner, repo, workingBranch, errors),
@@ -664,6 +668,9 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     fetchFileWithHistory(octokit, owner, repo, workingBranch, "README.md"),
     fetchFile(octokit, owner, repo, workingBranch, "docs/autonomous-loop/LOOP_HEALTH.md"),
     fetchFile(octokit, owner, repo, workingBranch, "docs/quality/QUALITY_SCORECARD.md"),
+    // Capability self-validation manifest — the fallback when the LOOP_HEALTH
+    // `validation` block is absent (the block is preferred when present).
+    fetchFile(octokit, owner, repo, workingBranch, "validation/CAPABILITIES.yml"),
   ]);
 
   // Growth status — parsed exactly like the business case (link, never a guess).
@@ -687,6 +694,18 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     scorecardFile.available ? scorecardFile.content : null,
     scorecardFile.available
       ? `${repoUrl}/blob/${workingBranch}/docs/quality/QUALITY_SCORECARD.md`
+      : undefined,
+  );
+  // Self-validation gate — prefer the LOOP_HEALTH `validation` block, fall back
+  // to the capabilities manifest. Both are read-only from files already fetched.
+  const selfValidation = parseSelfValidation(
+    loopHealthFile.available ? loopHealthFile.content : null,
+    loopHealthFile.available
+      ? `${repoUrl}/blob/${workingBranch}/docs/autonomous-loop/LOOP_HEALTH.md`
+      : undefined,
+    capabilitiesFile.available ? capabilitiesFile.content : null,
+    capabilitiesFile.available
+      ? `${repoUrl}/blob/${workingBranch}/validation/CAPABILITIES.yml`
       : undefined,
   );
 
@@ -806,6 +825,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     liveness,
     loopMemoryHealth,
     loopHealth,
+    selfValidation,
     growth,
     qualityScorecard,
     mergedToday: pulls?.mergedToday ?? 0,

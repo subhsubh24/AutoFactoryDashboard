@@ -450,6 +450,19 @@ export function parseYamlBlock(
   return Object.keys(root).length ? (root as Record<string, unknown>) : null;
 }
 
+/**
+ * Parse a raw (un-fenced) YAML document — e.g. a standalone `*.yml` manifest —
+ * with the same subset parser. Returns the root value, or null on empty/garbled.
+ */
+export function parseYamlDocument(src: string | null | undefined): unknown {
+  if (!src || !src.trim()) return null;
+  try {
+    return parseYaml(src);
+  } catch {
+    return null;
+  }
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Typed extraction from the parsed (snake_case) object
 // ────────────────────────────────────────────────────────────────────────────
