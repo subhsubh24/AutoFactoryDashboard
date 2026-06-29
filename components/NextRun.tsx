@@ -6,10 +6,13 @@ import { formatRunClock, relativeTime } from "@/lib/utils";
 
 /**
  * The next scheduled run of a routine, rendered relative to now ("in 3h") and
- * ticking every 30s. With `withClock` it leads with the absolute UTC slot
- * ("Wed 14:00 UTC · in 3h"). When a `cron` is supplied and the server-rendered
- * time has already elapsed (a long-open tab), it recomputes the next fire from
- * the cron client-side, so it never gets stuck on a stale past time.
+ * ticking every 30s. With `withClock` it leads with the absolute slot in the
+ * viewer's local timezone ("Mon, 2:00 PM EDT · in 3h"). The schedule itself is
+ * fixed in UTC, so the server (and first paint) render UTC and we swap to local
+ * time once mounted — keeping hydration clean while showing each viewer their
+ * own clock. When a `cron` is supplied and the server-rendered time has already
+ * elapsed (a long-open tab), it recomputes the next fire client-side, so it
+ * never gets stuck on a stale past time.
  */
 export function NextRun({
   at,
@@ -47,11 +50,12 @@ export function NextRun({
   return (
     <time
       dateTime={iso}
-      title={new Date(iso).toLocaleString()}
+      // Tooltip keeps the canonical UTC slot — the schedule is defined in UTC.
+      title={`${formatRunClock(iso, false)} · fixed schedule`}
       suppressHydrationWarning
       className={className}
     >
-      {withClock ? `${formatRunClock(iso)} · ${rel}` : rel}
+      {withClock ? `${formatRunClock(iso, mounted)} · ${rel}` : rel}
     </time>
   );
 }

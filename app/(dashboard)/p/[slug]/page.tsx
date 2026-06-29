@@ -672,13 +672,14 @@ export default async function ProjectPage({
           {routineRuns.length > 0 && (
             <SectionCard
               title="Run schedule"
-              subtitle="When this project's autonomous routines next fire · UTC"
+              subtitle="When this project's autonomous routines next fire · your local time"
             >
               <RoutineSchedule runs={routineRuns} />
               <p className="mt-4 border-t border-hairline pt-3 text-[11px] leading-relaxed text-muted">
-                Scheduled cloud agents. Times are the scheduled UTC slot computed
-                from each routine&apos;s cron — an actual run can lag a couple of
-                minutes. Whether the loop is keeping pace is the liveness signal above.
+                Scheduled cloud agents. Times are shown in your local timezone (the
+                schedule itself is fixed in UTC) and a run can lag its slot by a
+                couple of minutes. Whether the loop is keeping pace is the liveness
+                signal above.
               </p>
             </SectionCard>
           )}

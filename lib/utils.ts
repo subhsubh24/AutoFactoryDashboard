@@ -31,22 +31,36 @@ export function relativeTime(iso: string | null | undefined): string {
 }
 
 /**
- * The absolute scheduled time in UTC, with a weekday for context, e.g.
- * "Wed 14:00 UTC". Derived purely from the ISO (no "now"), so it's stable
- * across server/client render. Pairs with relativeTime for "Wed 14:00 UTC · in 3h".
+ * The absolute scheduled time with a weekday for context, e.g. "Mon, 2:00 PM EDT".
+ * Pairs with relativeTime for "Mon, 2:00 PM EDT · in 3h".
+ *
+ * `local` picks the timezone:
+ *  - false (default) → canonical UTC ("Mon, 14:00 UTC"). Deterministic, so it's
+ *    what the server and the first client paint render (no hydration mismatch).
+ *  - true → the viewer's own timezone + locale conventions (12h/24h). Browser
+ *    only — call it after mount, never during SSR (the server has no viewer TZ).
+ * Either way the time carries its zone label, so it's never ambiguous.
  */
-export function formatRunClock(iso: string | null | undefined): string {
+export function formatRunClock(iso: string | null | undefined, local = false): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  const wd = d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
-  const hm = d.toLocaleTimeString("en-US", {
+  if (local) {
+    return d.toLocaleString(undefined, {
+      weekday: "short",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    });
+  }
+  return d.toLocaleString("en-US", {
+    weekday: "short",
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
     timeZone: "UTC",
+    timeZoneName: "short",
   });
-  return `${wd} ${hm} UTC`;
 }
 
 /** Whole hours/days for PR ages. */

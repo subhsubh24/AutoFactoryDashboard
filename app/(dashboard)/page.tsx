@@ -511,7 +511,8 @@ export default async function OverviewPage() {
       </section>
 
       {/* The full routine schedule — every project's routines + the cross-project
-          digest — folded away by default. Times are live (UTC), uncached. */}
+          digest — folded away by default. Next-run computed live (uncached) and
+          shown in the viewer's local timezone. */}
       <details className="group mb-6 rounded-2xl border border-hairline bg-card">
         <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3.5 text-sm font-medium text-ink">
           <span className="flex items-center gap-2">
@@ -544,10 +545,10 @@ export default async function OverviewPage() {
             </div>
           </div>
           <p className="border-t border-hairline pt-3 text-[11px] leading-relaxed text-muted">
-            Scheduled cloud agents (UTC). Factories run every 6h (staggered),
-            growth &amp; research daily, auditors every other day. Times are
-            computed from each routine&apos;s cron and can lag the slot by a couple
-            of minutes.
+            Scheduled cloud agents. Times are shown in your local timezone (the
+            schedule itself is fixed in UTC). Factories run every 6h (staggered),
+            growth &amp; research daily, auditors every other day — a run can lag
+            its slot by a couple of minutes.
           </p>
         </div>
       </details>
