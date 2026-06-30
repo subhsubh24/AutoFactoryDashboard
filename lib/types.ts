@@ -91,7 +91,15 @@ export interface ActionPlan {
   source: "llm" | "template";
 }
 
-export type AttentionKind = "harness_proposal" | "fyi" | "blocker" | "other";
+export type AttentionKind =
+  | "harness_proposal"
+  | "fyi"
+  | "blocker"
+  /** `quality:` issue — the independent product Quality Auditor's filed gap. */
+  | "quality"
+  /** `gtm-quality:` issue — the independent GTM Auditor's filed gap. */
+  | "gtm_quality"
+  | "other";
 
 export interface AttentionIssue {
   number: number;
@@ -291,8 +299,10 @@ export interface ProjectSnapshot {
   growth: Growth;
   /** Recent ROADMAP.md / VISION.md changes — GTM-driven product-direction steers. */
   roadmapSteers: RoadmapSteer[];
-  /** docs/quality/QUALITY_SCORECARD.md → independent A+→F quality grades. */
+  /** docs/quality/QUALITY_SCORECARD.md → independent A+→F product-quality grades. */
   qualityScorecard: QualityScorecard;
+  /** docs/growth/GTM_SCORECARD.md → independent A+→F GTM-quality grades (parallel auditor). */
+  gtmScorecard: QualityScorecard;
 
   // PR activity
   mergedToday: number;

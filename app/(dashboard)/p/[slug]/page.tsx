@@ -53,7 +53,7 @@ import { GoLivePanel } from "@/components/GoLivePanel";
 import { LoopHealthPanel } from "@/components/LoopHealthPanel";
 import { RoutineSchedule } from "@/components/RoutineSchedule";
 import { SelfValidationPanel } from "@/components/SelfValidationPanel";
-import { QualityScorecardView } from "@/components/QualityScorecard";
+import { QualityScorecardView, AuditorGaps } from "@/components/QualityScorecard";
 import { LivenessDot } from "@/components/LivenessDot";
 import { ReadinessGatesView } from "@/components/ReadinessGates";
 import { ReadyEvidenceView } from "@/components/ReadyEvidence";
@@ -127,6 +127,11 @@ export default async function ProjectPage({
   // The project's autonomous routines + their next runs — from the authoritative
   // cron schedule (config/routines.ts), computed live in UTC (never cached).
   const routineRuns = runsFor(routinesForSlug(slug));
+  // Independent-auditor gap issues, split by auditor (product `quality:` vs `gtm-quality:`).
+  const qualityGaps = snapshot.attentionIssues.filter((a) => a.kind === "quality");
+  const gtmQualityGaps = snapshot.attentionIssues.filter((a) => a.kind === "gtm_quality");
+  const hasScorecards =
+    snapshot.qualityScorecard.available || snapshot.gtmScorecard.available;
   const fileHref = (path?: string): string | undefined =>
     path ? `${snapshot.repoUrl}/blob/${snapshot.workingBranch}/${path}` : undefined;
   const preflightUrl = snapshot.files.preflight.available
@@ -630,13 +635,50 @@ export default async function ProjectPage({
             </p>
           </CollapsibleSection>
 
-          {snapshot.qualityScorecard.available && (
+          {hasScorecards && (
             <CollapsibleSection
-              title="Quality scorecard"
-              subtitle="Independent A+→F grades — the auditor, not the maker"
-              storageKey={`afd-scorecard-${slug}`}
+              title="Quality scorecards"
+              subtitle="Independent A+→F grades — product + GTM auditors (maker ≠ checker)"
+              storageKey={`afd-scorecards-${slug}`}
             >
-              <QualityScorecardView scorecard={snapshot.qualityScorecard} />
+              <div className="grid gap-x-8 gap-y-6 lg:grid-cols-2">
+                <div>
+                  <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                    Product quality
+                  </p>
+                  {snapshot.qualityScorecard.available ? (
+                    <>
+                      <QualityScorecardView
+                        scorecard={snapshot.qualityScorecard}
+                        fileLabel="QUALITY_SCORECARD.md"
+                      />
+                      <AuditorGaps issues={qualityGaps} label="Open quality-gap issues" />
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted">
+                      Not graded yet — the Quality Auditor hasn&apos;t run here.
+                    </p>
+                  )}
+                </div>
+                <div className="lg:border-l lg:border-hairline lg:pl-8">
+                  <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                    GTM quality
+                  </p>
+                  {snapshot.gtmScorecard.available ? (
+                    <>
+                      <QualityScorecardView
+                        scorecard={snapshot.gtmScorecard}
+                        fileLabel="GTM_SCORECARD.md"
+                      />
+                      <AuditorGaps issues={gtmQualityGaps} label="Open GTM-quality-gap issues" />
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted">
+                      Not graded yet — the GTM Auditor hasn&apos;t run here.
+                    </p>
+                  )}
+                </div>
+              </div>
             </CollapsibleSection>
           )}
 
@@ -702,9 +744,9 @@ export default async function ProjectPage({
 
           <SectionCard
             title="Self-validation"
-            subtitle="Capability gate — what the loop can verify without you"
+            subtitle="CI gates the auditors enforce — validate-capabilities + validate-gtm"
           >
-            <SelfValidationPanel sv={snapshot.selfValidation} />
+            <SelfValidationPanel sv={snapshot.selfValidation} gtm={snapshot.gtmScorecard} />
           </SectionCard>
 
           <SectionCard title="Data sources" subtitle="What the dashboard found">

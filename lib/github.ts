@@ -51,7 +51,9 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 //      how-to no longer leak the raw indicator into the UI.
 // v14: selfValidation (LOOP_HEALTH `validation` block / CAPABILITIES.yml manifest).
 // v15: GTM — growth.sources + pmf weekly cohorts + roadmapSteers (ROADMAP/VISION).
-const SNAPSHOT_CACHE_VERSION = "v15";
+// v16: gtmScorecard (GTM_SCORECARD.md) + quality/gtm_quality attention issues +
+//      scorecard dimensions now parse the list form (per-dimension grid).
+const SNAPSHOT_CACHE_VERSION = "v16";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
@@ -327,6 +329,12 @@ function classifyAttention(
   if (/^\s*loop:\s*harness improvement proposal/i.test(title)) {
     return "harness_proposal";
   }
+  // Independent-auditor gap issues — GTM first (its title isn't a "quality:" prefix,
+  // but keep the GTM check ahead so intent is unambiguous).
+  if (/^\s*gtm-quality\s*:/i.test(title) || labels.includes("gtm-quality")) {
+    return "gtm_quality";
+  }
+  if (/^\s*quality\s*:/i.test(title) || labels.includes("quality")) return "quality";
   if (/^\s*fyi\b/i.test(title) || labels.includes("fyi")) return "fyi";
   if (/\bblocker\b/i.test(title) || labels.some((l) => /blocker|needs[\s-]*human/i.test(l))) {
     return "blocker";
@@ -602,6 +610,7 @@ function degraded(
     selfValidation: parseSelfValidation(null, undefined, null, undefined),
     growth: parseGrowth(null),
     roadmapSteers: [],
+    gtmScorecard: parseScorecard(null, undefined, "GTM_SCORECARD"),
     qualityScorecard: parseScorecard(null),
     mergedToday: 0,
     merged24h: 0,
@@ -693,6 +702,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     loopHealthFile,
     scorecardFile,
     capabilitiesFile,
+    gtmScorecardFile,
     roadmapSteers,
   ] = await Promise.all([
     fetchPulls(octokit, owner, repo, errors),
@@ -719,6 +729,8 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     // Capability self-validation manifest — the fallback when the LOOP_HEALTH
     // `validation` block is absent (the block is preferred when present).
     fetchFile(octokit, owner, repo, workingBranch, "validation/CAPABILITIES.yml"),
+    // Independent GTM Auditor's scorecard — parallel to docs/quality/QUALITY_SCORECARD.md.
+    fetchFile(octokit, owner, repo, workingBranch, "docs/growth/GTM_SCORECARD.md"),
     // Recent ROADMAP.md / VISION.md changes — the GTM-driven product steers.
     fetchRoadmapSteers(octokit, owner, repo, workingBranch),
   ]);
@@ -745,6 +757,14 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     scorecardFile.available
       ? `${repoUrl}/blob/${workingBranch}/docs/quality/QUALITY_SCORECARD.md`
       : undefined,
+  );
+  // GTM scorecard — same parser/shape, different file + top key (GTM Auditor).
+  const gtmScorecard = parseScorecard(
+    gtmScorecardFile.available ? gtmScorecardFile.content : null,
+    gtmScorecardFile.available
+      ? `${repoUrl}/blob/${workingBranch}/docs/growth/GTM_SCORECARD.md`
+      : undefined,
+    "GTM_SCORECARD",
   );
   // Self-validation gate — prefer the LOOP_HEALTH `validation` block, fall back
   // to the capabilities manifest. Both are read-only from files already fetched.
@@ -879,6 +899,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     growth,
     roadmapSteers,
     qualityScorecard,
+    gtmScorecard,
     mergedToday: pulls?.mergedToday ?? 0,
     merged24h: pulls?.merged24h ?? 0,
     merged7d: pulls?.merged7d ?? 0,

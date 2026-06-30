@@ -40,6 +40,8 @@ export interface QualityScorecard extends Availability {
   overall: Grade | null;
   /** true only when every ship-critical dimension is A/A+; null until graded. */
   shipGateMet: boolean | null;
+  /** Whether the auditor's gate (validate-gtm / validate-capabilities) is a required CI check. */
+  enforcedInCi: boolean | null;
   dimensions: ScorecardDimension[];
   topGaps: ScorecardGap[];
 }
@@ -71,6 +73,30 @@ function humanize(key: string): string {
 }
 
 /**
+ * Dimensions come in two shapes across repos: a MAP keyed by dimension name, or
+ * a LIST of `{ name, grade, ship_critical, … }`. Handle both so the per-dimension
+ * grid is never silently empty. Published order preserved; gap falls back to the
+ * dimension's `evidence` when no explicit `gap` is given.
+ */
+function parseDimensions(v: unknown): ScorecardDimension[] {
+  const one = (key: string, d: Record<string, unknown>): ScorecardDimension => ({
+    key,
+    label: humanize(key),
+    grade: grade(d.grade),
+    shipCritical: bool(d.ship_critical) === true,
+    gap: str(d.gap),
+  });
+  if (Array.isArray(v)) {
+    return v
+      .map((item) => asObj(item))
+      .map((d) => one(str(d.name) ?? str(d.key) ?? str(d.dimension) ?? "", d))
+      .filter((d) => d.key);
+  }
+  const dimsObj = asObj(v);
+  return Object.keys(dimsObj).map((key) => one(key, asObj(dimsObj[key])));
+}
+
+/**
  * Parse docs/quality/QUALITY_SCORECARD.md. Returns `available: false` (with a
  * reason + link) when the block is missing or unparseable. Dimensions keep the
  * file's published order; unknown grades degrade to null.
@@ -78,6 +104,7 @@ function humanize(key: string): string {
 export function parseScorecard(
   md: string | null | undefined,
   fileUrl?: string,
+  topKey = "QUALITY_SCORECARD",
 ): QualityScorecard {
   const unavailable = (reason: string): QualityScorecard => ({
     available: false,
@@ -85,25 +112,16 @@ export function parseScorecard(
     sourceUrl: fileUrl,
     overall: null,
     shipGateMet: null,
+    enforcedInCi: null,
     dimensions: [],
     topGaps: [],
   });
 
-  if (!md || !md.trim()) return unavailable("QUALITY_SCORECARD.md not found");
-  const root = parseYamlBlock(md, "QUALITY_SCORECARD");
-  if (!root) return unavailable("no QUALITY_SCORECARD block — see file");
+  if (!md || !md.trim()) return unavailable(`${topKey}.md not found`);
+  const root = parseYamlBlock(md, topKey);
+  if (!root) return unavailable(`no ${topKey} block — see file`);
 
-  const dimsObj = asObj(root.dimensions);
-  const dimensions: ScorecardDimension[] = Object.keys(dimsObj).map((key) => {
-    const d = asObj(dimsObj[key]);
-    return {
-      key,
-      label: humanize(key),
-      grade: grade(d.grade),
-      shipCritical: bool(d.ship_critical) === true,
-      gap: str(d.gap),
-    };
-  });
+  const dimensions = parseDimensions(root.dimensions);
 
   const topGaps: ScorecardGap[] = arr(root.top_gaps)
     .map((g) => asObj(g))
@@ -122,6 +140,7 @@ export function parseScorecard(
     gradedBy: str(root.graded_by) ?? undefined,
     overall: grade(root.overall),
     shipGateMet: bool(root.ship_gate_met),
+    enforcedInCi: bool(root.enforced_in_ci),
     dimensions,
     topGaps,
   };
