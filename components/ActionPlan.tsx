@@ -222,15 +222,17 @@ export function ActionPlan({
       })}
 
       <div className="border-t border-hairline pt-3">
-        {/* Honest about what a checkbox does: it's a local-only tracker, NOT a
-            repo write. The factory only learns when the owner marks the item
-            done in PENDING_OPS.md (after which it clears from this list). */}
+        {/* Honest about what a checkbox does: a local-only marker, NOT a repo
+            write. You don't bookkeep here — an action clears once it's marked
+            done in PENDING_OPS.md, ideally by the factory verifying the fix on
+            its next run (the dashboard only mirrors that state). */}
         <p className="text-[11px] leading-relaxed text-muted">
-          Checking an item saves to{" "}
-          <span className="font-medium text-ink">this browser only</span> — it
-          doesn&apos;t update the repo, so the factory won&apos;t see it. To tell the
-          factory, mark the item <span className="font-mono">done</span> in
-          PENDING_OPS.md; it then clears from this list on the next refresh.
+          Checking an item is a personal marker (
+          <span className="font-medium text-ink">this browser only</span>) — it
+          doesn&apos;t change the repo. You don&apos;t need to track it here: an
+          action clears from this list once it&apos;s marked{" "}
+          <span className="font-mono">done</span> in PENDING_OPS.md — by the
+          factory when its next run verifies the fix, or by you.
         </p>
         <div className="mt-2 flex items-center justify-between text-xs text-muted">
           <span>
