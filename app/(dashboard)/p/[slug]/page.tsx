@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getProjectBySlug } from "@/config/projects";
 import { routinesForSlug } from "@/config/routines";
-import { runsFor } from "@/lib/routine";
+import { runsFor, workloadFor } from "@/lib/routine";
 import { getProjectSnapshot } from "@/lib/github";
 import {
   getActionPlan,
@@ -48,6 +48,7 @@ import { HistoryCharts } from "@/components/HistoryCharts";
 import { RelativeTime } from "@/components/RelativeTime";
 import { Delta24h } from "@/components/Delta";
 import { GrowthPanel } from "@/components/GrowthPanel";
+import { CostPanel } from "@/components/CostPanel";
 import { RoadmapSteers } from "@/components/RoadmapSteers";
 import { GoLivePanel } from "@/components/GoLivePanel";
 import { LoopHealthPanel } from "@/components/LoopHealthPanel";
@@ -127,6 +128,9 @@ export default async function ProjectPage({
   // The project's autonomous routines + their next runs — from the authoritative
   // cron schedule (config/routines.ts), computed live in UTC (never cached).
   const routineRuns = runsFor(routinesForSlug(slug));
+  // Scheduled-run workload (the activity-as-cost proxy's backbone) — runs/week
+  // per routine, computed live from the same authoritative cron schedule.
+  const workload = workloadFor(routinesForSlug(slug));
   // Independent-auditor gap issues, split by auditor (product `quality:` vs `gtm-quality:`).
   const qualityGaps = snapshot.attentionIssues.filter((a) => a.kind === "quality");
   const gtmQualityGaps = snapshot.attentionIssues.filter((a) => a.kind === "gtm_quality");
@@ -554,6 +558,18 @@ export default async function ProjectPage({
               waitlistDelta={delta.dWaitlist}
               mrrDelta={delta.dMrr}
               retentionTrend={retentionTrend}
+            />
+          </SectionCard>
+
+          <SectionCard
+            title="Cost & compute"
+            subtitle="Metered inference spend (when published) + activity proxies — not a token bill"
+          >
+            <CostPanel
+              cost={snapshot.productCost}
+              workload={workload}
+              merged7d={snapshot.merged7d}
+              loop={snapshot.loopHealth}
             />
           </SectionCard>
 

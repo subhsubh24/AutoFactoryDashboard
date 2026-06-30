@@ -311,7 +311,7 @@ function parseFlow(s: string): Yaml {
     const inner = t.slice(1, t.lastIndexOf("}"));
     const map: Record<string, Yaml> = {};
     for (const pair of splitTop(inner)) {
-      const m = pair.match(/^\s*([A-Za-z0-9_]+)\s*:\s*([\s\S]*)$/);
+      const m = pair.match(/^\s*([A-Za-z0-9_][A-Za-z0-9_./-]*)\s*:\s*([\s\S]*)$/);
       if (m) map[m[1]] = parseFlow(m[2]);
     }
     return map;
@@ -319,7 +319,12 @@ function parseFlow(s: string): Yaml {
   return parseScalar(t);
 }
 
-const KEY_RE = /^([A-Za-z0-9_]+)\s*:\s*([\s\S]*)$/;
+// Keys are snake_case by convention, but map keys can be real-world identifiers
+// with dots/hyphens/slashes — model names ("gemini-2.5-pro", "claude-opus-4-8"),
+// stage names ("self-review"). Allow those after an alnum/underscore first char
+// (so a "- " sequence marker can never be read as a key). Without the dot/hyphen
+// a `by_model:` map keyed by model name would silently parse to `{}`.
+const KEY_RE = /^([A-Za-z0-9_][A-Za-z0-9_./-]*)\s*:\s*([\s\S]*)$/;
 const isSeqLine = (t: string) => t === "-" || t.startsWith("- ");
 /** A YAML block-scalar header: `|` or `>`, with optional chomping/indent ("|-", ">-", "|2"). */
 const BLOCK_SCALAR_RE = /^[|>]([+-]|\d)*$/;

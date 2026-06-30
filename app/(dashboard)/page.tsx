@@ -21,7 +21,7 @@ import { getHistory, getFactoryHistory } from "@/lib/kv";
 import { estimateCompletion, formatEtaDate, formatHorizon, type Estimate } from "@/lib/estimate";
 import { formatCycle } from "@/lib/quality";
 import { floorLoopSignal } from "@/lib/loophealth";
-import { runsFor, soonestRun } from "@/lib/routine";
+import { runsFor, soonestRun, workloadFor } from "@/lib/routine";
 import { getProjectBySlug } from "@/config/projects";
 import { crossProjectRoutines, routineShortLabel, routinesForSlug } from "@/config/routines";
 import type { ProjectSnapshot } from "@/lib/types";
@@ -44,6 +44,7 @@ import { GrowthLine } from "@/components/GrowthPanel";
 import { LoopSignalChip } from "@/components/LoopHealthPanel";
 import { NextRun } from "@/components/NextRun";
 import { RoutineSchedule } from "@/components/RoutineSchedule";
+import { FactoryWorkload, type WorkloadRow } from "@/components/CostPanel";
 import { SelfValidationLine } from "@/components/SelfValidationPanel";
 import { LivenessDot } from "@/components/LivenessDot";
 import { WeekBars } from "@/components/WeekBars";
@@ -167,6 +168,17 @@ export default async function OverviewPage() {
     (n, s) => n + (s.selfValidation.available ? s.selfValidation.unmet.length : 0),
     0,
   );
+  // Compute-vs-output workload per product (the activity-as-cost proxy, fleet
+  // view) — scheduled runs/week against merged + reverts. Sorted by output.
+  const workloadRows: WorkloadRow[] = snapshots
+    .map((s) => ({
+      slug: s.slug,
+      name: s.displayName,
+      runsPerWeek: workloadFor(routinesForSlug(s.slug)).runsPerWeek,
+      merged7d: s.merged7d,
+      reverts: s.loopHealth.available ? s.loopHealth.rolling7d.reverts : null,
+    }))
+    .sort((a, b) => b.merged7d - a.merged7d || b.runsPerWeek - a.runsPerWeek);
 
   return (
     <div className="animate-fade-in mx-auto max-w-3xl">
@@ -449,6 +461,18 @@ export default async function OverviewPage() {
           heuristic ({heurVals.length}). Pre-launch estimate — the two aren&apos;t
           equivalent and this isn&apos;t a valuation.
         </p>
+      </section>
+
+      {/* 1b1 — Compute vs output: the activity-as-cost proxy, fleet view. Not a
+          token bill — scheduled agent runs against merged output + rework. */}
+      <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 sm:p-6">
+        <div className="mb-4 flex items-end justify-between">
+          <h2 className="text-sm font-semibold tracking-tight text-ink">
+            Compute vs output
+          </h2>
+          <span className="text-xs text-muted">scheduled runs/wk · last 7d</span>
+        </div>
+        <FactoryWorkload rows={workloadRows} />
       </section>
 
       {/* 1b2 — Weekly shipping velocity (large, up top with the metrics). */}

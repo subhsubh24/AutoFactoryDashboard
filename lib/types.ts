@@ -1,4 +1,5 @@
 import type { ProjectKind } from "@/config/projects";
+import type { ProductInferenceCost } from "@/lib/cost";
 import type { Growth } from "@/lib/growth";
 import type { LoopHealth } from "@/lib/loophealth";
 import type { QualityScorecard } from "@/lib/scorecard";
@@ -297,6 +298,8 @@ export interface ProjectSnapshot {
   // growth
   /** docs/growth/GROWTH_STATUS.md → growth & marketing progress (Growth Agent). */
   growth: Growth;
+  /** Product runtime LLM spend — metered in-app; `available:false` until a repo publishes it. */
+  productCost: ProductInferenceCost;
   /** Recent ROADMAP.md / VISION.md changes — GTM-driven product-direction steers. */
   roadmapSteers: RoadmapSteer[];
   /** docs/quality/QUALITY_SCORECARD.md → independent A+→F product-quality grades. */

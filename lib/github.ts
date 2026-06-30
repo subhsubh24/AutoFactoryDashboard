@@ -11,6 +11,7 @@ import {
   parseTrackFromText,
 } from "@/lib/parsers";
 import { parseGrowth } from "@/lib/growth";
+import { parseProductCost } from "@/lib/cost";
 import { parseLoopHealth } from "@/lib/loophealth";
 import { parseScorecard } from "@/lib/scorecard";
 import { parseSelfValidation } from "@/lib/validation";
@@ -53,7 +54,8 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 // v15: GTM — growth.sources + pmf weekly cohorts + roadmapSteers (ROADMAP/VISION).
 // v16: gtmScorecard (GTM_SCORECARD.md) + quality/gtm_quality attention issues +
 //      scorecard dimensions now parse the list form (per-dimension grid).
-const SNAPSHOT_CACHE_VERSION = "v16";
+// v17: productCost (optional GROWTH_STATUS `cost` block → metered app LLM spend).
+const SNAPSHOT_CACHE_VERSION = "v17";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
@@ -609,6 +611,7 @@ function degraded(
     loopHealth: parseLoopHealth(null),
     selfValidation: parseSelfValidation(null, undefined, null, undefined),
     growth: parseGrowth(null),
+    productCost: parseProductCost(null),
     roadmapSteers: [],
     gtmScorecard: parseScorecard(null, undefined, "GTM_SCORECARD"),
     qualityScorecard: parseScorecard(null),
@@ -740,6 +743,13 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     ? `${repoUrl}/blob/${workingBranch}/docs/growth/GROWTH_STATUS.md`
     : undefined;
   const growth = parseGrowth(
+    growthFile.available ? growthFile.content : null,
+    growthUrl,
+  );
+  // Product runtime LLM cost — the optional `cost` block of GROWTH_STATUS (the
+  // app's metered inference spend). Absent for most repos: the live figure lives
+  // behind the owner metrics API, so this degrades to "unavailable", never a guess.
+  const productCost = parseProductCost(
     growthFile.available ? growthFile.content : null,
     growthUrl,
   );
@@ -897,6 +907,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     loopHealth,
     selfValidation,
     growth,
+    productCost,
     roadmapSteers,
     qualityScorecard,
     gtmScorecard,

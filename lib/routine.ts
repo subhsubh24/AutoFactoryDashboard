@@ -6,7 +6,7 @@
  * forward scan, fine for the sub-daily cadences here. Next-run is computed
  * relative to now at render time (the pages are dynamic) — never cached.
  */
-import type { Routine } from "@/config/routines";
+import type { Routine, RoutineType } from "@/config/routines";
 
 // Expand one cron field (star, step "x/n", range "a-b", list "a,b", value "a")
 // into the set of matching numbers within [min, max].
@@ -111,6 +111,61 @@ export function runsFor(routines: Routine[], nowMs: number = Date.now()): Routin
     const t = nextCron(routine.cron, nowMs);
     return { routine, nextAt: t === null ? null : new Date(t).toISOString(), cadence };
   });
+}
+
+/**
+ * How many times a cron fires in the 7 days starting at `fromMs` — the
+ * activity-as-cost proxy's "runs/week". Counts real fires (so "every 6h" → 28,
+ * "every 2 days" → 3–4, "weekly" → 1), never an idealized cadence. Returns 0 for
+ * an unparseable cron.
+ */
+export function runsPerWeek(cron: string, fromMs: number = Date.now()): number {
+  let count = 0;
+  // Seed one minute before the window so a fire exactly at `fromMs` is counted
+  // (nextCron scans strictly after its argument) — this makes an aligned "every
+  // 6h" read an exact 28, not 27.
+  let t = fromMs - 60_000;
+  const end = fromMs + 7 * 24 * 60 * 60_000;
+  // Walk fire-to-fire; nextCron returns a strictly-later time, so stepping by it
+  // can't loop. Cap iterations as a backstop against a pathological sub-minute
+  // cadence (the schedule's densest is every 6h → 28 fires).
+  for (let i = 0; i < 400; i++) {
+    const next = nextCron(cron, t);
+    if (next === null || next >= end) break;
+    count++;
+    t = next;
+  }
+  return count;
+}
+
+/** One routine's share of the weekly scheduled-run load. */
+export interface RoutineLoad {
+  type: RoutineType;
+  cron: string;
+  runsPerWeek: number;
+}
+
+/** A project's scheduled-run workload over a 7-day window. */
+export interface Workload {
+  /** Total scheduled runs across all enabled routines in the next 7 days. */
+  runsPerWeek: number;
+  /** Per-routine breakdown, heaviest first. */
+  byRoutine: RoutineLoad[];
+}
+
+/**
+ * The weekly scheduled-run workload for a set of routines — the activity-as-cost
+ * proxy's backbone. Each scheduled run is ~one autonomous agent invocation, so
+ * runs/week is the closest repo-readable stand-in for relative compute spend
+ * (never a token bill). Disabled routines contribute 0.
+ */
+export function workloadFor(routines: Routine[], nowMs: number = Date.now()): Workload {
+  const byRoutine: RoutineLoad[] = routines
+    .filter((r) => r.enabled)
+    .map((r) => ({ type: r.type, cron: r.cron, runsPerWeek: runsPerWeek(r.cron, nowMs) }))
+    .sort((a, b) => b.runsPerWeek - a.runsPerWeek);
+  const runsPerWeekTotal = byRoutine.reduce((sum, r) => sum + r.runsPerWeek, 0);
+  return { runsPerWeek: runsPerWeekTotal, byRoutine };
 }
 
 /** The soonest upcoming run among `runs` (skips disabled / unschedulable). */
