@@ -3,23 +3,35 @@
  * "when does each loop run next?".
  *
  * These are scheduled cloud Claude Code triggers. The repos' own docs proved
- * unreliable for cadence (a stale README can lag the live trigger by hours), so
- * this mirrors the actual trigger schedule directly. Every cron is standard
- * 5-field, UTC. Update this block whenever the triggers change; `AS_OF` records
- * when it was last reconciled.
+ * unreliable for cadence, so this mirrors the actual trigger schedule directly.
+ * Every cron is standard 5-field, UTC. Update this block whenever the triggers
+ * change; `AS_OF` records when it was last reconciled.
  *
  * (The live trigger API exposes a precise next_run_at — accurate to within a
  * couple of minutes of the cron slot — but computing from the crons below needs
  * no credentials and is plenty accurate for a "next run in ~3h" display.)
  *
- * Each project runs three routines:
- *   - factory          — builds the product (every 6h, staggered per project)
- *   - growth / research — daily growth & marketing (research, for the quant)
- *   - auditor          — independent deep audit (every other day, odd calendar days)
+ * Per project:
+ *   - product_factory  — builds the product (every 6h, staggered per project;
+ *                         LLM-Quant's is a Model Factory)
+ *   - gtm_factory      — go-to-market growth engine (every 2 days; not LLM-Quant)
+ *   - research         — research + alpha (daily; LLM-Quant only)
+ *   - quality_auditor  — independent product-quality audit (every 2 days)
+ *   - gtm_auditor      — independent GTM-quality audit (weekly, by weekday;
+ *                         not LLM-Quant)
  * Plus one cross-project daily digest, currently disabled.
+ *
+ * "every 2 days" = a "0,2 day-of-month step" cron → odd calendar days
+ * (1, 3, 5, … 31), ~48h with one short gap at the month rollover.
  */
 
-export type RoutineType = "factory" | "growth" | "research" | "auditor" | "digest";
+export type RoutineType =
+  | "product_factory"
+  | "gtm_factory"
+  | "research"
+  | "quality_auditor"
+  | "gtm_auditor"
+  | "digest";
 
 export interface Routine {
   /** Project slug this routine belongs to; null for cross-project (digests). */
@@ -33,45 +45,59 @@ export interface Routine {
 }
 
 /** When this schedule was last reconciled against the live triggers. */
-export const ROUTINE_SCHEDULE_AS_OF = "2026-06-28";
+export const ROUTINE_SCHEDULE_AS_OF = "2026-06-30";
 
-/**
- * The live schedule. Factories are staggered an hour apart so they never fire
- * at once; auditors run on odd calendar days (the "every other day" step).
- */
+/** The live schedule — 19 active routines + the disabled cross-project digest. */
 export const ROUTINES: Routine[] = [
-  // Factories — every 6h, staggered.
-  { slug: "aptdesignerai", type: "factory", cron: "0 0,6,12,18 * * *", enabled: true },
-  { slug: "highlightmagic", type: "factory", cron: "0 1,7,13,19 * * *", enabled: true },
-  { slug: "grocerymanager", type: "factory", cron: "0 2,8,14,20 * * *", enabled: true },
-  { slug: "jobscraper", type: "factory", cron: "0 3,9,15,21 * * *", enabled: true },
-  { slug: "llm-quant", type: "factory", cron: "0 4,10,16,22 * * *", enabled: true },
-  // Growth / research — once a day.
-  { slug: "aptdesignerai", type: "growth", cron: "0 5 * * *", enabled: true },
-  { slug: "highlightmagic", type: "growth", cron: "0 11 * * *", enabled: true },
+  // Product factories — every 6h, staggered one hour apart.
+  { slug: "aptdesignerai", type: "product_factory", cron: "0 0,6,12,18 * * *", enabled: true },
+  { slug: "highlightmagic", type: "product_factory", cron: "0 1,7,13,19 * * *", enabled: true },
+  { slug: "grocerymanager", type: "product_factory", cron: "0 2,8,14,20 * * *", enabled: true },
+  { slug: "jobscraper", type: "product_factory", cron: "0 3,9,15,21 * * *", enabled: true },
+  { slug: "llm-quant", type: "product_factory", cron: "0 4,10,16,22 * * *", enabled: true }, // Model Factory
+  // GTM factories — every 2 days (odd calendar days), staggered.
+  { slug: "aptdesignerai", type: "gtm_factory", cron: "0 5 */2 * *", enabled: true },
+  { slug: "highlightmagic", type: "gtm_factory", cron: "0 11 */2 * *", enabled: true },
+  { slug: "grocerymanager", type: "gtm_factory", cron: "0 17 */2 * *", enabled: true },
+  { slug: "jobscraper", type: "gtm_factory", cron: "0 23 */2 * *", enabled: true },
+  // Research + alpha — daily (LLM-Quant only).
   { slug: "llm-quant", type: "research", cron: "30 13 * * *", enabled: true },
-  { slug: "grocerymanager", type: "growth", cron: "0 17 * * *", enabled: true },
-  { slug: "jobscraper", type: "growth", cron: "0 23 * * *", enabled: true },
-  // Auditors — every other day (odd calendar days), staggered.
-  { slug: "highlightmagic", type: "auditor", cron: "30 1 */2 * *", enabled: true },
-  { slug: "aptdesignerai", type: "auditor", cron: "30 9 */2 * *", enabled: true },
-  { slug: "grocerymanager", type: "auditor", cron: "30 15 */2 * *", enabled: true },
-  { slug: "jobscraper", type: "auditor", cron: "30 19 */2 * *", enabled: true },
-  { slug: "llm-quant", type: "auditor", cron: "30 21 */2 * *", enabled: true },
+  // Quality auditors — every 2 days (odd days), staggered.
+  { slug: "highlightmagic", type: "quality_auditor", cron: "30 1 */2 * *", enabled: true },
+  { slug: "aptdesignerai", type: "quality_auditor", cron: "30 9 */2 * *", enabled: true },
+  { slug: "grocerymanager", type: "quality_auditor", cron: "30 15 */2 * *", enabled: true },
+  { slug: "jobscraper", type: "quality_auditor", cron: "30 19 */2 * *", enabled: true },
+  { slug: "llm-quant", type: "quality_auditor", cron: "30 21 */2 * *", enabled: true },
+  // GTM auditors — weekly on a named weekday (Mon/Tue/Wed/Thu).
+  { slug: "aptdesignerai", type: "gtm_auditor", cron: "30 3 * * 1", enabled: true },
+  { slug: "highlightmagic", type: "gtm_auditor", cron: "30 7 * * 2", enabled: true },
+  { slug: "grocerymanager", type: "gtm_auditor", cron: "30 12 * * 3", enabled: true },
+  { slug: "jobscraper", type: "gtm_auditor", cron: "30 18 * * 4", enabled: true },
   // Cross-project daily digest — currently paused.
   { slug: null, type: "digest", cron: "0 13 * * *", enabled: false },
 ];
 
-/** Display order within a project: factory → growth/research → auditor. */
+/** Display order within a project. */
 const TYPE_ORDER: Record<RoutineType, number> = {
-  factory: 0,
-  growth: 1,
+  product_factory: 0,
+  gtm_factory: 1,
   research: 1,
-  auditor: 2,
-  digest: 3,
+  quality_auditor: 2,
+  gtm_auditor: 3,
+  digest: 4,
 };
 
-/** The routines for one project, ordered factory → growth/research → auditor. */
+/** Short label for the dense Floor tile (e.g. "next factory in 3h"). */
+const SHORT_LABEL: Record<RoutineType, string> = {
+  product_factory: "factory",
+  gtm_factory: "GTM run",
+  research: "research",
+  quality_auditor: "quality audit",
+  gtm_auditor: "GTM audit",
+  digest: "digest",
+};
+
+/** The routines for one project, in display order. */
 export function routinesForSlug(slug: string): Routine[] {
   return ROUTINES.filter((r) => r.slug === slug).sort(
     (a, b) => TYPE_ORDER[a.type] - TYPE_ORDER[b.type],
@@ -81,4 +107,9 @@ export function routinesForSlug(slug: string): Routine[] {
 /** Cross-project routines (not tied to a single project) — e.g. the digest. */
 export function crossProjectRoutines(): Routine[] {
   return ROUTINES.filter((r) => r.slug === null);
+}
+
+/** Short, lowercase routine label for compact contexts (the Floor tile). */
+export function routineShortLabel(type: RoutineType): string {
+  return SHORT_LABEL[type];
 }

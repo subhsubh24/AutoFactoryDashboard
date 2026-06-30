@@ -63,18 +63,27 @@ export function nextCron(expr: string, fromMs: number): number | null {
   return null;
 }
 
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
 /**
  * A short, human cadence label derived from the cron itself (so it can never
- * drift from the schedule): "every 6h", "daily", "every other day", or "Nx/day".
+ * drift from the schedule): "every 6h", "daily", "every 2 days", "weekly (Mon)",
+ * or "Nx/day".
  */
 export function cadenceLabel(cron: string): string {
   const parts = cron.trim().split(/\s+/);
   if (parts.length !== 5) return "on a schedule";
-  const [, hourSpec, domSpec] = parts;
+  const [, hourSpec, domSpec, , dowSpec] = parts;
+  // Day-of-week restricted → weekly (name the day for a single weekday).
+  if (dowSpec !== "*") {
+    const dows = [...cronField(dowSpec, 0, 6)];
+    return dows.length === 1 ? `weekly (${WEEKDAYS[dows[0]]})` : "weekly";
+  }
+  // Day-of-month step (e.g. a "0,2,4,…" step) → every N days (odd days for n=2).
   const domStep = domSpec.match(/^\*\/(\d+)$/);
   if (domStep) {
     const n = parseInt(domStep[1], 10);
-    return n === 2 ? "every other day" : `every ${n} days`;
+    return n === 2 ? "every 2 days" : `every ${n} days`;
   }
   const hours = [...cronField(hourSpec, 0, 23)].sort((a, b) => a - b);
   if (hours.length <= 1) return "daily";

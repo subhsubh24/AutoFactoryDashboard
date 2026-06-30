@@ -23,7 +23,7 @@ import { formatCycle } from "@/lib/quality";
 import { floorLoopSignal } from "@/lib/loophealth";
 import { runsFor, soonestRun } from "@/lib/routine";
 import { getProjectBySlug } from "@/config/projects";
-import { crossProjectRoutines, routinesForSlug } from "@/config/routines";
+import { crossProjectRoutines, routineShortLabel, routinesForSlug } from "@/config/routines";
 import type { ProjectSnapshot } from "@/lib/types";
 import {
   cn,
@@ -567,9 +567,10 @@ export default async function OverviewPage() {
           </div>
           <p className="border-t border-hairline pt-3 text-[11px] leading-relaxed text-muted">
             Scheduled cloud agents. Times are shown in your local timezone (the
-            schedule itself is fixed in UTC). Factories run every 6h (staggered),
-            growth &amp; research daily, auditors every other day — a run can lag
-            its slot by a couple of minutes.
+            schedule itself is fixed in UTC). Product factories run every 6h
+            (staggered); GTM factories &amp; quality auditors every 2 days;
+            research daily; GTM auditors weekly — a run can lag its slot by a
+            couple of minutes.
           </p>
         </div>
       </details>
@@ -818,8 +819,8 @@ function ProjectTile({
               {soonest?.nextAt && (
                 <>
                   <span aria-hidden>·</span>
-                  <span title={`Next ${soonest.routine.type} run`}>
-                    next {soonest.routine.type}{" "}
+                  <span title={`Next ${routineShortLabel(soonest.routine.type)} run`}>
+                    next {routineShortLabel(soonest.routine.type)}{" "}
                     <NextRun at={soonest.nextAt} cron={soonest.routine.cron} />
                   </span>
                 </>

@@ -1,17 +1,24 @@
 import type { RoutineType } from "@/config/routines";
 import type { RoutineRun } from "@/lib/routine";
 import { NextRun } from "@/components/NextRun";
-import { MailIcon, PulseIcon, RefreshIcon, ShieldIcon } from "@/components/icons";
+import {
+  MailIcon,
+  PulseIcon,
+  RefreshIcon,
+  RocketIcon,
+  ShieldIcon,
+} from "@/components/icons";
 
-/** Per-type label + icon. growth/research share styling; both run daily. */
+/** Per-type label + icon. Both auditors share the shield; the label differs. */
 const ROUTINE_META: Record<
   RoutineType,
   { label: string; Icon: (p: { className?: string }) => React.ReactElement }
 > = {
-  factory: { label: "Factory", Icon: RefreshIcon },
-  growth: { label: "Growth", Icon: PulseIcon },
+  product_factory: { label: "Product Factory", Icon: RefreshIcon },
+  gtm_factory: { label: "GTM Factory", Icon: RocketIcon },
   research: { label: "Research", Icon: PulseIcon },
-  auditor: { label: "Auditor", Icon: ShieldIcon },
+  quality_auditor: { label: "Quality Auditor", Icon: ShieldIcon },
+  gtm_auditor: { label: "GTM Auditor", Icon: ShieldIcon },
   digest: { label: "Daily digest", Icon: MailIcon },
 };
 
