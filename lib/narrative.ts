@@ -8,6 +8,7 @@ import type {
 } from "@/lib/types";
 import { checkBriefing, checkNarrative, type Violation } from "@/lib/llm-guard";
 import {
+  distinctByProject,
   groupNeeds,
   humanAsksFor,
   inferNeedTag,
@@ -1027,15 +1028,18 @@ function mapNeedGroups(
       seen.add(r);
       members.push(needs[r - 1]);
     }
-    const byPriority = [...members].sort((a, b) => a.priority - b.priority);
+    // Distinct projects only — the LLM may cluster several of ONE project's asks
+    // into a group; they must not render as repeated chips or inflate "N projects".
+    const distinct = distinctByProject(members);
+    const byPriority = [...distinct].sort((a, b) => a.priority - b.priority);
     const title = g.title?.trim() || byPriority[0].text;
     groups.push({
-      id: members.length > 1 ? `grp:${byPriority[0].id}` : byPriority[0].id,
+      id: distinct.length > 1 ? `grp:${byPriority[0].id}` : byPriority[0].id,
       text: title,
       howTo: g.detail?.trim() || byPriority[0].howTo,
-      url: members.length === 1 ? byPriority[0].url : undefined,
+      url: distinct.length === 1 ? byPriority[0].url : undefined,
       kind: byPriority[0].kind,
-      priority: Math.min(...members.map((m) => m.priority)),
+      priority: Math.min(...distinct.map((m) => m.priority)),
       tag: g.tag?.trim().toLowerCase() || inferNeedTag(`${title} ${byPriority[0].howTo ?? ""}`),
       members: byPriority,
     });

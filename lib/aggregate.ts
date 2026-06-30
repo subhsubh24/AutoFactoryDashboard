@@ -409,6 +409,20 @@ function needSignature(text: string): string {
 }
 
 /**
+ * Keep one member per project (the highest-priority) so a NeedGroup's `members`
+ * are DISTINCT projects — a project with several owner actions that cluster to
+ * the same task must not appear as multiple chips or inflate the "N projects"
+ * count (that was the "HighlightMagic ×3 · 3 projects" bug).
+ */
+export function distinctByProject(members: NeedEntry[]): NeedEntry[] {
+  const byProject = new Map<string, NeedEntry>();
+  for (const m of [...members].sort((a, b) => a.priority - b.priority)) {
+    if (!byProject.has(m.projectSlug)) byProject.set(m.projectSlug, m);
+  }
+  return [...byProject.values()];
+}
+
+/**
  * Collapse near-identical owner actions across projects into one entry — e.g.
  * the same "set API spend caps + alerts" appearing on four projects becomes a
  * single grouped card carrying all four projects. An action with a unique
@@ -427,7 +441,10 @@ export function groupNeeds(needs: NeedEntry[]): NeedGroup[] {
   }
 
   const groups: NeedGroup[] = [];
-  for (const members of buckets.values()) {
+  for (const raw of buckets.values()) {
+    // A group's members are DISTINCT projects — collapse a project's several
+    // same-task owner actions to one so it isn't shown (or counted) repeatedly.
+    const members = distinctByProject(raw);
     if (members.length === 1) {
       const m = members[0];
       groups.push({

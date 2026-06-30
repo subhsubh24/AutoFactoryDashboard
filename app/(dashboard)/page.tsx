@@ -670,8 +670,14 @@ function Verdict({ count }: { count: number }) {
 /** One true human ask, phrased plainly. */
 function AskRow({ group }: { group: NeedGroup }) {
   const isReady = group.kind === "ready";
-  const multi = group.members.length > 1;
-  const single = group.members[0];
+  // Render one chip per DISTINCT project — a group can carry several members of
+  // the same project (clustered same-task asks); they must not repeat or inflate
+  // the "N projects" count.
+  const projects = Array.from(
+    new Map(group.members.map((m) => [m.projectSlug, m])).values(),
+  );
+  const multi = projects.length > 1;
+  const single = projects[0];
   return (
     <li
       className={cn(
@@ -689,7 +695,7 @@ function AskRow({ group }: { group: NeedGroup }) {
         {multi ? (
           // Same task across several projects — one card, a chip per project.
           <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-            {group.members.map((m) => (
+            {projects.map((m) => (
               <Link
                 key={m.projectSlug}
                 href={`/p/${m.projectSlug}`}
@@ -699,7 +705,7 @@ function AskRow({ group }: { group: NeedGroup }) {
               </Link>
             ))}
             <span className="text-[10px] font-medium tabular text-muted">
-              {group.members.length} projects
+              {projects.length} projects
             </span>
           </div>
         ) : (
