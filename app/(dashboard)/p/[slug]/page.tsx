@@ -125,6 +125,9 @@ export default async function ProjectPage({
   const arrTrend = history?.map((h) => h.arr ?? null) ?? [];
   const retentionTrend = history?.map((h) => h.pmfRetentionD7 ?? null) ?? [];
   const loopSignalTrend = history?.map((h) => h.loopSignal ?? null) ?? [];
+  // This product's own merged-PRs-per-day — the within-product activity trend
+  // for the cost panel (lights up when KV history is wired; [] otherwise).
+  const mergedTrend = history?.map((h) => h.prs ?? null) ?? [];
   // The project's autonomous routines + their next runs — from the authoritative
   // cron schedule (config/routines.ts), computed live in UTC (never cached).
   const routineRuns = runsFor(routinesForSlug(slug));
@@ -570,6 +573,7 @@ export default async function ProjectPage({
               workload={workload}
               merged7d={snapshot.merged7d}
               loop={snapshot.loopHealth}
+              mergedTrend={mergedTrend}
             />
           </SectionCard>
 
