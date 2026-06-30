@@ -231,6 +231,23 @@ export interface RepoMeta extends Availability {
   isPrivate?: boolean;
 }
 
+/**
+ * A recent change to a product-direction doc (ROADMAP.md / VISION.md) — the
+ * GTM-driven steers the owner reviews to see "what the data is changing".
+ */
+export interface RoadmapSteer {
+  /** Which direction file changed. */
+  file: string;
+  /** First line of the commit message. */
+  title: string;
+  /** Squash-merge PR number parsed from a trailing "(#NNN)", when present. */
+  prNumber: number | null;
+  /** PR URL when the PR number is known, else the commit URL. */
+  url: string;
+  /** ISO commit date. */
+  date: string | null;
+}
+
 /** The single typed object the whole UI renders from. */
 export interface ProjectSnapshot {
   // identity
@@ -272,6 +289,8 @@ export interface ProjectSnapshot {
   // growth
   /** docs/growth/GROWTH_STATUS.md → growth & marketing progress (Growth Agent). */
   growth: Growth;
+  /** Recent ROADMAP.md / VISION.md changes — GTM-driven product-direction steers. */
+  roadmapSteers: RoadmapSteer[];
   /** docs/quality/QUALITY_SCORECARD.md → independent A+→F quality grades. */
   qualityScorecard: QualityScorecard;
 

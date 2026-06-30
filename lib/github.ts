@@ -26,6 +26,7 @@ import type {
   RawFile,
   ReadinessGates,
   RepoMeta,
+  RoadmapSteer,
 } from "@/lib/types";
 
 /** Revalidate snapshots roughly hourly (agents run ~every 6h, so this is fresh). */
@@ -49,7 +50,8 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 // v13: YAML parser folds block scalars (`>-` / `|`) — scorecard gaps + OWNER_ACTIONS
 //      how-to no longer leak the raw indicator into the UI.
 // v14: selfValidation (LOOP_HEALTH `validation` block / CAPABILITIES.yml manifest).
-const SNAPSHOT_CACHE_VERSION = "v14";
+// v15: GTM — growth.sources + pmf weekly cohorts + roadmapSteers (ROADMAP/VISION).
+const SNAPSHOT_CACHE_VERSION = "v15";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
@@ -267,6 +269,50 @@ async function fetchCommits(
     errors.push(`commits: ${errorMessage(e)}`);
     return null;
   }
+}
+
+// Product-direction docs whose recent changes are the "roadmap steers" — what
+// the data is steering. Best-effort: a missing file just yields no steers.
+const STEER_FILES = ["ROADMAP.md", "VISION.md"];
+
+async function fetchRoadmapSteers(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  branch: string,
+): Promise<RoadmapSteer[]> {
+  const repoUrl = `https://github.com/${owner}/${repo}`;
+  const perFile = await Promise.all(
+    STEER_FILES.map(async (file) => {
+      try {
+        const { data } = await octokit.rest.repos.listCommits({
+          owner,
+          repo,
+          sha: branch,
+          path: file,
+          per_page: 3,
+        });
+        return data.map((c): RoadmapSteer => {
+          const title = (c.commit?.message ?? "").split("\n")[0].trim();
+          const m = title.match(/\(#(\d+)\)\s*$/);
+          const prNumber = m ? parseInt(m[1], 10) : null;
+          return {
+            file,
+            title: title.replace(/\s*\(#\d+\)\s*$/, ""),
+            prNumber,
+            url: prNumber ? `${repoUrl}/pull/${prNumber}` : `${repoUrl}/commit/${c.sha}`,
+            date: c.commit?.author?.date ?? c.commit?.committer?.date ?? null,
+          };
+        });
+      } catch {
+        return [] as RoadmapSteer[]; // file/branch missing → no steers (never fatal)
+      }
+    }),
+  );
+  return perFile
+    .flat()
+    .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
+    .slice(0, 5);
 }
 
 interface IssuesResult {
@@ -555,6 +601,7 @@ function degraded(
     loopHealth: parseLoopHealth(null),
     selfValidation: parseSelfValidation(null, undefined, null, undefined),
     growth: parseGrowth(null),
+    roadmapSteers: [],
     qualityScorecard: parseScorecard(null),
     mergedToday: 0,
     merged24h: 0,
@@ -646,6 +693,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     loopHealthFile,
     scorecardFile,
     capabilitiesFile,
+    roadmapSteers,
   ] = await Promise.all([
     fetchPulls(octokit, owner, repo, errors),
     fetchCommits(octokit, owner, repo, workingBranch, errors),
@@ -671,6 +719,8 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     // Capability self-validation manifest — the fallback when the LOOP_HEALTH
     // `validation` block is absent (the block is preferred when present).
     fetchFile(octokit, owner, repo, workingBranch, "validation/CAPABILITIES.yml"),
+    // Recent ROADMAP.md / VISION.md changes — the GTM-driven product steers.
+    fetchRoadmapSteers(octokit, owner, repo, workingBranch),
   ]);
 
   // Growth status — parsed exactly like the business case (link, never a guess).
@@ -827,6 +877,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     loopHealth,
     selfValidation,
     growth,
+    roadmapSteers,
     qualityScorecard,
     mergedToday: pulls?.mergedToday ?? 0,
     merged24h: pulls?.merged24h ?? 0,

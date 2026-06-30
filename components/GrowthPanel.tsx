@@ -5,10 +5,18 @@ import type {
   GrowthPhase,
   GrowthPmf,
   GrowthSignal,
+  GrowthSource,
 } from "@/lib/growth";
 import { floorPmfSignal, growthStale, latestDecidedExperiment } from "@/lib/growth";
 import { cn, formatMoney, type Tone } from "@/lib/utils";
-import { ArrowRightIcon, ExternalLinkIcon, MailIcon } from "@/components/icons";
+import {
+  AlertIcon,
+  ArrowRightIcon,
+  CheckIcon,
+  ExternalLinkIcon,
+  MailIcon,
+  ShieldIcon,
+} from "@/components/icons";
 import { Sparkline } from "@/components/Sparkline";
 
 /** Owner's Gmail drafts — where the outreach draft bodies actually live. */
@@ -159,6 +167,18 @@ function PmfTile({
           : "Retention — no cohort data reported yet"}
       </p>
 
+      {(pmf.retentionW1 !== null || pmf.retentionW4 !== null) && (
+        <p className="mt-1.5 text-[11px] text-muted">
+          Weekly cohort:{" "}
+          <span className="font-medium tabular text-ink">W1 {fmtRate(pmf.retentionW1)}</span>{" "}
+          <ArrowRightIcon className="inline h-3 w-3 text-muted/60" />{" "}
+          <span className="font-medium tabular text-ink">W4 {fmtRate(pmf.retentionW4)}</span>
+          {pmf.retentionCurveFlattening === true && (
+            <span className="text-sage-strong"> · curve flattening — PMF signal</span>
+          )}
+        </p>
+      )}
+
       {hasTrend && (
         <div className="mt-2">
           <Sparkline
@@ -220,7 +240,7 @@ function OutreachTile({ outreach }: { outreach: GrowthOutreach }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
           <MailIcon className="h-3.5 w-3.5" />
-          Strategic outreach · 7d
+          Outreach · to-send queue
         </p>
         <SignalChip signal={outreach.signal} />
       </div>
@@ -235,8 +255,14 @@ function OutreachTile({ outreach }: { outreach: GrowthOutreach }) {
 
       <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted">
         <span>
-          1:1 drafts the agent prepares — you review &amp; send
-          {quiet ? " · none this week yet" : ""}.
+          {toReview ? (
+            <span className="font-medium text-clay-strong">
+              {drafted} Gmail draft{drafted === 1 ? "" : "s"} awaiting your review + send
+            </span>
+          ) : (
+            <>1:1 drafts the agent prepares — you review &amp; send{quiet ? " · none queued yet" : ""}</>
+          )}
+          .
         </span>
         {toReview && (
           <a
@@ -245,10 +271,67 @@ function OutreachTile({ outreach }: { outreach: GrowthOutreach }) {
             rel="noreferrer"
             className="inline-flex items-center gap-1 font-medium text-clay transition-colors hover:underline"
           >
-            Review {drafted} in Gmail <ExternalLinkIcon className="h-3 w-3" />
+            Open drafts <ExternalLinkIcon className="h-3 w-3" />
           </a>
         )}
       </p>
+    </div>
+  );
+}
+
+/**
+ * GTM self-validation — which data sources the growth agent can actually pull
+ * from (waitlist / analytics / billing / email). Unavailable sources mean the
+ * agent can't validate that part of the funnel (and the funnel reads 0); each is
+ * unblocked by an owner action (gtm-connect-* / connect-channels). REAL status.
+ */
+function GtmSourcesPanel({ sources }: { sources: GrowthSource[] }) {
+  if (sources.length === 0) return null;
+  const connected = sources.filter((s) => s.connected);
+  const unavailable = sources.filter((s) => !s.connected);
+  return (
+    <div className="rounded-xl border border-hairline bg-bg px-4 py-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
+          <ShieldIcon className="h-3.5 w-3.5" />
+          GTM data sources
+        </p>
+        <span
+          className={cn(
+            "text-xs font-medium tabular",
+            unavailable.length > 0 ? "text-amber-strong" : "text-sage-strong",
+          )}
+        >
+          {connected.length}/{sources.length} connected
+        </span>
+      </div>
+      <div className="mt-2.5 flex flex-wrap gap-1.5">
+        {sources.map((s) => (
+          <span
+            key={s.name}
+            title={s.status}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
+              s.connected ? CHIP.sage : CHIP.amber,
+            )}
+          >
+            {s.connected ? (
+              <CheckIcon className="h-3 w-3" />
+            ) : (
+              <AlertIcon className="h-3 w-3" />
+            )}
+            {s.name}
+          </span>
+        ))}
+      </div>
+      {unavailable.length > 0 && (
+        <p className="mt-2 text-[11px] leading-relaxed text-muted">
+          {unavailable.map((s) => s.name).join(", ")} not connected — the GTM agent
+          can&apos;t validate {unavailable.length > 1 ? "these sources" : "this source"} until
+          you wire {unavailable.length > 1 ? "them" : "it"} (an urgent{" "}
+          <span className="font-mono">gtm-connect-*</span> owner action).
+        </p>
+      )}
     </div>
   );
 }
@@ -345,6 +428,10 @@ export function GrowthPanel({
           </span>
         )}
       </div>
+
+      {/* GTM data sources — what the agent can validate (an unconnected source
+          is why a funnel reads 0; each is an owner action to wire). */}
+      {growth.sources.length > 0 && <GtmSourcesPanel sources={growth.sources} />}
 
       {/* PMF — the leading indicator, surfaced first (only when the repo has it). */}
       {growth.pmf && <PmfTile pmf={growth.pmf} retentionTrend={retentionTrend} />}
@@ -473,6 +560,23 @@ export function GrowthPanel({
         </div>
       )}
 
+      {/* What the GTM agent will do next — its own plan from next_actions. */}
+      {growth.nextActions.length > 0 && (
+        <div className="border-t border-hairline pt-3">
+          <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
+            Next actions · GTM agent
+          </p>
+          <ul className="space-y-1.5 text-sm text-ink">
+            {growth.nextActions.slice(0, 4).map((a, i) => (
+              <li key={i} className="flex items-start gap-2 leading-snug">
+                <ArrowRightIcon className="mt-1 h-3 w-3 shrink-0 text-muted/60" />
+                <span>{a}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {sourceUrl && (
         <a
           href={sourceUrl}
@@ -493,6 +597,7 @@ export function GrowthLine({ growth }: { growth: Growth }) {
   const f = growth.funnel;
   const post = growth.phase === "post_launch";
   const pmfSignal = floorPmfSignal(growth);
+  const toSend = growth.outreach?.drafted7d ?? 0; // Gmail drafts awaiting owner send
 
   let stat: string | null = null;
   if (post && f.mrrUsd !== null && f.mrrUsd > 0) {
@@ -503,7 +608,7 @@ export function GrowthLine({ growth }: { growth: Growth }) {
     stat = "growth: awaiting connect";
   }
   // Nothing worth showing — keep the (mostly pre-launch) tile calm.
-  if (!stat && !pmfSignal) return null;
+  if (!stat && !pmfSignal && toSend === 0) return null;
 
   const stale = growthStale(growth);
   return (
@@ -524,6 +629,11 @@ export function GrowthLine({ growth }: { growth: Growth }) {
         <span className="inline-flex items-center gap-1.5">
           <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-sage/70" />
           {stat}
+        </span>
+      )}
+      {toSend > 0 && (
+        <span className="inline-flex items-center gap-1 font-medium text-clay-strong">
+          <MailIcon className="h-3 w-3" /> {toSend} to send
         </span>
       )}
       {stale && <span className="text-amber-strong">· stale</span>}

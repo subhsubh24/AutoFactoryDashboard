@@ -101,10 +101,28 @@ export interface GrowthPmf {
   retentionD1: number | null;
   retentionD7: number | null;
   retentionD30: number | null;
+  /** Weekly-cohort returns — the headline for weekly-cadence products. */
+  retentionW1: number | null;
+  retentionW4: number | null;
+  /** True once the weekly curve levels off on a committed cohort (the PMF signal). */
+  retentionCurveFlattening: boolean | null;
   /** Non-paid / referral share of signups — is it spreading on its own? */
   organicShareRate: number | null;
   /** none | weak | emerging | strong; null or "none" → no signal yet. */
   signal: GrowthSignal | null;
+}
+
+/**
+ * A GTM data source the growth agent pulls from (waitlist / analytics / billing /
+ * email …). `connected` means it's wired and reporting; otherwise the agent
+ * can't validate that part of the funnel and an owner action (gtm-connect-* /
+ * connect-channels) is the unblock. REAL status only — never assumed connected.
+ */
+export interface GrowthSource {
+  name: string;
+  /** Raw status from the feed, e.g. "connected" | "awaiting_connect". */
+  status: string;
+  connected: boolean;
 }
 
 /**
@@ -179,6 +197,8 @@ export interface Growth extends Availability {
   engineBuilt?: boolean;
   awaitingConnect?: boolean;
   channelsConnected: string[];
+  /** GTM data sources (waitlist/analytics/billing/email) + connected status. */
+  sources: GrowthSource[];
   funnel: GrowthFunnel;
   acquisition: GrowthAcquisition;
   channels: GrowthChannel[];
@@ -322,6 +342,29 @@ function readBlockScalar(lines: Ln[], start: number, parentIndent: number): [str
   return [parts.join(" ").trim(), i];
 }
 
+/**
+ * Fold an implicit multi-line plain/quoted scalar: a non-empty value whose text
+ * wraps onto more-indented continuation lines (no `|`/`>` indicator). A scalar
+ * can't have child nodes, so any more-indented non-sequence lines that follow
+ * MUST be continuation — join them with a space. Without this, a wrapped list
+ * item or value truncates at its first line AND unwinds the parse, silently
+ * dropping every sibling key after it. Returns [folded, nextLineIndex].
+ */
+function foldContinuations(
+  lines: Ln[],
+  start: number,
+  parentIndent: number,
+  seed: string,
+): [string, number] {
+  let raw = seed;
+  let i = start;
+  while (i < lines.length && lines[i].indent > parentIndent && !isSeqLine(lines[i].text)) {
+    raw += " " + lines[i].text;
+    i++;
+  }
+  return [raw, i];
+}
+
 /** Parse a mapping or sequence at `indent`, returning [value, nextLineIndex]. */
 function parseNode(lines: Ln[], start: number, indent: number): [Yaml, number] {
   let i = start;
@@ -358,8 +401,10 @@ function parseNode(lines: Ln[], start: number, indent: number): [Yaml, number] {
         arr.push(parseFlow(rest));
         i++;
       } else {
-        arr.push(parseScalar(rest));
-        i++;
+        // Plain/quoted scalar item — may wrap onto more-indented lines.
+        const [raw, ni] = foldContinuations(lines, i + 1, line.indent, rest);
+        arr.push(parseScalar(raw));
+        i = ni;
       }
     }
     return [arr, i];
@@ -392,8 +437,10 @@ function parseNode(lines: Ln[], start: number, indent: number): [Yaml, number] {
       map[key] = parseFlow(val);
       i++;
     } else {
-      map[key] = parseScalar(val);
-      i++;
+      // Plain/quoted scalar value — may wrap onto more-indented lines.
+      const [raw, ni] = foldContinuations(lines, i + 1, indent, val);
+      map[key] = parseScalar(raw);
+      i = ni;
     }
   }
   return [map, i];
@@ -495,6 +542,7 @@ const PHASES: GrowthPhase[] = ["pre_launch", "launching", "post_launch"];
 function blankGrowth(): Omit<Growth, "available"> {
   return {
     channelsConnected: [],
+    sources: [],
     funnel: {
       visitors7d: null,
       waitlistSignupsTotal: null,
@@ -584,9 +632,20 @@ function parsePmf(p: Record<string, Yaml>): GrowthPmf {
     retentionD1: num(p.retention_d1),
     retentionD7: num(p.retention_d7),
     retentionD30: num(p.retention_d30),
+    retentionW1: num(p.retention_w1),
+    retentionW4: num(p.retention_w4),
+    retentionCurveFlattening: bool(p.retention_curve_flattening),
     organicShareRate: num(p.organic_share_rate),
     signal: parseSignal(p.signal),
   };
+}
+
+/** GTM data sources map (name → status) → typed list. connected == "connected". */
+function parseSources(s: Record<string, Yaml>): GrowthSource[] {
+  return Object.keys(s).map((name) => {
+    const status = str(s[name]) ?? "";
+    return { name, status, connected: /^connected$/i.test(status) };
+  });
 }
 
 /** Strategic outreach drafts funnel — owner-reported, never fabricated. */
@@ -648,6 +707,7 @@ export function parseGrowth(
     engineBuilt: bool(root.engine_built) ?? undefined,
     awaitingConnect: bool(root.awaiting_connect) ?? undefined,
     channelsConnected: strArr(root.channels_connected),
+    sources: parseSources(asObj(root.sources)),
     funnel: {
       visitors7d: num(f.visitors_7d),
       waitlistSignupsTotal: num(f.waitlist_signups_total),

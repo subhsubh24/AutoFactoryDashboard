@@ -48,6 +48,7 @@ import { HistoryCharts } from "@/components/HistoryCharts";
 import { RelativeTime } from "@/components/RelativeTime";
 import { Delta24h } from "@/components/Delta";
 import { GrowthPanel } from "@/components/GrowthPanel";
+import { RoadmapSteers } from "@/components/RoadmapSteers";
 import { GoLivePanel } from "@/components/GoLivePanel";
 import { LoopHealthPanel } from "@/components/LoopHealthPanel";
 import { RoutineSchedule } from "@/components/RoutineSchedule";
@@ -550,6 +551,15 @@ export default async function ProjectPage({
               retentionTrend={retentionTrend}
             />
           </SectionCard>
+
+          {snapshot.roadmapSteers.length > 0 && (
+            <SectionCard
+              title="Roadmap steers"
+              subtitle="Recent ROADMAP / VISION changes — what the data is steering"
+            >
+              <RoadmapSteers steers={snapshot.roadmapSteers} />
+            </SectionCard>
+          )}
 
           {themes.length > 0 && (
             <SectionCard
