@@ -48,6 +48,7 @@ import { HistoryCharts } from "@/components/HistoryCharts";
 import { RelativeTime } from "@/components/RelativeTime";
 import { Delta24h } from "@/components/Delta";
 import { GrowthPanel } from "@/components/GrowthPanel";
+import { ChannelApprovals } from "@/components/ChannelApprovals";
 import { CostPanel } from "@/components/CostPanel";
 import { RoadmapSteers } from "@/components/RoadmapSteers";
 import { GoLivePanel } from "@/components/GoLivePanel";
@@ -563,6 +564,25 @@ export default async function ProjectPage({
               retentionTrend={retentionTrend}
             />
           </SectionCard>
+
+          {(snapshot.pendingApprovals.length > 0 ||
+            snapshot.approvedChannels.length > 0) && (
+            <SectionCard
+              title="GTM channel approvals"
+              subtitle="Proposals awaiting your call + approved channels — your decision, recorded in PENDING_OPS.md"
+            >
+              <ChannelApprovals
+                pending={snapshot.pendingApprovals}
+                approved={snapshot.approvedChannels}
+                actions={snapshot.actionItems.items}
+                pendingOpsUrl={
+                  snapshot.files.pendingOps.available
+                    ? fileHref(snapshot.files.pendingOps.path)
+                    : undefined
+                }
+              />
+            </SectionCard>
+          )}
 
           <SectionCard
             title="Cost & compute"

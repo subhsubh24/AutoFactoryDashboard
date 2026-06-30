@@ -503,6 +503,29 @@ export function parseYamlBlock(
 }
 
 /**
+ * Like `parseYamlBlock`, but returns the RAW value under `topKey` — which may be
+ * a LIST or scalar, not only a map. Use for list-rooted blocks (e.g. PENDING_OPS'
+ * `approved_channels:`) that `parseYamlBlock` would coerce to null. Returns null
+ * when the block/key is absent or unparseable.
+ */
+export function parseYamlBlockValue(
+  md: string | null | undefined,
+  topKey: string,
+): unknown {
+  if (!md || !md.trim()) return null;
+  const block = findFencedBlock(md, new RegExp(`(^|\\n)\\s*${topKey}\\s*:`));
+  if (!block) return null;
+  let parsed: Yaml;
+  try {
+    parsed = parseYaml(block);
+  } catch {
+    return null;
+  }
+  const top = asObj(parsed);
+  return topKey in top ? (top[topKey] ?? null) : (parsed ?? null);
+}
+
+/**
  * Parse a raw (un-fenced) YAML document — e.g. a standalone `*.yml` manifest —
  * with the same subset parser. Returns the root value, or null on empty/garbled.
  */

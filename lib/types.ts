@@ -1,4 +1,5 @@
 import type { ProjectKind } from "@/config/projects";
+import type { ApprovedChannel, PendingApproval } from "@/lib/approvals";
 import type { ProductInferenceCost } from "@/lib/cost";
 import type { Growth } from "@/lib/growth";
 import type { LoopHealth } from "@/lib/loophealth";
@@ -306,6 +307,10 @@ export interface ProjectSnapshot {
   qualityScorecard: QualityScorecard;
   /** docs/growth/GTM_SCORECARD.md → independent A+→F GTM-quality grades (parallel auditor). */
   gtmScorecard: QualityScorecard;
+  /** GTM_STANDARD §9 — channel/campaign proposals from GROWTH_STATUS `pending_approvals[]`. */
+  pendingApprovals: PendingApproval[];
+  /** Owner-approved channels from PENDING_OPS `approved_channels:` (+ live spend once reported). */
+  approvedChannels: ApprovedChannel[];
 
   // PR activity
   mergedToday: number;

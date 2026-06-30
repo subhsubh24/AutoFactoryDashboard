@@ -11,6 +11,7 @@ import {
   parseTrackFromText,
 } from "@/lib/parsers";
 import { parseGrowth } from "@/lib/growth";
+import { parseApprovedChannels, parsePendingApprovals } from "@/lib/approvals";
 import { parseProductCost } from "@/lib/cost";
 import { parseLoopHealth } from "@/lib/loophealth";
 import { parseScorecard } from "@/lib/scorecard";
@@ -55,7 +56,8 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 // v16: gtmScorecard (GTM_SCORECARD.md) + quality/gtm_quality attention issues +
 //      scorecard dimensions now parse the list form (per-dimension grid).
 // v17: productCost (optional GROWTH_STATUS `cost` block → metered app LLM spend).
-const SNAPSHOT_CACHE_VERSION = "v17";
+// v18: GTM channel approvals — pending_approvals[] (GROWTH_STATUS) + approved_channels: (PENDING_OPS).
+const SNAPSHOT_CACHE_VERSION = "v18";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
@@ -612,6 +614,8 @@ function degraded(
     selfValidation: parseSelfValidation(null, undefined, null, undefined),
     growth: parseGrowth(null),
     productCost: parseProductCost(null),
+    pendingApprovals: [],
+    approvedChannels: [],
     roadmapSteers: [],
     gtmScorecard: parseScorecard(null, undefined, "GTM_SCORECARD"),
     qualityScorecard: parseScorecard(null),
@@ -752,6 +756,15 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
   const productCost = parseProductCost(
     growthFile.available ? growthFile.content : null,
     growthUrl,
+  );
+  // GTM channel approvals — proposals from GROWTH_STATUS, the owner's approved
+  // record from PENDING_OPS. Both [] when absent (the pre-launch norm); the
+  // dashboard only reads these feeds, it never writes an approval.
+  const pendingApprovals = parsePendingApprovals(
+    growthFile.available ? growthFile.content : null,
+  );
+  const approvedChannels = parseApprovedChannels(
+    pendingFile.available ? pendingFile.content : null,
   );
 
   // The loop's self-reported health + the independent quality scorecard —
@@ -908,6 +921,8 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     selfValidation,
     growth,
     productCost,
+    pendingApprovals,
+    approvedChannels,
     roadmapSteers,
     qualityScorecard,
     gtmScorecard,
