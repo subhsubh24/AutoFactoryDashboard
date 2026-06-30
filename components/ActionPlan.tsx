@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ActionPlan as ActionPlanT, ActionPriority } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { CheckBox, useCheckedSet } from "@/components/checklist";
@@ -47,6 +47,29 @@ export function ActionPlan({
 }) {
   const { checked, toggle, hydrated } = useCheckedSet(storageKey);
   const [open, setOpen] = useState<Set<string>>(new Set());
+  // Which priority groups are expanded. "Do now" (urgent) is always shown;
+  // "Next" / "Later" collapse by default so the plan stays a short glance, and
+  // the choice persists per project.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`${storageKey}:groups`);
+      if (raw) setOpenGroups(new Set(JSON.parse(raw) as string[]));
+    } catch {
+      /* ignore */
+    }
+  }, [storageKey]);
+  const toggleGroup = (pr: string) =>
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      next.has(pr) ? next.delete(pr) : next.add(pr);
+      try {
+        localStorage.setItem(`${storageKey}:groups`, JSON.stringify([...next]));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
 
   if (!plan.available || plan.items.length === 0) {
     return (
@@ -83,21 +106,46 @@ export function ActionPlan({
         const group = plan.items.filter((i) => i.priority === pr);
         if (group.length === 0) return null;
         const g = GROUP[pr];
+        // "Do now" is always visible; "Next"/"Later" are collapsible (closed by
+        // default) so a long backlog doesn't bury the urgent item.
+        const collapsible = pr !== "urgent";
+        const groupOpen = !collapsible || openGroups.has(pr);
         return (
           <div key={pr}>
-            <div className="mb-2 flex items-center gap-2">
-              <span aria-hidden className={cn("h-1.5 w-1.5 rounded-full", g.dot)} />
-              <span
-                className={cn(
-                  "text-[11px] font-semibold uppercase tracking-[0.1em]",
-                  g.head,
-                )}
+            {collapsible ? (
+              <button
+                type="button"
+                onClick={() => toggleGroup(pr)}
+                aria-expanded={groupOpen}
+                className="group/h mb-2 flex w-full items-center gap-2 text-left"
               >
-                {g.label}
-              </span>
-              <span className="text-[11px] tabular text-muted">{group.length}</span>
-            </div>
+                <span className="text-muted transition-colors group-hover/h:text-clay">
+                  <Caret open={groupOpen} />
+                </span>
+                <span className={cn("text-[11px] font-semibold uppercase tracking-[0.1em]", g.head)}>
+                  {g.label}
+                </span>
+                <span className="text-[11px] tabular text-muted">{group.length}</span>
+                <span className="ml-auto text-[10px] font-medium text-muted/70">
+                  {groupOpen ? "Hide" : "Show"}
+                </span>
+              </button>
+            ) : (
+              <div className="mb-2 flex items-center gap-2">
+                <span aria-hidden className={cn("h-1.5 w-1.5 rounded-full", g.dot)} />
+                <span
+                  className={cn(
+                    "text-[11px] font-semibold uppercase tracking-[0.1em]",
+                    g.head,
+                  )}
+                >
+                  {g.label}
+                </span>
+                <span className="text-[11px] tabular text-muted">{group.length}</span>
+              </div>
+            )}
 
+            {groupOpen && (
             <ul className="space-y-2.5">
               {group.map((item) => {
                 const isDone = hydrated && checked.has(item.id);
@@ -168,26 +216,39 @@ export function ActionPlan({
                 );
               })}
             </ul>
+            )}
           </div>
         );
       })}
 
-      <div className="flex items-center justify-between border-t border-hairline pt-3 text-xs text-muted">
-        <span>
-          {hydrated && remaining === 0
-            ? "All done — nothing left. ✨"
-            : `${remaining} of ${plan.items.length} left`}
-        </span>
-        {sourceUrl && (
-          <a
-            href={sourceUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 transition-colors hover:text-clay"
-          >
-            PENDING_OPS.md <ExternalLinkIcon className="h-3 w-3" />
-          </a>
-        )}
+      <div className="border-t border-hairline pt-3">
+        {/* Honest about what a checkbox does: it's a local-only tracker, NOT a
+            repo write. The factory only learns when the owner marks the item
+            done in PENDING_OPS.md (after which it clears from this list). */}
+        <p className="text-[11px] leading-relaxed text-muted">
+          Checking an item saves to{" "}
+          <span className="font-medium text-ink">this browser only</span> — it
+          doesn&apos;t update the repo, so the factory won&apos;t see it. To tell the
+          factory, mark the item <span className="font-mono">done</span> in
+          PENDING_OPS.md; it then clears from this list on the next refresh.
+        </p>
+        <div className="mt-2 flex items-center justify-between text-xs text-muted">
+          <span>
+            {hydrated && remaining === 0
+              ? "All done — nothing left. ✨"
+              : `${remaining} of ${plan.items.length} left`}
+          </span>
+          {sourceUrl && (
+            <a
+              href={sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 font-medium transition-colors hover:text-clay"
+            >
+              Edit PENDING_OPS.md <ExternalLinkIcon className="h-3 w-3" />
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );

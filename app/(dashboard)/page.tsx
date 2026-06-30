@@ -136,10 +136,12 @@ export default async function OverviewPage() {
 
   // LLM where it's worth it: factory briefing + per-project digest + valuation,
   // and clustering the cross-project "Needs you" list (same task → one card).
-  const [briefing, askGroups, narrativeEntries, valuationEntries, taglineEntries] =
+  // Group the "Needs you" asks first, so the briefing's "N items need you" count
+  // is the SAME number the Floor lists + badges (one card per clustered task).
+  const askGroups = await getNeedsPlan(asks);
+  const [briefing, narrativeEntries, valuationEntries, taglineEntries] =
     await Promise.all([
-      getFactoryBriefing(snapshots),
-      getNeedsPlan(asks),
+      getFactoryBriefing(snapshots, askGroups.length),
       Promise.all(snapshots.map(async (s) => [s.slug, await getNarrative(s)] as const)),
       Promise.all(snapshots.map(async (s) => [s.slug, await getValuation(s)] as const)),
       Promise.all(snapshots.map(async (s) => [s.slug, await getProjectTagline(s)] as const)),
@@ -212,7 +214,7 @@ export default async function OverviewPage() {
 
         <p className="mt-3 text-sm leading-relaxed text-ink/90">{briefing.text}</p>
 
-        <Verdict count={asks.length} />
+        <Verdict count={askGroups.length} />
 
         {/* At-a-glance state + the since-yesterday delta (the old digest, folded
             into the hero so there's one masthead, not two stacked boxes). */}
@@ -333,8 +335,10 @@ export default async function OverviewPage() {
         )}
       </section>
 
-      {/* 2 — Only the things that genuinely need you — kept prominent, up top. */}
-      {asks.length > 0 && (
+      {/* 2 — Only the things that genuinely need you — kept prominent, up top.
+          Gate + count on the GROUPED cards so the masthead number matches what's
+          actually listed (a same-task-across-N-projects ask is one card). */}
+      {askGroups.length > 0 && (
         <section className="mb-6">
           <h2 className="mb-3 px-1 text-sm font-semibold tracking-tight text-ink">
             Needs you

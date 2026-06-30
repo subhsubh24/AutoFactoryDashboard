@@ -44,7 +44,9 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 // Bump to invalidate cached narratives/briefings/valuations after a logic
 // change — unstable_cache entries otherwise survive across deploys (which is
 // why an old wrong ARR could persist even after fixing the parser).
-const CACHE_VERSION = "v8";
+// v9: briefing attention count = grouped "Needs you" cards (matches the badge);
+//     factoryContext drops per-project ask counts so the prose can't contradict it.
+const CACHE_VERSION = "v9";
 
 /** True during `next build` (prerender). Used to skip external LLM calls. */
 function buildPhase(): boolean {
@@ -585,17 +587,24 @@ const FACTORY_SYSTEM =
   "markdown, no lists, no preamble.\n" +
   "Accuracy over enthusiasm: only call a project ready/done/launched if the " +
   "data marks it ready for submission. These are works in progress — do not " +
-  "imply they are finished or live.";
+  "imply they are finished or live.\n" +
+  "If you mention how many things need the owner's attention, use ONLY the single " +
+  "total given in the user message — never break it into per-project counts or " +
+  "invent a number (the UI shows that total separately, so they must match).";
 
 function factoryContext(snapshots: ProjectSnapshot[]): string {
   return snapshots
     .map((s) => {
       const pct = headlinePct(s);
       const focus = themeSummary(extractThemes(s.merged7dItems));
+      // Qualitative "needs attention" flag, NOT a per-project count — the only
+      // attention NUMBER the model gets is the grouped total in the user message,
+      // so its prose can't contradict the masthead badge with per-project tallies.
+      const needsYou = humanAsksFor(s).length > 0;
       return (
         `- ${s.displayName}: ${s.status}, ${s.merged24h} merged in 24h, ` +
-        `${pct ?? "?"}% through roadmap, CI ${s.ci.status}, ` +
-        `${humanAsksFor(s).length} needing you` +
+        `${pct ?? "?"}% through roadmap, CI ${s.ci.status}` +
+        (needsYou ? `, needs your attention` : "") +
         (focus ? `; focus: ${focus}` : "")
       );
     })
@@ -607,9 +616,8 @@ export interface FactoryBriefing {
   source: "llm" | "template";
 }
 
-function templateBriefing(snapshots: ProjectSnapshot[]): string {
+function templateBriefing(snapshots: ProjectSnapshot[], needs: number): string {
   const totalMerged = snapshots.reduce((n, s) => n + s.merged24h, 0);
-  const needs = snapshots.reduce((n, s) => n + humanAsksFor(s).length, 0);
   const focus = themeSummary(extractThemes(snapshots.flatMap((s) => s.merged7dItems)));
   const lead =
     totalMerged > 0
@@ -629,13 +637,19 @@ function templateBriefing(snapshots: ProjectSnapshot[]): string {
  */
 export function getFactoryBriefing(
   snapshots: ProjectSnapshot[],
+  /**
+   * Number of grouped "Needs you" cards the Floor actually renders. Passed in so
+   * the briefing's "N items need your attention" matches the masthead badge and
+   * the list exactly. Falls back to the deterministic grouped count.
+   */
+  attentionCount?: number,
 ): Promise<FactoryBriefing> {
   const totalMerged = snapshots.reduce((n, s) => n + s.merged24h, 0);
-  const needs = snapshots.reduce((n, s) => n + humanAsksFor(s).length, 0);
+  const needs = attentionCount ?? groupNeeds(snapshots.flatMap(humanAsksFor)).length;
 
   // See getNarrative: skip the LLM (and the cache) during build.
   if (buildPhase()) {
-    return Promise.resolve({ text: templateBriefing(snapshots), source: "template" });
+    return Promise.resolve({ text: templateBriefing(snapshots, needs), source: "template" });
   }
 
   const cacheKey = [
@@ -667,7 +681,7 @@ export function getFactoryBriefing(
         (text) => checkBriefing(text, { anyReady }),
       );
       if (llm.text) return { text: llm.text, source: "llm" };
-      return { text: templateBriefing(snapshots), source: "template" };
+      return { text: templateBriefing(snapshots, needs), source: "template" };
     },
     cacheKey,
     { revalidate: 600 },

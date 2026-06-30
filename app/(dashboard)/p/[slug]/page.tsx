@@ -584,9 +584,10 @@ export default async function ProjectPage({
             </SectionCard>
           )}
 
-          <SectionCard
+          <CollapsibleSection
             title="Cost & compute"
             subtitle="Metered inference spend (when published) + activity proxies — not a token bill"
+            storageKey={`afd-cost-${slug}`}
           >
             <CostPanel
               cost={snapshot.productCost}
@@ -595,15 +596,21 @@ export default async function ProjectPage({
               loop={snapshot.loopHealth}
               mergedTrend={mergedTrend}
             />
-          </SectionCard>
+          </CollapsibleSection>
 
           {snapshot.roadmapSteers.length > 0 && (
-            <SectionCard
+            <CollapsibleSection
               title="Roadmap steers"
               subtitle="Recent ROADMAP / VISION changes — what the data is steering"
+              storageKey={`afd-steers-${slug}`}
+              aside={
+                <span className="text-[11px] tabular text-muted">
+                  {snapshot.roadmapSteers.length}
+                </span>
+              }
             >
               <RoadmapSteers steers={snapshot.roadmapSteers} />
-            </SectionCard>
+            </CollapsibleSection>
           )}
 
           {themes.length > 0 && (
