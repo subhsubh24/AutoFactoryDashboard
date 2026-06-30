@@ -489,8 +489,12 @@ export default async function OverviewPage() {
         </div>
         <ProgressTrend trends={trends} />
         {!hasHistory && (
-          <p className="mt-4 text-xs text-muted">
-            Connect Vercel KV (see README) to layer a trend line onto each bar.
+          <p className="mt-4 text-xs leading-relaxed text-muted">
+            No trend lines yet — daily history is off (not broken). The snapshot
+            cron runs 07:00&nbsp;UTC daily but is a no-op until a Vercel KV /
+            Upstash Redis store is connected to <span className="text-ink">this
+            dashboard</span> (see README) — set up once, it then trends all
+            projects automatically; nothing per project.
           </p>
         )}
         {hasHistory && maxHistoryLen < 2 && (
