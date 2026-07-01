@@ -17,7 +17,7 @@ import {
   type Narrative,
   type Valuation,
 } from "@/lib/narrative";
-import { getHistory, getFactoryHistory } from "@/lib/kv";
+import { getHistory } from "@/lib/kv";
 import { estimateCompletion, formatEtaDate, formatHorizon, type Estimate } from "@/lib/estimate";
 import { formatCycle } from "@/lib/quality";
 import { floorLoopSignal } from "@/lib/loophealth";
@@ -48,7 +48,6 @@ import { SelfValidationLine } from "@/components/SelfValidationPanel";
 import { LivenessDot } from "@/components/LivenessDot";
 import { WeekBars } from "@/components/WeekBars";
 import { ProgressTrend, type ProjectTrend } from "@/components/ProgressTrend";
-import { Sparkline } from "@/components/Sparkline";
 import { ValuationView } from "@/components/ValuationView";
 import { RelativeTime } from "@/components/RelativeTime";
 import { CalmCoda, Greeting, TimeOfDay } from "@/components/TimeAware";
@@ -98,9 +97,6 @@ export default async function OverviewPage() {
       totals: recent.map((m) => m.submissionTotal),
     };
   });
-  const factoryHistory = await getFactoryHistory();
-  const hasFactoryHistory =
-    factoryHistory !== null && factoryHistory.length > 0;
   const etas = new Map<string, Estimate | null>(
     snapshots.map((s, i) => [s.slug, estimateCompletion(s, histories[i])]),
   );
@@ -370,18 +366,6 @@ export default async function OverviewPage() {
             label="Throughput"
             value={String(overview.factory.throughputPerDay)}
             unit="PRs / day · 7-day avg"
-            spark={
-              hasFactoryHistory ? (
-                <Sparkline
-                  values={factoryHistory!.map((m) => m.prs)}
-                  tone="clay"
-                  width={200}
-                  height={28}
-                  fillOpacity={0.1}
-                  className="w-full"
-                />
-              ) : undefined
-            }
           />
           <PrimaryStat
             label="Readiness"
@@ -395,6 +379,29 @@ export default async function OverviewPage() {
             unit="annual · see note"
             tone={bcVals.length > 0 ? "sage" : "muted"}
           />
+        </div>
+
+        {/* Shipping this week — the daily breakdown of that 7-day-avg throughput,
+            folded in so throughput lives in ONE place (number + its daily bars). */}
+        <div className="mt-6 border-t border-hairline pt-4">
+          <div className="flex items-end justify-between">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+              Shipping this week
+            </p>
+            <span className="text-xs text-muted">
+              {overview.velocityTotal} {pluralize(overview.velocityTotal, "PR")} ·{" "}
+              {activeDays}/7 active days
+            </span>
+          </div>
+          {overview.velocityTotal > 0 ? (
+            <div className="mt-5">
+              <WeekBars days={overview.velocity} />
+            </div>
+          ) : (
+            <p className="py-4 text-sm text-muted">
+              Nothing merged in the last 7 days yet.
+            </p>
+          )}
         </div>
 
         {/* Operational metrics — quieter, a single line of fine print. */}
@@ -465,28 +472,6 @@ export default async function OverviewPage() {
           heuristic ({heurVals.length}). Pre-launch estimate — the two aren&apos;t
           equivalent and this isn&apos;t a valuation.
         </p>
-      </section>
-
-      {/* 1b2 — Weekly shipping velocity (large, up top with the metrics). */}
-      <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 sm:p-6">
-        <div className="mb-1 flex items-end justify-between">
-          <h2 className="text-sm font-semibold tracking-tight text-ink">
-            Shipping this week
-          </h2>
-          <span className="text-xs text-muted">
-            {overview.velocityTotal} {pluralize(overview.velocityTotal, "PR")} ·{" "}
-            {activeDays}/7 active days
-          </span>
-        </div>
-        {overview.velocityTotal > 0 ? (
-          <div className="mt-5">
-            <WeekBars days={overview.velocity} />
-          </div>
-        ) : (
-          <p className="py-4 text-sm text-muted">
-            Nothing merged in the last 7 days yet.
-          </p>
-        )}
       </section>
 
       {/* 1c — Progress to launch (bars from the live %, trend layered in via KV). */}
@@ -607,14 +592,11 @@ function PrimaryStat({
   value,
   unit,
   tone = "ink",
-  spark,
 }: {
   label: string;
   value: string;
   unit: string;
   tone?: "ink" | "sage" | "muted";
-  /** Optional trend sparkline shown beneath the number (e.g. throughput/day). */
-  spark?: React.ReactNode;
 }) {
   const color =
     tone === "sage" ? "text-sage-strong" : tone === "muted" ? "text-muted" : "text-ink";
@@ -632,7 +614,6 @@ function PrimaryStat({
         {value}
       </p>
       <p className="mt-1.5 text-[11px] leading-tight text-muted">{unit}</p>
-      {spark && <div className="mt-2">{spark}</div>}
     </div>
   );
 }
