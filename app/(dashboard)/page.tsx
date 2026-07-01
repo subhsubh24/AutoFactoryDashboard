@@ -48,7 +48,7 @@ import { SelfValidationLine } from "@/components/SelfValidationPanel";
 import { LivenessDot } from "@/components/LivenessDot";
 import { WeekBars } from "@/components/WeekBars";
 import { ProgressTrend, type ProjectTrend } from "@/components/ProgressTrend";
-import { FactoryTrends } from "@/components/FactoryTrends";
+import { Sparkline } from "@/components/Sparkline";
 import { ValuationView } from "@/components/ValuationView";
 import { RelativeTime } from "@/components/RelativeTime";
 import { CalmCoda, Greeting, TimeOfDay } from "@/components/TimeAware";
@@ -369,7 +369,19 @@ export default async function OverviewPage() {
           <PrimaryStat
             label="Throughput"
             value={String(overview.factory.throughputPerDay)}
-            unit="PRs / day"
+            unit="PRs / day · 7-day avg"
+            spark={
+              hasFactoryHistory ? (
+                <Sparkline
+                  values={factoryHistory!.map((m) => m.prs)}
+                  tone="clay"
+                  width={200}
+                  height={28}
+                  fillOpacity={0.1}
+                  className="w-full"
+                />
+              ) : undefined
+            }
           />
           <PrimaryStat
             label="Readiness"
@@ -504,19 +516,6 @@ export default async function OverviewPage() {
         )}
       </section>
 
-      {/* 1d — Factory KPI trends over time (Vercel KV; hides without it). */}
-      {hasFactoryHistory && (
-        <section className="mb-6 rounded-2xl border border-hairline bg-card p-5">
-          <div className="mb-3 flex items-end justify-between">
-            <h2 className="text-sm font-semibold tracking-tight text-ink">
-              Factory trends
-            </h2>
-            <span className="text-xs text-muted">throughput · yield · lead time</span>
-          </div>
-          <FactoryTrends metrics={factoryHistory!} />
-        </section>
-      )}
-
       {/* 3 — A briefing tile per project (ranked closest-to-launch first): name
           opens the live app; a did/now/next summary; progress + ETA; Dashboard. */}
       <section className="mb-6">
@@ -608,11 +607,14 @@ function PrimaryStat({
   value,
   unit,
   tone = "ink",
+  spark,
 }: {
   label: string;
   value: string;
   unit: string;
   tone?: "ink" | "sage" | "muted";
+  /** Optional trend sparkline shown beneath the number (e.g. throughput/day). */
+  spark?: React.ReactNode;
 }) {
   const color =
     tone === "sage" ? "text-sage-strong" : tone === "muted" ? "text-muted" : "text-ink";
@@ -630,6 +632,7 @@ function PrimaryStat({
         {value}
       </p>
       <p className="mt-1.5 text-[11px] leading-tight text-muted">{unit}</p>
+      {spark && <div className="mt-2">{spark}</div>}
     </div>
   );
 }
