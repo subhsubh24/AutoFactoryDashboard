@@ -153,20 +153,6 @@ export function parseLoopHealth(
 }
 
 /**
- * Does the loop need the owner? — it's stuck or churning, or it has filed a
- * harness proposal (the loop hit a wall it can't clear on its own). Drives the
- * "loop needs you" alert. Pure data; never fabricated.
- */
-export function loopNeedsYou(lh: LoopHealth): boolean {
-  if (!lh.available) return false;
-  return (
-    lh.signal === "stuck" ||
-    lh.signal === "churning" ||
-    (lh.rolling7d.harnessProposalsOpen ?? 0) > 0
-  );
-}
-
-/**
  * The loop signal worth a chip on the dense Floor tile — anything past the
  * early "bootstrapping" state (which reads as "not reported yet"), so freshly
  * started loops don't clutter the fleet view with grey chips.

@@ -1,27 +1,12 @@
 import type { ApprovedChannel, PendingApproval } from "@/lib/approvals";
 import type { ActionItem } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, formatShortDate, formatUsd } from "@/lib/utils";
 import { Chip } from "@/components/Chip";
 import { AlertIcon, CheckIcon, ExternalLinkIcon, RocketIcon } from "@/components/icons";
 
-/** USD: $Nk over 1k, whole dollars when round, else cents. null → "—". */
-function money(n: number | null): string {
-  if (n === null || !Number.isFinite(n)) return "—";
-  if (n >= 1000) return `$${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
-  return Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`;
-}
-
-function shortDate(iso: string | null): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
+/** Local aliases so the JSX reads the same; both come from lib/utils now. */
+const money = (n: number | null) => formatUsd(n);
+const shortDate = (iso: string | null) => formatShortDate(iso, true);
 
 function Econ({ label, value }: { label: string; value: string }) {
   return (

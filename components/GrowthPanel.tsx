@@ -8,7 +8,7 @@ import type {
   GrowthSource,
 } from "@/lib/growth";
 import { floorPmfSignal, growthStale, latestDecidedExperiment } from "@/lib/growth";
-import { cn, formatMoney, type Tone } from "@/lib/utils";
+import { cn, formatMoney, formatShortDate, type Tone } from "@/lib/utils";
 import {
   AlertIcon,
   ArrowRightIcon,
@@ -35,12 +35,7 @@ const CHIP: Record<Tone, string> = {
   muted: "bg-bg text-muted",
 };
 
-function shortDate(iso?: string): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-}
+const shortDate = (iso?: string): string | null => formatShortDate(iso, false);
 
 const fmtInt = (n: number | null): string => (n === null ? "—" : n.toLocaleString("en-US"));
 

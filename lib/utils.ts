@@ -75,12 +75,44 @@ export function pluralize(n: number, one: string, many = `${one}s`): string {
   return n === 1 ? one : many;
 }
 
-/** Compact money, e.g. $0, $4k, $120k, $1.2M. */
+/** Compact money, e.g. $0, $4k, $120k, $1.2M. For ARR/valuation headlines. */
 export function formatMoney(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "$0";
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
   if (n >= 1_000) return `$${Math.round(n / 1000)}k`;
   return `$${Math.round(n)}`;
+}
+
+/**
+ * Precise USD for small figures — cost, CAC, budgets: cents under $1k, $Nk above.
+ * Currency-aware (non-USD → trailing code). null/NaN → "—". Distinct from
+ * formatMoney, which rounds hard for ARR/valuation headlines.
+ */
+export function formatUsd(n: number | null | undefined, currency = "USD"): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return "—";
+  const body =
+    n >= 1000
+      ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k`
+      : Number.isInteger(n)
+        ? `${n}`
+        : n.toFixed(2);
+  return currency === "USD" ? `$${body}` : `${body} ${currency}`;
+}
+
+/** Short UTC date — "Jun 30" or (withYear) "Jun 30, 2026". Bad/empty → null. */
+export function formatShortDate(
+  iso: string | null | undefined,
+  withYear = false,
+): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(withYear ? { year: "numeric" } : {}),
+    timeZone: "UTC",
+  });
 }
 
 export type Tone = "sage" | "amber" | "clay" | "muted";

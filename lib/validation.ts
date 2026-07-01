@@ -110,13 +110,3 @@ export function parseSelfValidation(
 
   return blank("no self-validation block or manifest", loopHealthUrl ?? manifestUrl);
 }
-
-/** The gate is built AND enforced as a required CI check. */
-export function gateEnforced(sv: SelfValidation): boolean {
-  return sv.available && sv.enforcedInCi === true;
-}
-
-/** Owner-blocked capability count — the loop can't validate these without you. */
-export function ownerBlockedCount(sv: SelfValidation): number {
-  return sv.available ? sv.unmet.length : 0;
-}

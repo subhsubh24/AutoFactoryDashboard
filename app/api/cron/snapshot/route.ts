@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
 import { getAllSnapshots } from "@/lib/github";
-import { buildOverview } from "@/lib/aggregate";
 import {
   isHistoryEnabled,
   recordDailyMetric,
-  recordFactoryMetric,
   type DailyMetric,
-  type FactoryDailyMetric,
 } from "@/lib/kv";
 import { headlinePct } from "@/lib/utils";
 import { getValuation } from "@/lib/narrative";
@@ -85,23 +82,9 @@ export async function GET(req: Request) {
     }),
   );
 
-  // Factory-wide KPIs for the trend charts.
-  const overview = buildOverview(snapshots);
-  const factoryMetric: FactoryDailyMetric = {
-    date,
-    prs: overview.totalMerged24h,
-    yieldPct: overview.factory.firstPassYield,
-    leadHours: overview.factory.leadTimeHours,
-    reworkPct: overview.factory.reworkRate,
-    progress: overview.avgProgress,
-    wip: overview.factory.wipOpen,
-  };
-  const factoryWritten = await recordFactoryMetric(factoryMetric);
-
   return NextResponse.json({
     ok: true,
     date,
     recorded: results,
-    factory: { written: factoryWritten, metric: factoryMetric },
   });
 }

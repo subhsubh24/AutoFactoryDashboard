@@ -2,20 +2,9 @@ import { routineShortLabel } from "@/config/routines";
 import type { ProductInferenceCost } from "@/lib/cost";
 import type { LoopHealth } from "@/lib/loophealth";
 import type { Workload } from "@/lib/routine";
-import { cn } from "@/lib/utils";
+import { cn, formatShortDate, formatUsd } from "@/lib/utils";
 import { ExternalLinkIcon, PulseIcon } from "@/components/icons";
 import { Sparkline } from "@/components/Sparkline";
-
-/**
- * Spend with sensible precision: cents under $100 (LLM spend is often pennies),
- * whole units to 1k, then Nk. Currency-aware (USD → "$", else a trailing code).
- * Never fabricates — null reads "—".
- */
-function money(n: number | null, currency: string): string {
-  if (n === null || !Number.isFinite(n)) return "—";
-  const body = n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n >= 100 ? `${Math.round(n)}` : n.toFixed(2);
-  return currency === "USD" ? `$${body}` : `${body} ${currency}`;
-}
 
 const fmtInt = (n: number | null): string =>
   n === null ? "—" : n.toLocaleString("en-US");
@@ -88,11 +77,13 @@ function InferenceCostBlock({ cost }: { cost: ProductInferenceCost }) {
         <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
           Product inference cost
         </p>
-        {cost.asOf && <span className="text-[11px] text-muted">as of {cost.asOf}</span>}
+        {formatShortDate(cost.asOf, true) && (
+          <span className="text-[11px] text-muted">as of {formatShortDate(cost.asOf, true)}</span>
+        )}
       </div>
       <p className="mt-1.5 flex items-baseline gap-2">
         <span className="text-2xl font-semibold tabular text-ink">
-          {money(cost.totalUsd, cost.currency)}
+          {formatUsd(cost.totalUsd, cost.currency)}
         </span>
         {cost.windowDays !== null && (
           <span className="text-xs text-muted">metered LLM spend · last {cost.windowDays}d</span>
@@ -145,7 +136,7 @@ function CostLines({
             <span className="truncate font-mono text-[12px] text-ink" title={l.label}>
               {l.label}
             </span>
-            <span className="tabular text-xs font-medium text-ink">{money(l.usd, currency)}</span>
+            <span className="tabular text-xs font-medium text-ink">{formatUsd(l.usd, currency)}</span>
             <span className="col-span-2">
               <Bar value={l.usd} max={max} tone="clay" />
             </span>
