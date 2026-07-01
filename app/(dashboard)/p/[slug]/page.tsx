@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getProjectBySlug } from "@/config/projects";
-import { routinesForSlug } from "@/config/routines";
+import { routinesForSlug, ROUTINE_SCHEDULE_AS_OF } from "@/config/routines";
 import { runsFor, workloadFor } from "@/lib/routine";
 import { getProjectSnapshot } from "@/lib/github";
 import {
@@ -20,6 +20,7 @@ import {
   cleanProposalTitle,
   describeBlock,
   formatAge,
+  formatShortDate,
   headlinePct,
   kindLabel,
   livenessMeta,
@@ -199,6 +200,19 @@ export default async function ProjectPage({
               >
                 {snapshot.workingBranch}
               </a>
+              {/* The dashboard reads THIS branch, which for some projects isn't
+                  the repo default — surface that so it's auditable (a factory
+                  that repoints would otherwise silently read a stale branch). */}
+              {snapshot.repoMeta.defaultBranch &&
+                snapshot.workingBranch !== snapshot.repoMeta.defaultBranch && (
+                  <span
+                    className="text-muted"
+                    title={`Reading a non-default branch — repo default is ${snapshot.repoMeta.defaultBranch}`}
+                  >
+                    (default:{" "}
+                    <span className="font-mono">{snapshot.repoMeta.defaultBranch}</span>)
+                  </span>
+                )}
               {snapshot.repoMeta.visibility && (
                 <>
                   <span aria-hidden>·</span>
@@ -361,16 +375,6 @@ export default async function ProjectPage({
               {blockReason}
             </p>
           )}
-
-          <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <HeroStat label="Merged 24h" value={snapshot.merged24h} />
-            <HeroStat label="Merged 7d" value={snapshot.merged7d} />
-            <HeroStat
-              label="Commits 25h"
-              value={snapshot.commitsToday ?? "—"}
-            />
-            <HeroStat label="Open PRs" value={snapshot.openPRs.length} />
-          </div>
         </div>
       </div>
 
@@ -470,6 +474,11 @@ export default async function ProjectPage({
                 icon={<MergeIcon className="h-4 w-4" />}
                 label="Merged today"
                 value={snapshot.mergedToday}
+              />
+              <LiveStat
+                icon={<MergeIcon className="h-4 w-4" />}
+                label="Merged 7d"
+                value={snapshot.merged7d}
               />
               <LiveStat
                 icon={<GitCommitIcon className="h-4 w-4" />}
@@ -614,13 +623,14 @@ export default async function ProjectPage({
           )}
 
           {themes.length > 0 && (
-            <SectionCard
+            <CollapsibleSection
               title="What the work focused on"
               subtitle="Themes across the last 7 days of merged PRs"
+              storageKey={`afd-themes-${slug}`}
             >
               {focus && <p className="mb-3 text-sm text-ink">{focus}</p>}
               <ThemeChips themes={themes} limit={8} />
-            </SectionCard>
+            </CollapsibleSection>
           )}
 
           <CollapsibleSection
@@ -784,7 +794,8 @@ export default async function ProjectPage({
                 Scheduled cloud agents. Times are shown in your local timezone (the
                 schedule itself is fixed in UTC) and a run can lag its slot by a
                 couple of minutes. Whether the loop is keeping pace is the liveness
-                signal above.
+                signal above. This schedule is a hand-kept mirror, reconciled{" "}
+                {formatShortDate(ROUTINE_SCHEDULE_AS_OF, true)}.
               </p>
             </SectionCard>
           )}
@@ -796,7 +807,11 @@ export default async function ProjectPage({
             <SelfValidationPanel sv={snapshot.selfValidation} gtm={snapshot.gtmScorecard} />
           </SectionCard>
 
-          <SectionCard title="Data sources" subtitle="What the dashboard found">
+          <CollapsibleSection
+            title="Data sources"
+            subtitle="What the dashboard found"
+            storageKey={`afd-sources-${slug}`}
+          >
             <ul className="space-y-2 text-sm">
               <FileRow
                 label="ROADMAP.md"
@@ -859,24 +874,9 @@ export default async function ProjectPage({
                 .
               </p>
             )}
-          </SectionCard>
+          </CollapsibleSection>
         </div>
       </div>
-    </div>
-  );
-}
-
-function HeroStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
-  return (
-    <div>
-      <p className="text-2xl font-semibold tabular text-ink">{value}</p>
-      <p className="text-xs text-muted">{label}</p>
     </div>
   );
 }

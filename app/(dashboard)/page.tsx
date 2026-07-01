@@ -23,13 +23,19 @@ import { formatCycle } from "@/lib/quality";
 import { floorLoopSignal } from "@/lib/loophealth";
 import { runsFor, soonestRun } from "@/lib/routine";
 import { getProjectBySlug } from "@/config/projects";
-import { crossProjectRoutines, routineShortLabel, routinesForSlug } from "@/config/routines";
+import {
+  crossProjectRoutines,
+  routineShortLabel,
+  routinesForSlug,
+  ROUTINE_SCHEDULE_AS_OF,
+} from "@/config/routines";
 import type { ProjectSnapshot } from "@/lib/types";
 import {
   cn,
   ciMeta,
   cleanProposalTitle,
   formatMoney,
+  formatShortDate,
   headlinePct,
   kindLabel,
   leadSentences,
@@ -562,7 +568,8 @@ export default async function OverviewPage() {
             schedule itself is fixed in UTC). Product factories run every 6h
             (staggered); GTM factories &amp; quality auditors every 2 days;
             research daily; GTM auditors weekly — a run can lag its slot by a
-            couple of minutes.
+            couple of minutes. This schedule is a hand-kept mirror, reconciled{" "}
+            {formatShortDate(ROUTINE_SCHEDULE_AS_OF, true)}.
           </p>
         </div>
       </details>
