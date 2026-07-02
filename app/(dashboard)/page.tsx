@@ -865,7 +865,10 @@ function ProjectTile({
       {/* Facts: readiness (headline) · build · shipped · estimate */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
         {pct !== null ? (
-          <span className="flex items-center gap-2">
+          <span
+            className="flex items-center gap-2"
+            title={`Ship-readiness: ${s.progress.submissionDone}/${s.progress.submissionTotal} Definition-of-Done gates met. This is the final submission checklist — separate from build progress, and it stays near 0 until the very end.`}
+          >
             <span className="h-1.5 w-20 overflow-hidden rounded-full bg-hairline">
               <span
                 className="block h-full rounded-full bg-sage"
@@ -873,13 +876,18 @@ function ProjectTile({
               />
             </span>
             <span className="tabular font-semibold text-ink">{pct}%</span>
-            <span className="text-muted">ready</span>
+            <span className="text-muted">to submission</span>
           </span>
         ) : (
           <span className="text-muted">readiness unmeasured</span>
         )}
         {build !== null && (
-          <span className="text-muted">· build {build}%</span>
+          <span
+            className="text-muted"
+            title="Build completeness — feature-track checkboxes done. Separate axis from ship-readiness: a project can be mostly built yet 0% ship-ready."
+          >
+            · build {build}%
+          </span>
         )}
         {eta && (
           <span className="text-muted">
