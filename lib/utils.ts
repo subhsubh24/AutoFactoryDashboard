@@ -143,20 +143,25 @@ export function toneClasses(tone: Tone): ToneClasses {
 export interface StatusMeta {
   label: string;
   tone: Tone;
-  /** True for the "building" state — UI pulses the dot. */
-  live: boolean;
 }
 
+/**
+ * Coarse status label + tone. NOTE: "building" reads as "In progress", not
+ * "Building" — the factory is a scheduled loop (every ~6h) that's idle between
+ * runs, so a present-tense "building" (and a pulsing dot) would imply real-time
+ * work it isn't doing. Real recency is the separate, time-accurate liveness
+ * signal (livenessMeta) — "shipped 1h ago" / "slowing" / "stalled".
+ */
 export function statusMeta(status: ProjectStatus): StatusMeta {
   switch (status) {
     case "ready":
-      return { label: "Ready to ship", tone: "sage", live: false };
+      return { label: "Ready to ship", tone: "sage" };
     case "building":
-      return { label: "Building", tone: "amber", live: true };
+      return { label: "In progress", tone: "amber" };
     case "blocked":
-      return { label: "Needs you", tone: "clay", live: false };
+      return { label: "Needs you", tone: "clay" };
     default:
-      return { label: "Idle", tone: "muted", live: false };
+      return { label: "Idle", tone: "muted" };
   }
 }
 

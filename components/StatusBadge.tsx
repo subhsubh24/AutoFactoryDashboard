@@ -21,13 +21,7 @@ export function StatusBadge({
         className,
       )}
     >
-      <span
-        className={cn(
-          "h-1.5 w-1.5 rounded-full",
-          tone.dot,
-          meta.live && "animate-pulse-soft",
-        )}
-      />
+      <span className={cn("h-1.5 w-1.5 rounded-full", tone.dot)} />
       {meta.label}
     </span>
   );

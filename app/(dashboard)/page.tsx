@@ -786,7 +786,6 @@ function ProjectTile({
             className={cn(
               "mt-2 h-2.5 w-2.5 shrink-0 rounded-full",
               toneClasses(status.tone).dot,
-              status.live && "animate-pulse-soft",
             )}
             aria-hidden
           />
