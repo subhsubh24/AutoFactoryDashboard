@@ -14,6 +14,7 @@ import { parseGrowth } from "@/lib/growth";
 import { parseApprovedChannels, parsePendingApprovals } from "@/lib/approvals";
 import { parseProductCost } from "@/lib/cost";
 import { parseLoopHealth } from "@/lib/loophealth";
+import { parseValidatorStatus } from "@/lib/validator";
 import { parseScorecard } from "@/lib/scorecard";
 import { parseSelfValidation } from "@/lib/validation";
 import type {
@@ -611,6 +612,7 @@ function degraded(
     liveness: { level: "unknown", hoursSinceShip: null, lastShipAt: null, stalled: false },
     loopMemoryHealth: { available: false, hasAudit: false },
     loopHealth: parseLoopHealth(null),
+    validator: parseValidatorStatus(null),
     selfValidation: parseSelfValidation(null, undefined, null, undefined),
     growth: parseGrowth(null),
     productCost: parseProductCost(null),
@@ -710,6 +712,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     scorecardFile,
     capabilitiesFile,
     gtmScorecardFile,
+    validatorFile,
     roadmapSteers,
   ] = await Promise.all([
     fetchPulls(octokit, owner, repo, errors),
@@ -739,6 +742,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     // Independent GTM Auditor's scorecard — parallel to docs/quality/QUALITY_SCORECARD.md.
     fetchFile(octokit, owner, repo, workingBranch, "docs/growth/GTM_SCORECARD.md"),
     // Recent ROADMAP.md / VISION.md changes — the GTM-driven product steers.
+    fetchFile(octokit, owner, repo, workingBranch, "docs/autonomous-loop/VALIDATOR_STATUS.md"),
     fetchRoadmapSteers(octokit, owner, repo, workingBranch),
   ]);
 
@@ -788,6 +792,14 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
       ? `${repoUrl}/blob/${workingBranch}/docs/growth/GTM_SCORECARD.md`
       : undefined,
     "GTM_SCORECARD",
+  );
+  // Computer-use validator last sweep (§29) — pass/total + broken flows found
+  // driving the DEPLOYED app; absent until the validator runs → unavailable.
+  const validator = parseValidatorStatus(
+    validatorFile.available ? validatorFile.content : null,
+    validatorFile.available
+      ? `${repoUrl}/blob/${workingBranch}/docs/autonomous-loop/VALIDATOR_STATUS.md`
+      : undefined,
   );
   // Self-validation gate — prefer the LOOP_HEALTH `validation` block, fall back
   // to the capabilities manifest. Both are read-only from files already fetched.
@@ -918,6 +930,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     liveness,
     loopMemoryHealth,
     loopHealth,
+    validator,
     selfValidation,
     growth,
     productCost,

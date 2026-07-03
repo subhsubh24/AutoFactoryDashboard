@@ -3,6 +3,7 @@ import type { ApprovedChannel, PendingApproval } from "@/lib/approvals";
 import type { ProductInferenceCost } from "@/lib/cost";
 import type { Growth } from "@/lib/growth";
 import type { LoopHealth } from "@/lib/loophealth";
+import type { ValidatorStatus } from "@/lib/validator";
 import type { QualityScorecard } from "@/lib/scorecard";
 import type { SelfValidation } from "@/lib/validation";
 
@@ -293,6 +294,8 @@ export interface ProjectSnapshot {
   loopMemoryHealth: LoopMemoryHealth;
   /** docs/autonomous-loop/LOOP_HEALTH.md → the loop's self-reported health. */
   loopHealth: LoopHealth;
+  /** docs/autonomous-loop/VALIDATOR_STATUS.md → computer-use validator last sweep (§29). */
+  validator: ValidatorStatus;
   /** Capability self-validation gate (LOOP_HEALTH `validation` block / manifest). */
   selfValidation: SelfValidation;
 

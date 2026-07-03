@@ -45,7 +45,7 @@ export interface Routine {
 }
 
 /** When this schedule was last reconciled against the live triggers. */
-export const ROUTINE_SCHEDULE_AS_OF = "2026-06-30";
+export const ROUTINE_SCHEDULE_AS_OF = "2026-07-03";
 
 /** The live schedule — 19 active routines + the disabled cross-project digest. */
 export const ROUTINES: Routine[] = [
