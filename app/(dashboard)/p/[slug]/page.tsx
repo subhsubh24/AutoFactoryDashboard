@@ -54,6 +54,7 @@ import { CostPanel } from "@/components/CostPanel";
 import { RoadmapSteers } from "@/components/RoadmapSteers";
 import { GoLivePanel } from "@/components/GoLivePanel";
 import { LoopHealthPanel } from "@/components/LoopHealthPanel";
+import { ValidatorPanel } from "@/components/ValidatorPanel";
 import { RoutineSchedule } from "@/components/RoutineSchedule";
 import { SelfValidationPanel } from "@/components/SelfValidationPanel";
 import { QualityScorecardView, AuditorGaps } from "@/components/QualityScorecard";
@@ -767,6 +768,14 @@ export default async function ProjectPage({
                 exits 0 AND ≥3 adversarial auditors find no gap. Gates the loop
                 hasn&apos;t built yet read &ldquo;not yet built/run&rdquo; — not a failure.
               </p>
+            </SectionCard>
+          )}
+          {snapshot.validator.available && (
+            <SectionCard
+              title="Live validation"
+              subtitle="Computer-use agent drove the deployed app like a human — real flows, real findings"
+            >
+              <ValidatorPanel validator={snapshot.validator} />
             </SectionCard>
           )}
           <SectionCard
