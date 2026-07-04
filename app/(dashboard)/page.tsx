@@ -5,6 +5,7 @@ import {
   factoryDelta,
   humanAsksFor,
   projectDelta,
+  type NeedEntry,
   type NeedGroup,
   type ProjectDelta,
 } from "@/lib/aggregate";
@@ -784,6 +785,24 @@ function AskRow({ group }: { group: NeedGroup }) {
  * A project briefing tile: name → live app, a did/now/next summary, a progress
  * bar + completion estimate, and a Dashboard link.
  */
+/**
+ * A short "why" line for a tile's attention corner — the genuine human asks
+ * (priority order) with stuck PRs folded in. Capped at two phrases + a "+N" so
+ * it stays glanceable; the full list lives in "Needs you" and the project page.
+ */
+function attentionReason(asks: NeedEntry[], stuck: number): string | null {
+  const parts: string[] = [];
+  if (asks.some((a) => a.kind === "ready")) parts.push("ready to ship");
+  if (asks.some((a) => a.kind === "urgent_action")) parts.push("owner action");
+  const blockers = asks.filter((a) => a.kind === "blocker").length;
+  if (blockers > 0) parts.push(blockers > 1 ? `${blockers} blockers` : "blocker");
+  if (asks.some((a) => a.kind === "ci")) parts.push("CI failing");
+  if (stuck > 0) parts.push(`${stuck} stuck`);
+  if (parts.length === 0) return null;
+  if (parts.length <= 2) return parts.join(" · ");
+  return `${parts[0]} · ${parts[1]} · +${parts.length - 2}`;
+}
+
 function ProjectTile({
   snapshot: s,
   narrative,
@@ -801,7 +820,11 @@ function ProjectTile({
 }) {
   const status = statusMeta(s.status);
   const ci = ciMeta(s.ci.status);
-  const asks = humanAsksFor(s).length;
+  // Attention: genuine human asks (drive the "needs you" badge + the top count)
+  // and stuck PRs (a softer, separate signal). One corner block summarizes both.
+  const asks = humanAsksFor(s);
+  const stuck = s.stuckPRs;
+  const reason = attentionReason(asks, stuck);
   const appUrl = getProjectBySlug(s.slug)?.appUrl;
   const pct = headlinePct(s); // submission readiness (headline)
   const build = s.progress.buildPct; // build completeness (secondary)
@@ -855,35 +878,43 @@ function ProjectTile({
                   </span>
                 </>
               )}
-              {s.stuckPRs > 0 && (
-                <Chip
-                  tone="clay"
-                  title={`${s.stuckPRs} open pull request${
-                    s.stuckPRs === 1 ? " has" : "s have"
-                  } been open past 12h — review, merge, or close it to unblock the loop. Also listed under “Needs you”.`}
-                >
-                  {s.stuckPRs} stuck
-                </Chip>
-              )}
               {loopSignal && <LoopSignalChip signal={loopSignal} />}
             </div>
           </div>
         </div>
-        {asks > 0 ? (
-          <span className="shrink-0 rounded-full bg-clay-soft px-2 py-0.5 text-[11px] font-medium text-clay-strong">
-            needs you
-          </span>
-        ) : (
-          <span
-            className={cn(
-              "flex shrink-0 items-center gap-1.5 text-xs",
-              toneClasses(ci.tone).text,
-            )}
-          >
-            <span className={cn("h-1.5 w-1.5 rounded-full", toneClasses(ci.tone).dot)} />
-            CI {ci.label.toLowerCase()}
-          </span>
-        )}
+        {/* One attention corner: the badge says how loud, the line says why.
+            "needs you" is the curated human ask (matches the top count); a
+            stuck-only tile gets its own softer chip so it never inflates that
+            count. */}
+        <div className="flex shrink-0 flex-col items-end gap-1 text-right">
+          {asks.length > 0 ? (
+            <span className="rounded-full bg-clay-soft px-2.5 py-1 text-xs font-semibold text-clay-strong">
+              needs you
+            </span>
+          ) : stuck > 0 ? (
+            <Chip
+              tone="clay"
+              title={`${stuck} open pull request${
+                stuck === 1 ? " has" : "s have"
+              } been open past 12h — review, merge, or close it to unblock the loop.`}
+            >
+              {stuck} stuck
+            </Chip>
+          ) : (
+            <span
+              className={cn(
+                "flex items-center gap-1.5 text-xs",
+                toneClasses(ci.tone).text,
+              )}
+            >
+              <span className={cn("h-1.5 w-1.5 rounded-full", toneClasses(ci.tone).dot)} />
+              CI {ci.label.toLowerCase()}
+            </span>
+          )}
+          {asks.length > 0 && reason && (
+            <span className="text-[10px] leading-tight text-muted">{reason}</span>
+          )}
+        </div>
       </div>
 
       {tagline && (
