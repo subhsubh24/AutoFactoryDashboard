@@ -1,7 +1,8 @@
 import type { LoopHealth, LoopSignal } from "@/lib/loophealth";
 import { cn, type Tone } from "@/lib/utils";
 import { Chip } from "@/components/Chip";
-import { AlertIcon, ExternalLinkIcon } from "@/components/icons";
+import { Collapsible } from "@/components/Collapsible";
+import { ExternalLinkIcon } from "@/components/icons";
 
 /** Signal → label + tone. bootstrapping reads quiet ("not reported yet"). */
 export const LOOP_SIGNAL_META: Record<LoopSignal, { label: string; tone: Tone }> = {
@@ -174,18 +175,32 @@ export function LoopHealthPanel({
 
       {r7.recurringFailures.length > 0 && (
         <div className="border-t border-hairline pt-3">
-          <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-clay-strong">
-            <AlertIcon className="h-3.5 w-3.5" />
-            Recurring walls — the loop needs you
-          </p>
-          <ul className="space-y-1.5">
-            {r7.recurringFailures.map((f, i) => (
-              <li key={i} className="flex items-start gap-2 text-xs leading-snug text-ink">
-                <span aria-hidden className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-clay" />
-                <span>{f}</span>
-              </li>
-            ))}
-          </ul>
+          <Collapsible
+            title="Recurring walls · self-tracked"
+            count={r7.recurringFailures.length}
+            defaultOpen={false}
+            storageKey="afd-loop-walls"
+          >
+            <p className="mb-2.5 text-[11px] leading-snug text-muted">
+              The same wall hit across ≥2 runs. The loop logs these and usually
+              clears them itself — your cue to step in is an open harness proposal
+              (above), not this list.
+            </p>
+            <ul className="space-y-1.5">
+              {r7.recurringFailures.map((f, i) => (
+                <li
+                  key={i}
+                  className="flex items-start gap-2 text-xs leading-snug text-ink"
+                >
+                  <span
+                    aria-hidden
+                    className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted"
+                  />
+                  <span>{f}</span>
+                </li>
+              ))}
+            </ul>
+          </Collapsible>
         </div>
       )}
 

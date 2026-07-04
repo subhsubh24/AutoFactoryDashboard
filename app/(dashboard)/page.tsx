@@ -410,64 +410,73 @@ export default async function OverviewPage() {
           )}
         </div>
 
-        {/* Operational metrics — quieter, a single line of fine print. */}
-        <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 border-t border-hairline pt-4 text-xs">
-          <MiniStat label="Lead time" value={formatCycle(overview.factory.leadTimeHours)} />
-          <MiniStat
-            label="First-pass yield"
-            value={
-              overview.factory.firstPassYield === null
-                ? "—"
-                : `${overview.factory.firstPassYield}%`
-            }
-            tone={
-              overview.factory.firstPassYield !== null &&
-              overview.factory.firstPassYield < 80
-                ? "clay"
-                : undefined
-            }
-          />
-          <MiniStat
-            label="Rework"
-            value={
-              overview.factory.reworkRate === null
-                ? "—"
-                : `${overview.factory.reworkRate}%`
-            }
-            tone={
-              overview.factory.reworkRate !== null && overview.factory.reworkRate > 40
-                ? "clay"
-                : undefined
-            }
-          />
-          <MiniStat
-            label="WIP"
-            value={
-              overview.factory.wipStuck === 0
-                ? String(overview.factory.wipOpen)
-                : overview.factory.wipStuck === overview.factory.wipOpen
-                  ? `${overview.factory.wipOpen} stuck`
-                  : `${overview.factory.wipOpen} · ${overview.factory.wipStuck} stuck`
-            }
-            tone={overview.factory.wipStuck > 0 ? "clay" : undefined}
-          />
-          <MiniStat
-            label="Build"
-            value={overview.avgProgress === null ? "—" : `${overview.avgProgress}%`}
-          />
-          <MiniStat
-            label="Ready to ship"
-            value={`${readyToShip}/${overview.factory.totalProjects}`}
-            tone={readyToShip > 0 ? "sage" : undefined}
-          />
-          <MiniStat
-            label="Self-validation"
-            value={
-              `${validationGates}/${overview.factory.totalProjects} gates` +
-              (ownerBlocked > 0 ? ` · ${ownerBlocked} blocked` : "")
-            }
-            tone={ownerBlocked > 0 ? "clay" : undefined}
-          />
+        {/* Operational metrics — the diagnostics behind the trio. Deliberately
+            NOT headline tiles (that would flatten the hierarchy into ten equal
+            numbers); kept quiet and subordinate. But an aligned grid, not a
+            comma-wrap line, so each metric has a fixed slot and a red exception
+            actually draws the eye instead of getting buried mid-wrap. */}
+        <div className="mt-5 border-t border-hairline pt-4">
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+            Operational metrics
+          </p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3.5 sm:grid-cols-3">
+            <OpStat label="Lead time" value={formatCycle(overview.factory.leadTimeHours)} />
+            <OpStat
+              label="First-pass yield"
+              value={
+                overview.factory.firstPassYield === null
+                  ? "—"
+                  : `${overview.factory.firstPassYield}%`
+              }
+              tone={
+                overview.factory.firstPassYield !== null &&
+                overview.factory.firstPassYield < 80
+                  ? "clay"
+                  : undefined
+              }
+            />
+            <OpStat
+              label="Rework"
+              value={
+                overview.factory.reworkRate === null
+                  ? "—"
+                  : `${overview.factory.reworkRate}%`
+              }
+              tone={
+                overview.factory.reworkRate !== null && overview.factory.reworkRate > 40
+                  ? "clay"
+                  : undefined
+              }
+            />
+            <OpStat
+              label="WIP"
+              value={
+                overview.factory.wipStuck === 0
+                  ? String(overview.factory.wipOpen)
+                  : overview.factory.wipStuck === overview.factory.wipOpen
+                    ? `${overview.factory.wipOpen} stuck`
+                    : `${overview.factory.wipOpen} · ${overview.factory.wipStuck} stuck`
+              }
+              tone={overview.factory.wipStuck > 0 ? "clay" : undefined}
+            />
+            <OpStat
+              label="Build"
+              value={overview.avgProgress === null ? "—" : `${overview.avgProgress}%`}
+            />
+            <OpStat
+              label="Ready to ship"
+              value={`${readyToShip}/${overview.factory.totalProjects}`}
+              tone={readyToShip > 0 ? "sage" : undefined}
+            />
+            <OpStat
+              label="Self-validation"
+              value={
+                `${validationGates}/${overview.factory.totalProjects} gates` +
+                (ownerBlocked > 0 ? ` · ${ownerBlocked} blocked` : "")
+              }
+              tone={ownerBlocked > 0 ? "clay" : undefined}
+            />
+          </div>
         </div>
 
         <p className="mt-4 text-[11px] leading-relaxed text-muted">
@@ -625,8 +634,12 @@ function PrimaryStat({
   );
 }
 
-/** A quiet operational metric — inline "label value" fine print. */
-function MiniStat({
+/**
+ * A quiet operational metric — a small label-over-value cell in the ops grid.
+ * Subordinate to the headline trio (small type, no serif), but aligned so a
+ * clay (exception) or sage (win) value stands out of the grid at a glance.
+ */
+function OpStat({
   label,
   value,
   tone,
@@ -638,10 +651,12 @@ function MiniStat({
   const color =
     tone === "clay" ? "text-clay-strong" : tone === "sage" ? "text-sage-strong" : "text-ink";
   return (
-    <span className="inline-flex items-baseline gap-1.5">
-      <span className="text-muted">{label}</span>
-      <span className={cn("tabular font-medium", color)}>{value}</span>
-    </span>
+    <div>
+      <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-muted">
+        {label}
+      </p>
+      <p className={cn("mt-0.5 text-sm font-semibold tabular", color)}>{value}</p>
+    </div>
   );
 }
 
