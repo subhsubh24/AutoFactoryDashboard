@@ -53,6 +53,7 @@ import { ChannelApprovals } from "@/components/ChannelApprovals";
 import { CostPanel } from "@/components/CostPanel";
 import { RoadmapSteers } from "@/components/RoadmapSteers";
 import { GoLivePanel } from "@/components/GoLivePanel";
+import { MarketingPanel } from "@/components/MarketingPanel";
 import { LoopHealthPanel } from "@/components/LoopHealthPanel";
 import { ValidatorPanel } from "@/components/ValidatorPanel";
 import { RoutineSchedule } from "@/components/RoutineSchedule";
@@ -386,6 +387,16 @@ export default async function ProjectPage({
             goLive={snapshot.growth.goLive}
             metrics={snapshot.growth.metrics}
             pnlHistory={history?.map((m) => m.pnlPaper ?? null) ?? []}
+            sourceUrl={snapshot.growth.sourceUrl}
+          />
+        </div>
+      )}
+
+      {/* Autonomous marketing launch (§13) — opt-out gate; owner approves nothing. */}
+      {snapshot.growth.marketing && (
+        <div className="mb-6">
+          <MarketingPanel
+            marketing={snapshot.growth.marketing}
             sourceUrl={snapshot.growth.sourceUrl}
           />
         </div>
