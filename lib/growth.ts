@@ -186,6 +186,44 @@ export interface GrowthGoLive {
   ownerDecisionRequired: boolean | null;
 }
 
+// ── Autonomous marketing launch (GTM_STANDARD §13) ──────────────────────────
+
+/** proposed → live → held; `not_armed` = readiness not yet proven. */
+export type MarketingStatus = "not_armed" | "proposed" | "live" | "held";
+
+/** The three independent, non-self-certified readiness signals that ARM launch. */
+export interface MarketingReadiness {
+  shipGateMet: boolean | null;
+  e2eSweepGreen: boolean | null;
+  assetsReady: boolean | null;
+}
+
+/**
+ * Autonomous marketing launch — OPT-OUT (the owner approves nothing). Arms only
+ * when readiness is PROVEN (ship_gate_met + a full computer-use E2E sweep green +
+ * launch assets reviewed), proposes the plan, then auto-GOes after the veto
+ * window unless the kill switch (docs/growth/MARKETING_HOLD) is set. REAL state
+ * only — absent until a repo's growth agent emits the `marketing:` block.
+ */
+export interface GrowthMarketing {
+  status: MarketingStatus | null;
+  readiness: MarketingReadiness;
+  /** UTC stamp when readiness first held and the plan was proposed. */
+  armedAt: string | null;
+  vetoWindowHours: number | null;
+  /** UTC when it will (or did) flip live. */
+  goAt: string | null;
+  /** Owner-connected channels the plan will use (never invented). */
+  channels: string[];
+  /** The proposed initial plan (bullets). */
+  plan: string[];
+  /** Canary-ramp stage, once live. */
+  canaryStage: string | null;
+  /** Kill switch engaged (docs/growth/MARKETING_HOLD present). */
+  hold: boolean | null;
+  notes: string | null;
+}
+
 /** The parsed growth status for one project. Availability-gated like the rest. */
 export interface Growth extends Availability {
   /** GitHub blob URL for the source file (for the "see file" link). */
@@ -217,6 +255,8 @@ export interface Growth extends Availability {
   metrics?: GrowthMetrics;
   /** Quant-only: the real-money GO signal. Absent for non-quant projects. */
   goLive?: GrowthGoLive;
+  /** Autonomous marketing launch state (§13). Absent until a repo emits the block. */
+  marketing?: GrowthMarketing;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -645,6 +685,36 @@ function parseGoLive(g: Record<string, Yaml>): GrowthGoLive {
   };
 }
 
+const MARKETING_STATUSES: MarketingStatus[] = ["not_armed", "proposed", "live", "held"];
+
+/**
+ * Autonomous marketing launch block (§13). Status is validated against the enum;
+ * readiness booleans are default-deny (only literal `true` counts). REAL state
+ * only — we render exactly what the agent emitted, never a synthesized "live".
+ */
+function parseMarketing(m: Record<string, Yaml>): GrowthMarketing {
+  const statusStr = str(m.status);
+  const r = asObj(m.readiness);
+  return {
+    status: MARKETING_STATUSES.includes(statusStr as MarketingStatus)
+      ? (statusStr as MarketingStatus)
+      : null,
+    readiness: {
+      shipGateMet: bool(r.ship_gate_met),
+      e2eSweepGreen: bool(r.e2e_sweep_green),
+      assetsReady: bool(r.assets_ready),
+    },
+    armedAt: str(m.armed_at),
+    vetoWindowHours: num(m.veto_window_hours),
+    goAt: str(m.go_at),
+    channels: strArr(m.channels),
+    plan: strArr(m.plan),
+    canaryStage: str(m.canary_stage),
+    hold: bool(m.hold),
+    notes: str(m.notes),
+  };
+}
+
 const GROWTH_SIGNALS: GrowthSignal[] = ["none", "weak", "emerging", "strong"];
 
 /** Validate the signal enum; anything unknown (incl. absent) → null = "no signal yet". */
@@ -798,6 +868,7 @@ export function parseGrowth(
     // Quant-only blocks (LLM-Quant has no growth agent → no pmf/outreach either).
     ...(isObj(root.metrics) ? { metrics: parseMetrics(asObj(root.metrics)) } : {}),
     ...(isObj(root.go_live) ? { goLive: parseGoLive(asObj(root.go_live)) } : {}),
+    ...(isObj(root.marketing) ? { marketing: parseMarketing(asObj(root.marketing)) } : {}),
   };
 }
 
