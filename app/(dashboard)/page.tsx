@@ -47,6 +47,7 @@ import {
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { Delta24h, DeltaPill } from "@/components/Delta";
 import { GrowthLine } from "@/components/GrowthPanel";
+import { Chip } from "@/components/Chip";
 import { LoopSignalChip } from "@/components/LoopHealthPanel";
 import { NextRun } from "@/components/NextRun";
 import { RoutineSchedule } from "@/components/RoutineSchedule";
@@ -420,7 +421,11 @@ export default async function OverviewPage() {
             Operational metrics
           </p>
           <div className="grid grid-cols-2 gap-x-6 gap-y-3.5 sm:grid-cols-3">
-            <OpStat label="Lead time" value={formatCycle(overview.factory.leadTimeHours)} />
+            <OpStat
+              label="Lead time"
+              value={formatCycle(overview.factory.leadTimeHours)}
+              hint="median PR, open→merge"
+            />
             <OpStat
               label="First-pass yield"
               value={
@@ -428,6 +433,7 @@ export default async function OverviewPage() {
                   ? "—"
                   : `${overview.factory.firstPassYield}%`
               }
+              hint="avg CI pass rate"
               tone={
                 overview.factory.firstPassYield !== null &&
                 overview.factory.firstPassYield < 80
@@ -442,6 +448,7 @@ export default async function OverviewPage() {
                   ? "—"
                   : `${overview.factory.reworkRate}%`
               }
+              hint="fix ÷ merged PRs, 7d"
               tone={
                 overview.factory.reworkRate !== null && overview.factory.reworkRate > 40
                   ? "clay"
@@ -457,15 +464,18 @@ export default async function OverviewPage() {
                     ? `${overview.factory.wipOpen} stuck`
                     : `${overview.factory.wipOpen} · ${overview.factory.wipStuck} stuck`
               }
+              hint="open PRs · stuck >12h"
               tone={overview.factory.wipStuck > 0 ? "clay" : undefined}
             />
             <OpStat
               label="Build"
               value={overview.avgProgress === null ? "—" : `${overview.avgProgress}%`}
+              hint={`avg across ${overview.factory.totalProjects} lines`}
             />
             <OpStat
               label="Ready to ship"
               value={`${readyToShip}/${overview.factory.totalProjects}`}
+              hint="lines past submission gate"
               tone={readyToShip > 0 ? "sage" : undefined}
             />
             <OpStat
@@ -474,6 +484,7 @@ export default async function OverviewPage() {
                 `${validationGates}/${overview.factory.totalProjects} gates` +
                 (ownerBlocked > 0 ? ` · ${ownerBlocked} blocked` : "")
               }
+              hint="lines enforcing in CI"
               tone={ownerBlocked > 0 ? "clay" : undefined}
             />
           </div>
@@ -642,10 +653,13 @@ function PrimaryStat({
 function OpStat({
   label,
   value,
+  hint,
   tone,
 }: {
   label: string;
   value: string;
+  /** The unit + scope, so the number is unambiguous (avg? median? of what?). */
+  hint: string;
   tone?: "sage" | "clay";
 }) {
   const color =
@@ -655,7 +669,10 @@ function OpStat({
       <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-muted">
         {label}
       </p>
-      <p className={cn("mt-0.5 text-sm font-semibold tabular", color)}>{value}</p>
+      <p className={cn("mt-0.5 text-sm font-semibold leading-none tabular", color)}>
+        {value}
+      </p>
+      <p className="mt-1 text-[10px] leading-tight text-muted">{hint}</p>
     </div>
   );
 }
@@ -837,6 +854,16 @@ function ProjectTile({
                     <NextRun at={soonest.nextAt} cron={soonest.routine.cron} />
                   </span>
                 </>
+              )}
+              {s.stuckPRs > 0 && (
+                <Chip
+                  tone="clay"
+                  title={`${s.stuckPRs} open pull request${
+                    s.stuckPRs === 1 ? " has" : "s have"
+                  } been open past 12h — review, merge, or close it to unblock the loop. Also listed under “Needs you”.`}
+                >
+                  {s.stuckPRs} stuck
+                </Chip>
               )}
               {loopSignal && <LoopSignalChip signal={loopSignal} />}
             </div>
