@@ -17,6 +17,7 @@ import {
 } from "@/lib/aggregate";
 import { extractThemes, themeSummary } from "@/lib/themes";
 import { parseBusinessCase, type Valuation } from "@/lib/businesscase";
+import type { Growth } from "@/lib/growth";
 import {
   headlinePct,
   kindLabel,
@@ -1203,6 +1204,113 @@ export function getProjectTagline(s: ProjectSnapshot): Promise<string | null> {
     },
     cacheKey,
     { revalidate: 86_400 }, // daily; the SHA in the key busts it on any change
+  )();
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Growth summary — one sentence distilling the GTM state (LLM, number-pinned)
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface GrowthSummary {
+  /** One-sentence GTM digest; "" when there's nothing to summarize. */
+  text: string;
+  source: "llm" | "template";
+}
+
+const GROWTH_SUMMARY_SYSTEM =
+  "You write ONE sentence summarizing the go-to-market (GTM) state of a product " +
+  "built by an autonomous agent, for the owner's at-a-glance read. Say where GTM " +
+  "stands and the single most important thing the owner should know or do next. " +
+  "Ground STRICTLY in the data given — never invent numbers, channels, metrics, " +
+  "or facts; use only the numbers provided, verbatim. A pre-launch product has " +
+  "NOT launched: don't imply live users or revenue unless the funnel numbers " +
+  "show them. Plain prose, ONE sentence, no markdown, no preamble.";
+
+function growthSummaryContext(g: Growth): string {
+  const f = g.funnel;
+  const funnel = [
+    f.waitlistSignupsTotal !== null ? `waitlist ${f.waitlistSignupsTotal}` : "",
+    f.waitlistSignups7d !== null ? `+${f.waitlistSignups7d} in 7d` : "",
+    f.mrrUsd !== null ? `MRR $${f.mrrUsd}` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const learnings = g.learnings
+    .slice(0, 4)
+    .map((l) => `- ${clip(l, 320)}`)
+    .join("\n");
+  const nextActions = g.nextActions
+    .slice(0, 5)
+    .map((a) => `- ${clip(a, 220)}`)
+    .join("\n");
+  return [
+    `Phase: ${g.phase ?? "unknown"}`,
+    funnel ? `Funnel (use these numbers verbatim): ${funnel}` : "Funnel: no numbers yet",
+    learnings ? `What's working (agent's learnings):\n${learnings}` : "",
+    nextActions ? `Next actions / blockers:\n${nextActions}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** Deterministic fallback: phase + the top next-action or first learning. */
+function templateGrowthSummary(g: Growth): string {
+  const phase = g.phase === "post_launch" ? "Post-launch" : "Pre-launch";
+  if (g.nextActions[0]) return `${phase} — next: ${firstSentence(g.nextActions[0], 130)}`;
+  if (g.learnings[0]) return `${phase} — ${firstSentence(g.learnings[0], 130)}`;
+  return `${phase} growth work in progress.`;
+}
+
+/**
+ * One-sentence GTM digest for the Growth & marketing panel — distills the
+ * (often long) learnings + next_actions into a glanceable lead. LLM-written but
+ * number-pinned (the funnel figures are handed over verbatim with an explicit
+ * "never invent numbers"), with a deterministic fallback. Returns "" when there
+ * is nothing to summarize. Cached, busted on the growth content.
+ */
+export function getGrowthSummary(s: ProjectSnapshot): Promise<GrowthSummary> {
+  const g = s.growth;
+  if (!g.available || (g.learnings.length === 0 && g.nextActions.length === 0)) {
+    return Promise.resolve({ text: "", source: "template" });
+  }
+  if (buildPhase()) {
+    return Promise.resolve({ text: templateGrowthSummary(g), source: "template" });
+  }
+
+  const cacheKey = [
+    "afd-growthsummary",
+    CACHE_VERSION,
+    s.slug,
+    currentModel(),
+    String(g.asOf ?? ""),
+    String(g.learnings.length),
+    String(g.nextActions.length),
+    // Bust when the lead content changes, even if counts hold.
+    clip((g.learnings[0] ?? "") + "|" + (g.nextActions[0] ?? ""), 80),
+  ];
+
+  return unstable_cache(
+    async (): Promise<GrowthSummary> => {
+      const out = await callLLM(
+        [
+          { role: "system", content: GROWTH_SUMMARY_SYSTEM },
+          { role: "user", content: growthSummaryContext(g) },
+        ],
+        120,
+      );
+      if (out.text) {
+        let t = out.text
+          .replace(/\s+/g, " ")
+          .trim()
+          .replace(/^["'“”]+|["'“”]+$/g, "")
+          .trim();
+        if (t.length > 220) t = `${t.slice(0, 220).replace(/\s+\S*$/, "").trim()}…`;
+        if (t.length >= 12) return { text: t, source: "llm" };
+      }
+      return { text: templateGrowthSummary(g), source: "template" };
+    },
+    cacheKey,
+    { revalidate: 600 },
   )();
 }
 

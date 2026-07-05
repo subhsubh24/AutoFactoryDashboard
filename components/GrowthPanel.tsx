@@ -19,8 +19,10 @@ import {
   ExternalLinkIcon,
   MailIcon,
   ShieldIcon,
+  SparkleIcon,
 } from "@/components/icons";
 import { Sparkline } from "@/components/Sparkline";
+import { Collapsible } from "@/components/Collapsible";
 
 /** Owner's Gmail drafts — where the outreach draft bodies actually live. */
 const GMAIL_DRAFTS_URL = "https://mail.google.com/mail/u/0/#drafts";
@@ -421,12 +423,15 @@ function LaunchReadinessTile({ lr }: { lr: LaunchReadiness }) {
  */
 export function GrowthPanel({
   growth,
+  summary,
   waitlistDelta = null,
   mrrDelta = null,
   retentionTrend = [],
   className,
 }: {
   growth: Growth;
+  /** One-sentence GTM digest (from getGrowthSummary) — the lead above the detail. */
+  summary?: { text: string; source: "llm" | "template" };
   /** Day-over-day waitlist delta (from ProjectDelta), shown when positive. */
   waitlistDelta?: number | null;
   /** Day-over-day MRR delta (from ProjectDelta), shown when positive. */
@@ -506,6 +511,18 @@ export function GrowthPanel({
           </span>
         )}
       </div>
+
+      {/* One-line AI digest of the GTM state — the lead above the detail; the
+          long learnings / next-actions collapse below it. */}
+      {summary?.text && (
+        <div className="rounded-xl border border-hairline bg-bg px-4 py-3">
+          <p className="text-sm leading-snug text-ink">{summary.text}</p>
+          <p className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-muted">
+            <SparkleIcon className="h-3 w-3" />
+            {summary.source === "llm" ? "AI summary" : "Summary"}
+          </p>
+        </div>
+      )}
 
       {/* Launch readiness — the agent's launch-timing call (only when emitted). */}
       {growth.launchReadiness && <LaunchReadinessTile lr={growth.launchReadiness} />}
@@ -624,37 +641,46 @@ export function GrowthPanel({
         </div>
       )}
 
-      {/* Top learnings (richest post-launch). */}
+      {/* Top learnings — long paragraphs; collapsed (default closed) so the AI
+          summary above carries the gist and the panel stays scannable. */}
       {growth.learnings.length > 0 && (
         <div className="border-t border-hairline pt-3">
-          <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
-            What&apos;s working
-          </p>
-          <ul className="space-y-1 text-sm text-ink">
-            {growth.learnings.slice(0, 3).map((l, i) => (
-              <li key={i} className="flex items-start gap-2">
-                <span aria-hidden className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-sage" />
-                <span>{l}</span>
-              </li>
-            ))}
-          </ul>
+          <Collapsible
+            title="What's working"
+            count={Math.min(3, growth.learnings.length)}
+            defaultOpen={false}
+            storageKey="afd-growth-learnings"
+          >
+            <ul className="space-y-1 text-sm text-ink">
+              {growth.learnings.slice(0, 3).map((l, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span aria-hidden className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-sage" />
+                  <span>{l}</span>
+                </li>
+              ))}
+            </ul>
+          </Collapsible>
         </div>
       )}
 
-      {/* What the GTM agent will do next — its own plan from next_actions. */}
+      {/* The GTM agent's own next_actions — verbose; collapsed. */}
       {growth.nextActions.length > 0 && (
         <div className="border-t border-hairline pt-3">
-          <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
-            Next actions · GTM agent
-          </p>
-          <ul className="space-y-1.5 text-sm text-ink">
-            {growth.nextActions.slice(0, 4).map((a, i) => (
-              <li key={i} className="flex items-start gap-2 leading-snug">
-                <ArrowRightIcon className="mt-1 h-3 w-3 shrink-0 text-muted/60" />
-                <span>{a}</span>
-              </li>
-            ))}
-          </ul>
+          <Collapsible
+            title="Next actions · GTM agent"
+            count={Math.min(4, growth.nextActions.length)}
+            defaultOpen={false}
+            storageKey="afd-growth-nextactions"
+          >
+            <ul className="space-y-1.5 text-sm text-ink">
+              {growth.nextActions.slice(0, 4).map((a, i) => (
+                <li key={i} className="flex items-start gap-2 leading-snug">
+                  <ArrowRightIcon className="mt-1 h-3 w-3 shrink-0 text-muted/60" />
+                  <span>{a}</span>
+                </li>
+              ))}
+            </ul>
+          </Collapsible>
         </div>
       )}
 

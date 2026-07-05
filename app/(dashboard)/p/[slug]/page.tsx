@@ -7,6 +7,7 @@ import { runsFor, workloadFor } from "@/lib/routine";
 import { getProjectSnapshot } from "@/lib/github";
 import {
   getActionPlan,
+  getGrowthSummary,
   getNarrative,
   getLaunchSummary,
   getProjectTagline,
@@ -103,13 +104,15 @@ export default async function ProjectPage({
   if (!project) notFound();
 
   const snapshot = await getProjectSnapshot(project);
-  const [narrative, history, valuation, actionPlan, tagline] = await Promise.all([
-    getNarrative(snapshot),
-    getHistory(slug),
-    getValuation(snapshot),
-    getActionPlan(snapshot),
-    getProjectTagline(snapshot),
-  ]);
+  const [narrative, history, valuation, actionPlan, tagline, growthSummary] =
+    await Promise.all([
+      getNarrative(snapshot),
+      getHistory(slug),
+      getValuation(snapshot),
+      getActionPlan(snapshot),
+      getProjectTagline(snapshot),
+      getGrowthSummary(snapshot),
+    ]);
   // "What the factory built" — only meaningful once flagged ready to submit.
   const launch = snapshot.readyForSubmission
     ? await getLaunchSummary(snapshot)
@@ -581,6 +584,7 @@ export default async function ProjectPage({
           >
             <GrowthPanel
               growth={snapshot.growth}
+              summary={growthSummary}
               waitlistDelta={delta.dWaitlist}
               mrrDelta={delta.dMrr}
               retentionTrend={retentionTrend}
