@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getProjectBySlug } from "@/config/projects";
 import { routinesForSlug, ROUTINE_SCHEDULE_AS_OF } from "@/config/routines";
-import { runsFor, soonestRun, workloadFor } from "@/lib/routine";
+import { runsFor, workloadFor } from "@/lib/routine";
 import { getProjectSnapshot } from "@/lib/github";
 import {
   getActionPlan,
@@ -44,7 +44,6 @@ import { ActionPlan } from "@/components/ActionPlan";
 import { Chip } from "@/components/Chip";
 import { Collapsible } from "@/components/Collapsible";
 import { CollapsibleSection } from "@/components/CollapsibleSection";
-import { StatusSummary } from "@/components/StatusSummary";
 import { CIHealth } from "@/components/CIHealth";
 import { HistoryCharts } from "@/components/HistoryCharts";
 import { RelativeTime } from "@/components/RelativeTime";
@@ -136,8 +135,6 @@ export default async function ProjectPage({
   // The project's autonomous routines + their next runs — from the authoritative
   // cron schedule (config/routines.ts), computed live in UTC (never cached).
   const routineRuns = runsFor(routinesForSlug(slug));
-  // The soonest of those runs — feeds the "Next" line of the status summary.
-  const soonest = soonestRun(routineRuns);
   // Scheduled-run workload (the activity-as-cost proxy's backbone) — runs/week
   // per routine, computed live from the same authoritative cron schedule.
   const workload = workloadFor(routinesForSlug(slug));
@@ -240,9 +237,6 @@ export default async function ProjectPage({
           </div>
         </div>
       </div>
-
-      {/* The TL;DR — now / next / you — before any of the detail below. */}
-      <StatusSummary snapshot={snapshot} soonest={soonest} />
 
       {/* Ready-to-ship banner */}
       {snapshot.readyForSubmission && (
