@@ -888,7 +888,7 @@ function ProjectTile({
             second line on a narrow tile rather than crowding the name. */}
         <div className="flex max-w-[45%] flex-col items-end">
           {asks.length > 0 ? (
-            <span className="inline-flex max-w-full flex-wrap items-baseline justify-end gap-x-1.5 rounded-2xl bg-clay-soft px-2.5 py-1 text-[11px] leading-snug text-clay-strong">
+            <span className="inline-flex max-w-full flex-col items-end gap-0.5 rounded-2xl bg-clay-soft px-2.5 py-1 text-right text-[11px] leading-tight text-clay-strong">
               <span className="font-semibold">needs you</span>
               {reason && <span className="font-normal text-clay-strong/85">{reason}</span>}
             </span>
