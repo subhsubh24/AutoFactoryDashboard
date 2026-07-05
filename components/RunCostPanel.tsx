@@ -100,6 +100,19 @@ export function RunCostPanel({ runCost }: { runCost: RunCost }) {
   const maxRole = runCost.byRole.reduce((m, l) => Math.max(m, l.usd), 0);
   const hasTrend = runCost.daily.some((d) => d > 0);
 
+  // Token usage detail (fills the Cost & compute section beyond the cost lines).
+  const mix = runCost.tokenMix;
+  const mixLines = [
+    { label: "Input", n: mix.input },
+    { label: "Output", n: mix.output },
+    { label: "Cache read", n: mix.cacheRead },
+    { label: "Cache write", n: mix.cacheWrite },
+  ].filter((l) => l.n > 0);
+  const maxMix = mixLines.reduce((m, l) => Math.max(m, l.n), 0);
+  const cacheableInput = mix.input + mix.cacheRead + mix.cacheWrite;
+  const cacheHitRate = cacheableInput > 0 ? mix.cacheRead / cacheableInput : null;
+  const hasTokenTrend = runCost.dailyTokens.some((t) => t > 0);
+
   return (
     <div className="rounded-xl border border-hairline bg-bg px-4 py-3.5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -136,6 +149,43 @@ export function RunCostPanel({ runCost }: { runCost: RunCost }) {
 
       <Lines title="By routine" lines={runCost.byRole} max={maxRole} />
       <Lines title="By model" lines={runCost.byModel} max={maxModel} mono />
+
+      {/* Token usage detail — the "compute" half of the section. */}
+      {runCost.tokensInWindow > 0 && (
+        <div className="mt-4 border-t border-hairline pt-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
+              Token usage
+            </p>
+            <span className="text-[11px] tabular text-muted">
+              {fmtTokens(runCost.tokensInWindow)} total
+              {cacheHitRate !== null && ` · ${Math.round(cacheHitRate * 100)}% from cache`}
+            </span>
+          </div>
+
+          {hasTokenTrend && (
+            <div className="mt-2 flex items-center gap-2">
+              <PulseIcon className="h-3.5 w-3.5 text-muted" />
+              <Sparkline values={runCost.dailyTokens} />
+              <span className="text-[10px] text-muted">tokens / day</span>
+            </div>
+          )}
+
+          {mixLines.length > 0 && (
+            <ul className="mt-3 space-y-1.5">
+              {mixLines.map((l) => (
+                <li key={l.label} className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1">
+                  <span className="truncate text-[12px] text-ink">{l.label}</span>
+                  <span className="tabular text-xs font-medium text-ink">{fmtTokens(l.n)}</span>
+                  <span className="col-span-2">
+                    <CostBar value={l.n} max={maxMix} />
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <p className="mt-3 text-[11px] leading-relaxed text-muted">
         Estimate: each routine sums its own session-transcript tokens by model (§33) × list price

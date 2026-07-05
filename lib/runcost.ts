@@ -42,6 +42,10 @@ export interface RunCost extends Availability {
   daily: number[];
   /** Total tokens (all types) over the window — powers avg tokens/run. */
   tokensInWindow: number;
+  /** Window token totals split by type — the input/output/cache mix. */
+  tokenMix: TokenCounts;
+  /** Daily total tokens over the window (oldest→newest) for a sparkline. */
+  dailyTokens: number[];
   /** True if any run referenced a model with no known price (estimate is looser). */
   hasUnknownModel: boolean;
 }
@@ -114,6 +118,8 @@ export function parseRunCost(
     byRole: [],
     daily: [],
     tokensInWindow: 0,
+    tokenMix: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    dailyTokens: [],
     hasUnknownModel: false,
   };
   if (!jsonl || !jsonl.trim()) {
@@ -144,6 +150,8 @@ export function parseRunCost(
   const byModelUsd = new Map<string, number>();
   const byRoleUsd = new Map<string, number>();
   const byDayUsd = new Map<string, number>();
+  const byDayTokens = new Map<string, number>();
+  const tokenMix: TokenCounts = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   let totalUsd = 0;
   let windowUsd = 0;
   let runsInWindow = 0;
@@ -159,7 +167,13 @@ export function parseRunCost(
       rowUsd += usdFor(model, t);
       rowTokens += sumTokens(t);
       if (isUnknownModel(model)) hasUnknownModel = true;
-      if (inWindow) byModelUsd.set(model, (byModelUsd.get(model) ?? 0) + usdFor(model, t));
+      if (inWindow) {
+        byModelUsd.set(model, (byModelUsd.get(model) ?? 0) + usdFor(model, t));
+        tokenMix.input += t.input;
+        tokenMix.output += t.output;
+        tokenMix.cacheRead += t.cacheRead;
+        tokenMix.cacheWrite += t.cacheWrite;
+      }
     }
     totalUsd += rowUsd;
     if (inWindow) {
@@ -168,6 +182,7 @@ export function parseRunCost(
       runsInWindow += 1;
       byRoleUsd.set(r.role, (byRoleUsd.get(r.role) ?? 0) + rowUsd);
       byDayUsd.set(r.date, (byDayUsd.get(r.date) ?? 0) + rowUsd);
+      byDayTokens.set(r.date, (byDayTokens.get(r.date) ?? 0) + rowTokens);
     }
   }
 
@@ -179,10 +194,12 @@ export function parseRunCost(
 
   // Daily series across the whole window (fill gaps with 0), oldest→newest.
   const daily: number[] = [];
+  const dailyTokens: number[] = [];
   const startDay = new Date(now - windowDays * DAY_MS);
   for (let i = 0; i <= windowDays; i++) {
     const d = new Date(startDay.getTime() + i * DAY_MS).toISOString().slice(0, 10);
     daily.push(byDayUsd.get(d) ?? 0);
+    dailyTokens.push(byDayTokens.get(d) ?? 0);
   }
 
   if (windowUsd === 0 && totalUsd === 0) {
@@ -201,6 +218,8 @@ export function parseRunCost(
     byRole: toLines(byRoleUsd),
     daily,
     tokensInWindow,
+    tokenMix,
+    dailyTokens,
     hasUnknownModel,
   };
 }
