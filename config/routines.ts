@@ -12,8 +12,9 @@
  * no credentials and is plenty accurate for a "next run in ~3h" display.)
  *
  * Per project:
- *   - product_factory  — builds the product (every 6h, staggered per project;
- *                         LLM-Quant's is a Model Factory)
+ *   - product_factory  — builds the product (every 8h, staggered per project;
+ *                         LLM-Quant's is a Model Factory). Cadence reduced from
+ *                         6h→8h on 2026-07-05 to hold weekly usage ≈85% of budget.
  *   - gtm_factory      — go-to-market growth engine (every 2 days; not LLM-Quant)
  *   - research         — research + alpha (daily; LLM-Quant only)
  *   - quality_auditor  — independent product-quality audit (every 2 days)
@@ -45,16 +46,16 @@ export interface Routine {
 }
 
 /** When this schedule was last reconciled against the live triggers. */
-export const ROUTINE_SCHEDULE_AS_OF = "2026-07-03";
+export const ROUTINE_SCHEDULE_AS_OF = "2026-07-05";
 
 /** The live schedule — 19 active routines + the disabled cross-project digest. */
 export const ROUTINES: Routine[] = [
   // Product factories — every 6h, staggered one hour apart.
-  { slug: "aptdesignerai", type: "product_factory", cron: "0 0,6,12,18 * * *", enabled: true },
-  { slug: "highlightmagic", type: "product_factory", cron: "0 1,7,13,19 * * *", enabled: true },
-  { slug: "grocerymanager", type: "product_factory", cron: "0 2,8,14,20 * * *", enabled: true },
-  { slug: "jobscraper", type: "product_factory", cron: "0 3,9,15,21 * * *", enabled: true },
-  { slug: "llm-quant", type: "product_factory", cron: "0 4,10,16,22 * * *", enabled: true }, // Model Factory
+  { slug: "aptdesignerai", type: "product_factory", cron: "11 0,8,16 * * *", enabled: true },
+  { slug: "highlightmagic", type: "product_factory", cron: "51 2,10,18 * * *", enabled: true },
+  { slug: "grocerymanager", type: "product_factory", cron: "31 1,9,17 * * *", enabled: true },
+  { slug: "jobscraper", type: "product_factory", cron: "11 4,12,20 * * *", enabled: true },
+  { slug: "llm-quant", type: "product_factory", cron: "31 5,13,21 * * *", enabled: true }, // Model Factory
   // GTM factories — every 2 days (odd calendar days), staggered.
   { slug: "aptdesignerai", type: "gtm_factory", cron: "0 5 */2 * *", enabled: true },
   { slug: "highlightmagic", type: "gtm_factory", cron: "0 11 */2 * *", enabled: true },
