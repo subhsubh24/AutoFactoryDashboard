@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { getAllSnapshots } from "@/lib/github";
 import {
+  attentionReason,
   buildOverview,
   factoryDelta,
   humanAsksFor,
   projectDelta,
-  type NeedEntry,
   type NeedGroup,
   type ProjectDelta,
 } from "@/lib/aggregate";
@@ -785,24 +785,6 @@ function AskRow({ group }: { group: NeedGroup }) {
  * A project briefing tile: name → live app, a did/now/next summary, a progress
  * bar + completion estimate, and a Dashboard link.
  */
-/**
- * A short "why" line for a tile's attention corner — the genuine human asks
- * (priority order) with stuck PRs folded in. Capped at two phrases + a "+N" so
- * it stays glanceable; the full list lives in "Needs you" and the project page.
- */
-function attentionReason(asks: NeedEntry[], stuck: number): string | null {
-  const parts: string[] = [];
-  if (asks.some((a) => a.kind === "ready")) parts.push("ready to ship");
-  if (asks.some((a) => a.kind === "urgent_action")) parts.push("owner action");
-  const blockers = asks.filter((a) => a.kind === "blocker").length;
-  if (blockers > 0) parts.push(blockers > 1 ? `${blockers} blockers` : "blocker");
-  if (asks.some((a) => a.kind === "ci")) parts.push("CI failing");
-  if (stuck > 0) parts.push(`${stuck} stuck`);
-  if (parts.length === 0) return null;
-  if (parts.length <= 2) return parts.join(" · ");
-  return `${parts[0]} · ${parts[1]} · +${parts.length - 2}`;
-}
-
 function ProjectTile({
   snapshot: s,
   narrative,

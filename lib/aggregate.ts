@@ -243,6 +243,25 @@ export function humanAsksFor(s: ProjectSnapshot): NeedEntry[] {
   return needsFor(s).filter(isHumanAsk);
 }
 
+/**
+ * A short "why does this need you" line — the genuine human asks (priority
+ * order) with stuck PRs folded in. Capped at two phrases + a "+N" so it stays
+ * glanceable. Returns null when nothing needs the owner. Shared by the Floor
+ * tile's attention chip and the project page's status summary so they agree.
+ */
+export function attentionReason(asks: NeedEntry[], stuck: number): string | null {
+  const parts: string[] = [];
+  if (asks.some((a) => a.kind === "ready")) parts.push("ready to ship");
+  if (asks.some((a) => a.kind === "urgent_action")) parts.push("owner action");
+  const blockers = asks.filter((a) => a.kind === "blocker").length;
+  if (blockers > 0) parts.push(blockers > 1 ? `${blockers} blockers` : "blocker");
+  if (asks.some((a) => a.kind === "ci")) parts.push("CI failing");
+  if (stuck > 0) parts.push(`${stuck} stuck`);
+  if (parts.length === 0) return null;
+  if (parts.length <= 2) return parts.join(" · ");
+  return `${parts[0]} · ${parts[1]} · +${parts.length - 2}`;
+}
+
 const OVERNIGHT_MS = 24 * 60 * 60 * 1000;
 
 export interface VelocityDay {
