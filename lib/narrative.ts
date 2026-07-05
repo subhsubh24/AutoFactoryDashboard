@@ -1235,8 +1235,9 @@ function growthSummaryContext(g: Growth): string {
   ]
     .filter(Boolean)
     .join(", ");
-  const learnings = g.learnings
-    .slice(0, 4)
+  const learnings = [...g.learnings]
+    .slice(-4)
+    .reverse()
     .map((l) => `- ${clip(l, 320)}`)
     .join("\n");
   const nextActions = g.nextActions
@@ -1257,7 +1258,8 @@ function growthSummaryContext(g: Growth): string {
 function templateGrowthSummary(g: Growth): string {
   const phase = g.phase === "post_launch" ? "Post-launch" : "Pre-launch";
   if (g.nextActions[0]) return `${phase} — next: ${firstSentence(g.nextActions[0], 130)}`;
-  if (g.learnings[0]) return `${phase} — ${firstSentence(g.learnings[0], 130)}`;
+  const latestLearning = g.learnings[g.learnings.length - 1];
+  if (latestLearning) return `${phase} — ${firstSentence(latestLearning, 130)}`;
   return `${phase} growth work in progress.`;
 }
 
@@ -1285,8 +1287,9 @@ export function getGrowthSummary(s: ProjectSnapshot): Promise<GrowthSummary> {
     String(g.asOf ?? ""),
     String(g.learnings.length),
     String(g.nextActions.length),
-    // Bust when the lead content changes, even if counts hold.
-    clip((g.learnings[0] ?? "") + "|" + (g.nextActions[0] ?? ""), 80),
+    // Bust when the lead content changes, even if counts hold — key on the NEWEST
+    // learning (the one now shown), not the oldest (which never changes).
+    clip((g.learnings[g.learnings.length - 1] ?? "") + "|" + (g.nextActions[0] ?? ""), 80),
   ];
 
   return unstable_cache(
