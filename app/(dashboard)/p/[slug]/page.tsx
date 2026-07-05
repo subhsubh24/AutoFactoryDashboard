@@ -39,6 +39,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { TrackBars } from "@/components/TrackBars";
 import { ThemeChips } from "@/components/ThemeChips";
 import { ValuationView } from "@/components/ValuationView";
+import { DemandConfidenceNote } from "@/components/DemandConfidenceNote";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { ActionItemsPanel } from "@/components/ActionItemsPanel";
 import { ActionPlan } from "@/components/ActionPlan";
@@ -375,6 +376,7 @@ export default async function ProjectPage({
               {valuation.rationale && (
                 <p className="mt-1 text-xs italic text-muted">{valuation.rationale}</p>
               )}
+              <DemandConfidenceNote demand={snapshot.growth.demand} />
             </div>
           )}
           <p className="mt-3 border-t border-hairline pt-3 text-xs text-muted">
