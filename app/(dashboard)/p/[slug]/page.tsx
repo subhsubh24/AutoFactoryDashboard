@@ -50,6 +50,7 @@ import { HistoryCharts } from "@/components/HistoryCharts";
 import { RelativeTime } from "@/components/RelativeTime";
 import { Delta24h } from "@/components/Delta";
 import { GrowthPanel } from "@/components/GrowthPanel";
+import { DemandSignalPanel } from "@/components/DemandSignalPanel";
 import { ChannelApprovals } from "@/components/ChannelApprovals";
 import { CostPanel } from "@/components/CostPanel";
 import { RunCostPanel } from "@/components/RunCostPanel";
@@ -601,6 +602,11 @@ export default async function ProjectPage({
               mrrDelta={delta.dMrr}
               retentionTrend={retentionTrend}
             />
+            {snapshot.growth.demand && (
+              <div className="mt-4">
+                <DemandSignalPanel demand={snapshot.growth.demand} />
+              </div>
+            )}
           </SectionCard>
 
           {(snapshot.pendingApprovals.length > 0 ||
