@@ -52,6 +52,7 @@ import { Delta24h } from "@/components/Delta";
 import { GrowthPanel } from "@/components/GrowthPanel";
 import { ChannelApprovals } from "@/components/ChannelApprovals";
 import { CostPanel } from "@/components/CostPanel";
+import { RunCostPanel } from "@/components/RunCostPanel";
 import { RoadmapSteers } from "@/components/RoadmapSteers";
 import { GoLivePanel } from "@/components/GoLivePanel";
 import { MarketingPanel } from "@/components/MarketingPanel";
@@ -613,16 +614,19 @@ export default async function ProjectPage({
 
           <CollapsibleSection
             title="Cost & compute"
-            subtitle="Metered inference spend (when published) + activity proxies — not a token bill"
+            subtitle="Per-routine factory run cost (self-reported tokens × price table) + product inference spend"
             storageKey={`afd-cost-${slug}`}
           >
-            <CostPanel
-              cost={snapshot.productCost}
-              workload={workload}
-              merged7d={snapshot.merged7d}
-              loop={snapshot.loopHealth}
-              mergedTrend={mergedTrend}
-            />
+            <RunCostPanel runCost={snapshot.runCost} />
+            <div className="mt-4">
+              <CostPanel
+                cost={snapshot.productCost}
+                workload={workload}
+                merged7d={snapshot.merged7d}
+                loop={snapshot.loopHealth}
+                mergedTrend={mergedTrend}
+              />
+            </div>
           </CollapsibleSection>
 
           {snapshot.roadmapSteers.length > 0 && (

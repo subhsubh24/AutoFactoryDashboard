@@ -1,6 +1,7 @@
 import type { ProjectKind } from "@/config/projects";
 import type { ApprovedChannel, PendingApproval } from "@/lib/approvals";
 import type { ProductInferenceCost } from "@/lib/cost";
+import type { RunCost } from "@/lib/runcost";
 import type { Growth } from "@/lib/growth";
 import type { LoopHealth } from "@/lib/loophealth";
 import type { ValidatorStatus } from "@/lib/validator";
@@ -304,6 +305,8 @@ export interface ProjectSnapshot {
   growth: Growth;
   /** Product runtime LLM spend — metered in-app; `available:false` until a repo publishes it. */
   productCost: ProductInferenceCost;
+  /** docs/autonomous-loop/COST_LEDGER.jsonl → per-routine/per-model factory run cost (§33). */
+  runCost: RunCost;
   /** Recent ROADMAP.md / VISION.md changes — GTM-driven product-direction steers. */
   roadmapSteers: RoadmapSteer[];
   /** docs/quality/QUALITY_SCORECARD.md → independent A+→F product-quality grades. */

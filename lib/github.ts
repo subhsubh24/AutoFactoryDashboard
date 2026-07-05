@@ -15,6 +15,7 @@ import { parseApprovedChannels, parsePendingApprovals } from "@/lib/approvals";
 import { parseProductCost } from "@/lib/cost";
 import { parseLoopHealth } from "@/lib/loophealth";
 import { parseValidatorStatus } from "@/lib/validator";
+import { parseRunCost } from "@/lib/runcost";
 import { parseScorecard } from "@/lib/scorecard";
 import { parseSelfValidation } from "@/lib/validation";
 import type {
@@ -616,6 +617,7 @@ function degraded(
     selfValidation: parseSelfValidation(null, undefined, null, undefined),
     growth: parseGrowth(null),
     productCost: parseProductCost(null),
+    runCost: parseRunCost(null),
     pendingApprovals: [],
     approvedChannels: [],
     roadmapSteers: [],
@@ -713,6 +715,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     capabilitiesFile,
     gtmScorecardFile,
     validatorFile,
+    costLedgerFile,
     roadmapSteers,
   ] = await Promise.all([
     fetchPulls(octokit, owner, repo, errors),
@@ -743,6 +746,8 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     fetchFile(octokit, owner, repo, workingBranch, "docs/growth/GTM_SCORECARD.md"),
     // Recent ROADMAP.md / VISION.md changes — the GTM-driven product steers.
     fetchFile(octokit, owner, repo, workingBranch, "docs/autonomous-loop/VALIDATOR_STATUS.md"),
+    // Per-routine run cost — the append-only token ledger the routines self-report (§33).
+    fetchFile(octokit, owner, repo, workingBranch, "docs/autonomous-loop/COST_LEDGER.jsonl"),
     fetchRoadmapSteers(octokit, owner, repo, workingBranch),
   ]);
 
@@ -760,6 +765,14 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
   const productCost = parseProductCost(
     growthFile.available ? growthFile.content : null,
     growthUrl,
+  );
+  // Per-routine factory run cost — the append-only token ledger (§33), priced via
+  // config/model-prices.ts. Absent until the routines start reporting → unavailable.
+  const runCost = parseRunCost(
+    costLedgerFile.available ? costLedgerFile.content : null,
+    costLedgerFile.available
+      ? `${repoUrl}/blob/${workingBranch}/docs/autonomous-loop/COST_LEDGER.jsonl`
+      : undefined,
   );
   // GTM channel approvals — proposals from GROWTH_STATUS, the owner's approved
   // record from PENDING_OPS. Both [] when absent (the pre-launch norm); the
@@ -934,6 +947,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     selfValidation,
     growth,
     productCost,
+    runCost,
     pendingApprovals,
     approvedChannels,
     roadmapSteers,
