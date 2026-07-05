@@ -26,6 +26,11 @@ export interface SelfValidation extends Availability {
   active: number | null;
   /** Capabilities needing an owner-only secret CI can't supply — owner-blocked. */
   unmet: string[];
+  /**
+   * Capabilities whose key IS provided but whose eval the LOOP must still build —
+   * NOT owner-blocked. The loop is working on these; nothing is blocked on you.
+   */
+  awaitingLoopEval: string[];
   /** Unmet capabilities NOT also surfaced as owner actions — should be empty (a bug if not). */
   unmetUnsurfaced: string[];
   /** Where the data came from. */
@@ -55,6 +60,7 @@ function blank(reason: string, sourceUrl?: string): SelfValidation {
     capabilitiesTotal: null,
     active: null,
     unmet: [],
+    awaitingLoopEval: [],
     unmetUnsurfaced: [],
     sourceUrl,
   };
@@ -80,6 +86,7 @@ export function parseSelfValidation(
       capabilitiesTotal: numOrNull(v.capabilities_total),
       active: numOrNull(v.active),
       unmet: strList(v.unmet),
+      awaitingLoopEval: strList(v.awaiting_loop_eval),
       unmetUnsurfaced: strList(v.unmet_unsurfaced),
       source: "loop_health",
       sourceUrl: loopHealthUrl,
@@ -102,6 +109,7 @@ export function parseSelfValidation(
       capabilitiesTotal: caps.length,
       active: null,
       unmet,
+      awaitingLoopEval: [],
       unmetUnsurfaced: [],
       source: "manifest",
       sourceUrl: manifestUrl,

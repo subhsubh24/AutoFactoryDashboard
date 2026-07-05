@@ -140,6 +140,26 @@ export function SelfValidationPanel({
             </p>
           )}
 
+          {sv.awaitingLoopEval.length > 0 && (
+            <div className="rounded-xl border border-hairline bg-sage-soft/40 px-3 py-2.5">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-sage-strong">
+                <ShieldIcon className="h-3.5 w-3.5" />
+                {sv.awaitingLoopEval.length} awaiting loop validation
+              </p>
+              <ul className="mt-1.5 space-y-1">
+                {sv.awaitingLoopEval.map((c) => (
+                  <li key={c} className="flex items-start gap-2 text-xs text-ink">
+                    <span aria-hidden className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-sage" />
+                    <span className="font-mono">{c}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[11px] leading-relaxed text-muted">
+                The key is provided — the loop is building these evals. Not blocked on you.
+              </p>
+            </div>
+          )}
+
           {sv.unmetUnsurfaced.length > 0 && (
             <p className="flex items-start gap-1.5 text-[11px] text-clay-strong">
               <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -221,6 +241,7 @@ export function SelfValidationLine({ sv }: { sv: SelfValidation }) {
     );
   }
   const unmet = sv.unmet.length;
+  const awaiting = sv.awaitingLoopEval.length;
   const enforced = sv.enforcedInCi === true;
   return (
     <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted">
@@ -244,6 +265,9 @@ export function SelfValidationLine({ sv }: { sv: SelfValidation }) {
       )}
       {unmet > 0 && (
         <span className="font-medium text-clay-strong">· {unmet} owner-blocked</span>
+      )}
+      {awaiting > 0 && (
+        <span className="text-muted">· {awaiting} awaiting loop</span>
       )}
     </p>
   );
