@@ -6,6 +6,9 @@ import type {
   GrowthPmf,
   GrowthSignal,
   GrowthSource,
+  LaunchReadiness,
+  LaunchPhase,
+  LaunchRecommendation,
 } from "@/lib/growth";
 import { floorPmfSignal, growthStale, latestDecidedExperiment } from "@/lib/growth";
 import { cn, formatMoney, formatShortDate, type Tone } from "@/lib/utils";
@@ -332,6 +335,86 @@ function GtmSourcesPanel({ sources }: { sources: GrowthSource[] }) {
   );
 }
 
+/** Launch-timing phase → human label. */
+const LAUNCH_PHASE_LABEL: Record<LaunchPhase, string> = {
+  build: "Build",
+  assess_demand: "Assess demand",
+  launch: "Launch",
+  post_launch: "Post-launch",
+};
+
+/** Recommendation → chip label + tone. Escalates muted → amber → sage. */
+const LAUNCH_REC_META: Record<LaunchRecommendation, { label: string; tone: Tone }> = {
+  NOT_YET: { label: "Not yet", tone: "muted" },
+  START_MARKETING: { label: "Start marketing", tone: "amber" },
+  LAUNCH_WINDOW_OPEN: { label: "Launch window open", tone: "sage" },
+};
+
+/**
+ * Launch readiness — the growth agent's launch-timing call: the phase, the
+ * color-coded recommendation, the reasoning, and the single next owner action.
+ * REAL state only; absent block renders nothing (guarded by the caller).
+ */
+function LaunchReadinessTile({ lr }: { lr: LaunchReadiness }) {
+  const rec = lr.recommendation ? LAUNCH_REC_META[lr.recommendation] : null;
+  const phaseLabel = lr.phase ? LAUNCH_PHASE_LABEL[lr.phase] : null;
+  return (
+    <div className="rounded-xl border border-hairline bg-bg px-4 py-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="inline-flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
+          Launch readiness
+          {phaseLabel && (
+            <span className="rounded-full bg-card px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-ink">
+              {phaseLabel}
+            </span>
+          )}
+        </p>
+        {rec && (
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
+              CHIP[rec.tone],
+            )}
+          >
+            {rec.label}
+          </span>
+        )}
+      </div>
+      {(lr.demandSignal || lr.productReady !== null) && (
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted">
+          {lr.productReady !== null && (
+            <span>
+              Product{" "}
+              <span
+                className={cn(
+                  "font-medium",
+                  lr.productReady ? "text-sage-strong" : "text-ink",
+                )}
+              >
+                {lr.productReady ? "ready" : "not ready"}
+              </span>
+            </span>
+          )}
+          {lr.demandSignal && (
+            <span>
+              Demand <span className="font-medium text-ink">{lr.demandSignal}</span>
+            </span>
+          )}
+        </div>
+      )}
+      {lr.reason && <p className="mt-2 text-sm leading-snug text-ink">{lr.reason}</p>}
+      {lr.nextOwnerAction && (
+        <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-relaxed text-muted">
+          <ArrowRightIcon className="mt-0.5 h-3 w-3 shrink-0 text-muted/60" />
+          <span>
+            <span className="font-medium text-ink">Next:</span> {lr.nextOwnerAction}
+          </span>
+        </p>
+      )}
+    </div>
+  );
+}
+
 /**
  * Growth & marketing status from docs/growth/GROWTH_STATUS.md — mirrors how the
  * business case is shown. Pre-launch leads with waitlist; post-launch with
@@ -424,6 +507,9 @@ export function GrowthPanel({
           </span>
         )}
       </div>
+
+      {/* Launch readiness — the agent's launch-timing call (only when emitted). */}
+      {growth.launchReadiness && <LaunchReadinessTile lr={growth.launchReadiness} />}
 
       {/* GTM data sources — what the agent can validate (an unconnected source
           is why a funnel reads 0; each is an owner action to wire). */}

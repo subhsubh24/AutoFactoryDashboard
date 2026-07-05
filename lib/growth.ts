@@ -120,9 +120,13 @@ export interface GrowthPmf {
  */
 export interface GrowthSource {
   name: string;
-  /** Raw status from the feed, e.g. "connected" | "awaiting_connect". */
+  /** Raw status from the feed, e.g. "connected" | "available" | "unavailable". */
   status: string;
   connected: boolean;
+  /** The underlying provider (e.g. "Plausible", "Resend"), when the feed lists it. */
+  provider?: string;
+  /** The owner action that would wire this source (e.g. "gtm-connect-analytics"), when present. */
+  ownerAction?: string;
 }
 
 /**
@@ -224,6 +228,30 @@ export interface GrowthMarketing {
   notes: string | null;
 }
 
+// ── Launch readiness (GTM launch-timing) ────────────────────────────────────
+
+/** Where the product is on the build → launch path. */
+export type LaunchPhase = "build" | "assess_demand" | "launch" | "post_launch";
+/** The agent's launch-timing call. */
+export type LaunchRecommendation = "NOT_YET" | "START_MARKETING" | "LAUNCH_WINDOW_OPEN";
+
+/**
+ * Launch readiness — the growth agent's honest read of WHEN to launch: whether
+ * the product is ready, what the demand signal looks like, and the resulting
+ * recommendation (with the reasoning + the single next owner action). REAL state
+ * only — absent until a repo emits the `launch_readiness:` block; every field
+ * degrades to null when the block omits it, never a guess.
+ */
+export interface LaunchReadiness {
+  phase: LaunchPhase | null;
+  productReady: boolean | null;
+  /** e.g. insufficient_data | none | weak | emerging | strong (free-form string). */
+  demandSignal: string | null;
+  recommendation: LaunchRecommendation | null;
+  reason: string | null;
+  nextOwnerAction: string | null;
+}
+
 /** The parsed growth status for one project. Availability-gated like the rest. */
 export interface Growth extends Availability {
   /** GitHub blob URL for the source file (for the "see file" link). */
@@ -257,6 +285,8 @@ export interface Growth extends Availability {
   goLive?: GrowthGoLive;
   /** Autonomous marketing launch state (§13). Absent until a repo emits the block. */
   marketing?: GrowthMarketing;
+  /** Launch-timing read (build → launch). Absent until a repo emits the block. */
+  launchReadiness?: LaunchReadiness;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -738,12 +768,62 @@ function parsePmf(p: Record<string, Yaml>): GrowthPmf {
   };
 }
 
-/** GTM data sources map (name → status) → typed list. connected == "connected". */
+/** Legacy top-level GTM sources map (name → status). connected == "connected". */
 function parseSources(s: Record<string, Yaml>): GrowthSource[] {
   return Object.keys(s).map((name) => {
     const status = str(s[name]) ?? "";
     return { name, status, connected: /^connected$/i.test(status) };
   });
+}
+
+/**
+ * Authoritative GTM sources list (root.validation.sources) → typed list. Each
+ * entry carries name/provider/status/owner_action; `connected` is true only for
+ * a "connected" or "available" status. Entries without a name are dropped.
+ */
+function parseSourcesList(list: Record<string, Yaml>[]): GrowthSource[] {
+  return list
+    .map((s) => {
+      const name = str(s.name) ?? "";
+      const status = str(s.status) ?? "";
+      const provider = str(s.provider);
+      const ownerAction = str(s.owner_action);
+      return {
+        name,
+        status,
+        connected: /^(connected|available)$/i.test(status),
+        ...(provider ? { provider } : {}),
+        ...(ownerAction ? { ownerAction } : {}),
+      };
+    })
+    .filter((s) => s.name);
+}
+
+const LAUNCH_PHASES: LaunchPhase[] = ["build", "assess_demand", "launch", "post_launch"];
+const LAUNCH_RECOMMENDATIONS: LaunchRecommendation[] = [
+  "NOT_YET",
+  "START_MARKETING",
+  "LAUNCH_WINDOW_OPEN",
+];
+
+/**
+ * Launch-timing block. phase/recommendation are validated against their enums
+ * (anything unknown → null); demand_signal is kept as a free-form string. REAL
+ * state only — we render exactly what the agent emitted.
+ */
+function parseLaunchReadiness(l: Record<string, Yaml>): LaunchReadiness {
+  const phaseStr = str(l.phase);
+  const recStr = str(l.recommendation);
+  return {
+    phase: LAUNCH_PHASES.includes(phaseStr as LaunchPhase) ? (phaseStr as LaunchPhase) : null,
+    productReady: bool(l.product_ready),
+    demandSignal: str(l.demand_signal),
+    recommendation: LAUNCH_RECOMMENDATIONS.includes(recStr as LaunchRecommendation)
+      ? (recStr as LaunchRecommendation)
+      : null,
+    reason: str(l.reason),
+    nextOwnerAction: str(l.next_owner_action),
+  };
 }
 
 /** Strategic outreach drafts funnel — owner-reported, never fabricated. */
@@ -791,6 +871,7 @@ export function parseGrowth(
 
   const f = asObj(root.funnel);
   const a = asObj(root.acquisition);
+  const validation = asObj(root.validation);
   const em = asObj(root.email);
   const co = asObj(root.content);
   const li = asObj(root.links);
@@ -805,7 +886,11 @@ export function parseGrowth(
     engineBuilt: bool(root.engine_built) ?? undefined,
     awaitingConnect: bool(root.awaiting_connect) ?? undefined,
     channelsConnected: strArr(root.channels_connected),
-    sources: parseSources(asObj(root.sources)),
+    // Prefer the authoritative list at validation.sources (name→provider→status);
+    // fall back to the legacy top-level `sources:` map for older feeds.
+    sources: Array.isArray(validation.sources)
+      ? parseSourcesList(objArr(validation.sources))
+      : parseSources(asObj(root.sources)),
     funnel: {
       visitors7d: num(f.visitors_7d),
       waitlistSignupsTotal: num(f.waitlist_signups_total),
@@ -869,6 +954,9 @@ export function parseGrowth(
     ...(isObj(root.metrics) ? { metrics: parseMetrics(asObj(root.metrics)) } : {}),
     ...(isObj(root.go_live) ? { goLive: parseGoLive(asObj(root.go_live)) } : {}),
     ...(isObj(root.marketing) ? { marketing: parseMarketing(asObj(root.marketing)) } : {}),
+    ...(isObj(root.launch_readiness)
+      ? { launchReadiness: parseLaunchReadiness(asObj(root.launch_readiness)) }
+      : {}),
   };
 }
 
