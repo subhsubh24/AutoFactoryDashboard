@@ -287,6 +287,41 @@ export interface Growth extends Availability {
   marketing?: GrowthMarketing;
   /** Launch-timing read (build → launch). Absent until a repo emits the block. */
   launchReadiness?: LaunchReadiness;
+  /** Pre-launch market DEMAND signal (§10) — corroborated pain themes; DISTINCT from user PMF. */
+  demand?: GrowthDemand;
+}
+
+// ── Demand signal (GTM_STANDARD §10) — pre-launch market pain, DISTINCT from user PMF ──
+
+export type DemandStrength = "none" | "weak" | "emerging" | "strong";
+
+/** One corroborated market-pain theme mined from the internet, with a cited example. */
+export interface DemandTheme {
+  label: string;
+  /** strength || durability, e.g. "durable" / "strong". */
+  strength: string | null;
+  /** yes | partial | no — does THIS product solve it. */
+  productSolves: string | null;
+  quote: string | null;
+  source: string | null;
+  url: string | null;
+}
+
+/**
+ * The `demand_signal` block — market pain corroborated from reviews/forums/Reddit/X.
+ * The pre-launch INITIAL-DIRECTION signal, DISTINCT from user PMF (`pmf.signal`,
+ * which stays null until real users exist post-launch). Tolerant of both the current
+ * (durability/solved_by_product/evidence) and the newer (strength/product_solves/
+ * overall_strength/coverage) schema; absent → undefined.
+ */
+export interface GrowthDemand {
+  asOf: string | null;
+  overallStrength: DemandStrength | null;
+  themes: DemandTheme[];
+  disconfirming: string[];
+  sourcesCovered: string[];
+  sourcesUnconnected: string[];
+  method: string | null;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -957,6 +992,52 @@ export function parseGrowth(
     ...(isObj(root.launch_readiness)
       ? { launchReadiness: parseLaunchReadiness(asObj(root.launch_readiness)) }
       : {}),
+    ...(isObj(root.demand_signal) ? { demand: parseDemandBlock(asObj(root.demand_signal)) } : {}),
+  };
+}
+
+const DEMAND_STRENGTHS: DemandStrength[] = ["none", "weak", "emerging", "strong"];
+
+/** Parse the `demand_signal` block (tolerant of the current + newer schema). */
+function parseDemandBlock(m: Record<string, Yaml>): GrowthDemand {
+  const themes: DemandTheme[] = objArr(m.themes)
+    .map((t) => {
+      const first = objArr(t.evidence)[0] ?? {};
+      const solvedBool = bool(t.solved_by_product);
+      return {
+        label: str(t.label) ?? str(t.theme) ?? "",
+        strength: str(t.strength) ?? str(t.durability),
+        productSolves:
+          str(t.product_solves) ??
+          (solvedBool === true ? "yes" : solvedBool === false ? "no" : null),
+        quote: str(t.quote) ?? str(first.quote),
+        source: str(t.source) ?? str(first.source),
+        url: str(t.url) ?? str(first.url),
+      };
+    })
+    .filter((t) => t.label);
+
+  const os = str(m.overall_strength);
+  let overall: DemandStrength | null = DEMAND_STRENGTHS.includes(os as DemandStrength)
+    ? (os as DemandStrength)
+    : null;
+  // Derive when the agent didn't state one: a durable/strong theme the product solves → emerging.
+  if (!overall && themes.length > 0) {
+    overall = themes.some(
+      (t) => /durable|strong/i.test(t.strength ?? "") && /yes|partial/i.test(t.productSolves ?? ""),
+    )
+      ? "emerging"
+      : "weak";
+  }
+
+  return {
+    asOf: str(m.as_of),
+    overallStrength: overall,
+    themes,
+    disconfirming: strArr(m.disconfirming).concat(strArr(m.disconfirming_or_limitations)),
+    sourcesCovered: strArr(m.sources_covered),
+    sourcesUnconnected: strArr(m.sources_unconnected),
+    method: str(m.method),
   };
 }
 
