@@ -40,8 +40,15 @@ export interface RunCost extends Availability {
   byRole: CostLine[];
   /** Daily USD over the window (oldest→newest) for a sparkline. */
   daily: number[];
+  /** Total tokens (all types) over the window — powers avg tokens/run. */
+  tokensInWindow: number;
   /** True if any run referenced a model with no known price (estimate is looser). */
   hasUnknownModel: boolean;
+}
+
+/** Sum every field of a TokenCounts bundle. */
+export function sumTokens(t: TokenCounts): number {
+  return t.input + t.output + t.cacheRead + t.cacheWrite;
 }
 
 interface LedgerRow {
@@ -106,6 +113,7 @@ export function parseRunCost(
     byModel: [],
     byRole: [],
     daily: [],
+    tokensInWindow: 0,
     hasUnknownModel: false,
   };
   if (!jsonl || !jsonl.trim()) {
@@ -139,21 +147,24 @@ export function parseRunCost(
   let totalUsd = 0;
   let windowUsd = 0;
   let runsInWindow = 0;
+  let tokensInWindow = 0;
   let hasUnknownModel = false;
 
   for (const r of rows) {
+    const parsedDate = Date.parse(r.date);
+    const inWindow = Number.isFinite(parsedDate) && parsedDate >= windowStart;
     let rowUsd = 0;
+    let rowTokens = 0;
     for (const [model, t] of Object.entries(r.byModel)) {
-      const usd = usdFor(model, t);
-      rowUsd += usd;
+      rowUsd += usdFor(model, t);
+      rowTokens += sumTokens(t);
       if (isUnknownModel(model)) hasUnknownModel = true;
-      const inWindow = Date.parse(r.date) >= windowStart;
-      if (inWindow) byModelUsd.set(model, (byModelUsd.get(model) ?? 0) + usd);
+      if (inWindow) byModelUsd.set(model, (byModelUsd.get(model) ?? 0) + usdFor(model, t));
     }
     totalUsd += rowUsd;
-    const t = Date.parse(r.date);
-    if (Number.isFinite(t) && t >= windowStart) {
+    if (inWindow) {
       windowUsd += rowUsd;
+      tokensInWindow += rowTokens;
       runsInWindow += 1;
       byRoleUsd.set(r.role, (byRoleUsd.get(r.role) ?? 0) + rowUsd);
       byDayUsd.set(r.date, (byDayUsd.get(r.date) ?? 0) + rowUsd);
@@ -189,6 +200,7 @@ export function parseRunCost(
     byModel: toLines(byModelUsd),
     byRole: toLines(byRoleUsd),
     daily,
+    tokensInWindow,
     hasUnknownModel,
   };
 }
