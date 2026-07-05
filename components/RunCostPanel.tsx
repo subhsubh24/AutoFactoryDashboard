@@ -18,6 +18,13 @@ function humanizeRole(role: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/** Compact token count: 1_240_000 → "1.2M", 34_500 → "34.5k". */
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 100_000 ? 0 : 1)}k`;
+  return `${n}`;
+}
+
 function CostBar({ value, max }: { value: number; max: number }) {
   const pct = max > 0 ? Math.max(2, Math.round((value / max) * 100)) : 0;
   return (
@@ -108,6 +115,16 @@ export function RunCostPanel({ runCost }: { runCost: RunCost }) {
         <span className="text-2xl font-semibold tabular text-ink">{formatUsd(runCost.windowUsd)}</span>
         <span className="text-xs text-muted">estimated agent spend</span>
       </p>
+
+      {/* The one token metric worth a glance — how heavy each factory run is. */}
+      {runCost.runsInWindow > 0 && (
+        <p className="mt-1 text-xs text-muted">
+          <span className="tabular font-medium text-ink">
+            {fmtTokens(Math.round(runCost.tokensInWindow / runCost.runsInWindow))}
+          </span>{" "}
+          tokens / run avg
+        </p>
+      )}
 
       {hasTrend && (
         <div className="mt-2 flex items-center gap-2">
