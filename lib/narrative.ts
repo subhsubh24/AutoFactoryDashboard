@@ -1212,19 +1212,35 @@ export function getProjectTagline(s: ProjectSnapshot): Promise<string | null> {
 // ────────────────────────────────────────────────────────────────────────────
 
 export interface GrowthSummary {
-  /** One-sentence GTM digest; "" when there's nothing to summarize. */
-  text: string;
+  /** One sentence: GTM state + top owner next-step — for the routine digest. */
+  overall: string;
+  /** One sentence distilling the learnings ("What's working"); "" if none. */
+  working: string;
+  /** One sentence distilling the next_actions; "" if none. */
+  next: string;
   source: "llm" | "template";
 }
 
 const GROWTH_SUMMARY_SYSTEM =
-  "You write ONE sentence summarizing the go-to-market (GTM) state of a product " +
-  "built by an autonomous agent, for the owner's at-a-glance read. Say where GTM " +
-  "stands and the single most important thing the owner should know or do next. " +
-  "Ground STRICTLY in the data given — never invent numbers, channels, metrics, " +
-  "or facts; use only the numbers provided, verbatim. A pre-launch product has " +
-  "NOT launched: don't imply live users or revenue unless the funnel numbers " +
-  "show them. Plain prose, ONE sentence, no markdown, no preamble.";
+  "You summarize the go-to-market (GTM) state of a product built by an " +
+  "autonomous agent, for the owner's at-a-glance read. Respond in EXACTLY this " +
+  "format — three lines, nothing else:\n" +
+  "OVERALL: <one sentence — where GTM stands + the single most important owner next-step>\n" +
+  "WORKING: <one sentence — the gist of what's working, from the learnings; write 'none' if there are no learnings>\n" +
+  "NEXT: <one sentence — the gist of the next actions / what's needed; write 'none' if there are none>\n" +
+  "Ground STRICTLY in the data — never invent numbers, channels, metrics, or " +
+  "facts; use the funnel numbers verbatim. A pre-launch product has NOT launched: " +
+  "no live users/revenue unless the funnel numbers show them. Plain prose, one " +
+  "sentence each, no markdown, no preamble.";
+
+/** Tidy one model line; treat a literal "none" as empty. */
+function cleanSummaryLine(s: string | undefined): string {
+  if (!s) return "";
+  let t = s.replace(/\s+/g, " ").trim().replace(/^["'“”]+|["'“”]+$/g, "").trim();
+  if (/^none\.?$/i.test(t)) return "";
+  if (t.length > 200) t = `${t.slice(0, 200).replace(/\s+\S*$/, "").trim()}…`;
+  return t;
+}
 
 function growthSummaryContext(g: Growth): string {
   const f = g.funnel;
@@ -1254,33 +1270,42 @@ function growthSummaryContext(g: Growth): string {
     .join("\n\n");
 }
 
-/** Deterministic fallback: phase + the top next-action or first learning. */
-function templateGrowthSummary(g: Growth): string {
+/** Deterministic fallback: phase-led overall + first learning / next-action. */
+function templateGrowthSummary(g: Growth): GrowthSummary {
   const phase = g.phase === "post_launch" ? "Post-launch" : "Pre-launch";
-  if (g.nextActions[0]) return `${phase} — next: ${firstSentence(g.nextActions[0], 130)}`;
+  // learnings[] is append-only — the LAST entry is the newest (per PR #14).
   const latestLearning = g.learnings[g.learnings.length - 1];
-  if (latestLearning) return `${phase} — ${firstSentence(latestLearning, 130)}`;
-  return `${phase} growth work in progress.`;
+  const overall = g.nextActions[0]
+    ? `${phase} — next: ${firstSentence(g.nextActions[0], 130)}`
+    : latestLearning
+      ? `${phase} — ${firstSentence(latestLearning, 130)}`
+      : `${phase} growth work in progress.`;
+  return {
+    overall,
+    working: latestLearning ? firstSentence(latestLearning, 150) : "",
+    next: g.nextActions[0] ? firstSentence(g.nextActions[0], 150) : "",
+    source: "template",
+  };
 }
 
 /**
- * One-sentence GTM digest for the Growth & marketing panel — distills the
- * (often long) learnings + next_actions into a glanceable lead. LLM-written but
- * number-pinned (the funnel figures are handed over verbatim with an explicit
- * "never invent numbers"), with a deterministic fallback. Returns "" when there
- * is nothing to summarize. Cached, busted on the growth content.
+ * Three number-pinned GTM sentences from the (often long) learnings +
+ * next_actions: `overall` (for the routine digest) and one-line digests of
+ * `working` + `next` (the collapse-section headers). One LLM call, funnel
+ * figures handed over verbatim with an explicit "never invent numbers", with a
+ * deterministic fallback. All-empty when there's nothing to summarize. Cached,
+ * busted on the growth content.
  */
 export function getGrowthSummary(s: ProjectSnapshot): Promise<GrowthSummary> {
   const g = s.growth;
+  const empty: GrowthSummary = { overall: "", working: "", next: "", source: "template" };
   if (!g.available || (g.learnings.length === 0 && g.nextActions.length === 0)) {
-    return Promise.resolve({ text: "", source: "template" });
+    return Promise.resolve(empty);
   }
-  if (buildPhase()) {
-    return Promise.resolve({ text: templateGrowthSummary(g), source: "template" });
-  }
+  if (buildPhase()) return Promise.resolve(templateGrowthSummary(g));
 
   const cacheKey = [
-    "afd-growthsummary",
+    "afd-growthsummary2", // shape changed (3 fields) — new namespace vs the old {text}
     CACHE_VERSION,
     s.slug,
     currentModel(),
@@ -1299,18 +1324,20 @@ export function getGrowthSummary(s: ProjectSnapshot): Promise<GrowthSummary> {
           { role: "system", content: GROWTH_SUMMARY_SYSTEM },
           { role: "user", content: growthSummaryContext(g) },
         ],
-        120,
+        220, // headroom for three sentences
       );
       if (out.text) {
-        let t = out.text
-          .replace(/\s+/g, " ")
-          .trim()
-          .replace(/^["'“”]+|["'“”]+$/g, "")
-          .trim();
-        if (t.length > 220) t = `${t.slice(0, 220).replace(/\s+\S*$/, "").trim()}…`;
-        if (t.length >= 12) return { text: t, source: "llm" };
+        const overall = cleanSummaryLine(out.text.match(/OVERALL:\s*(.+)/i)?.[1]);
+        if (overall.length >= 12) {
+          return {
+            overall,
+            working: cleanSummaryLine(out.text.match(/WORKING:\s*(.+)/i)?.[1]),
+            next: cleanSummaryLine(out.text.match(/NEXT:\s*(.+)/i)?.[1]),
+            source: "llm",
+          };
+        }
       }
-      return { text: templateGrowthSummary(g), source: "template" };
+      return templateGrowthSummary(g);
     },
     cacheKey,
     { revalidate: 600 },

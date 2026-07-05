@@ -430,8 +430,9 @@ export function GrowthPanel({
   className,
 }: {
   growth: Growth;
-  /** One-sentence GTM digest (from getGrowthSummary) — the lead above the detail. */
-  summary?: { text: string; source: "llm" | "template" };
+  /** One-line AI digests of the two long sections (from getGrowthSummary); the
+      overall GTM digest lives in the routine-runs section, not here. */
+  summary?: { working: string; next: string; source: "llm" | "template" };
   /** Day-over-day waitlist delta (from ProjectDelta), shown when positive. */
   waitlistDelta?: number | null;
   /** Day-over-day MRR delta (from ProjectDelta), shown when positive. */
@@ -511,18 +512,6 @@ export function GrowthPanel({
           </span>
         )}
       </div>
-
-      {/* One-line AI digest of the GTM state — the lead above the detail; the
-          long learnings / next-actions collapse below it. */}
-      {summary?.text && (
-        <div className="rounded-xl border border-hairline bg-bg px-4 py-3">
-          <p className="text-sm leading-snug text-ink">{summary.text}</p>
-          <p className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-muted">
-            <SparkleIcon className="h-3 w-3" />
-            {summary.source === "llm" ? "AI summary" : "Summary"}
-          </p>
-        </div>
-      )}
 
       {/* Launch readiness — the agent's launch-timing call (only when emitted). */}
       {growth.launchReadiness && <LaunchReadinessTile lr={growth.launchReadiness} />}
@@ -641,48 +630,70 @@ export function GrowthPanel({
         </div>
       )}
 
-      {/* Top learnings — long paragraphs; collapsed (default closed) so the AI
-          summary above carries the gist and the panel stays scannable. */}
+      {/* Top learnings — one-line AI summary as the lead, the long paragraphs
+          behind the collapse. */}
       {growth.learnings.length > 0 && (
         <div className="border-t border-hairline pt-3">
-          <Collapsible
-            title="What's working"
-            count={Math.min(3, growth.learnings.length)}
-            defaultOpen={false}
-            storageKey="afd-growth-learnings"
-          >
-            <ul className="space-y-1 text-sm text-ink">
-              {/* learnings[] is append-only across runs — show the 3 MOST RECENT
-                  (newest first), not the oldest, so the panel reflects current state. */}
-              {[...growth.learnings].slice(-3).reverse().map((l, i) => (
-                <li key={i} className="flex items-start gap-2">
-                  <span aria-hidden className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-sage" />
-                  <span>{l}</span>
-                </li>
-              ))}
-            </ul>
-          </Collapsible>
+          <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
+            What&apos;s working
+          </p>
+          {summary?.working && (
+            <p className="mt-1.5 flex items-start gap-1.5 text-sm leading-snug text-ink">
+              <SparkleIcon className="mt-0.5 h-3 w-3 shrink-0 text-muted/60" />
+              <span>{summary.working}</span>
+            </p>
+          )}
+          <div className="mt-2">
+            <Collapsible
+              title="Details"
+              count={Math.min(3, growth.learnings.length)}
+              defaultOpen={false}
+              storageKey="afd-growth-learnings"
+            >
+              <ul className="space-y-1 text-sm text-ink">
+                {/* learnings[] is append-only across runs — show the 3 MOST RECENT
+                    (newest first), not the oldest, so the panel reflects current state. */}
+                {[...growth.learnings].slice(-3).reverse().map((l, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <span aria-hidden className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-sage" />
+                    <span>{l}</span>
+                  </li>
+                ))}
+              </ul>
+            </Collapsible>
+          </div>
         </div>
       )}
 
-      {/* The GTM agent's own next_actions — verbose; collapsed. */}
+      {/* The GTM agent's next_actions — one-line AI summary, details collapsed. */}
       {growth.nextActions.length > 0 && (
         <div className="border-t border-hairline pt-3">
-          <Collapsible
-            title="Next actions · GTM agent"
-            count={Math.min(4, growth.nextActions.length)}
-            defaultOpen={false}
-            storageKey="afd-growth-nextactions"
-          >
-            <ul className="space-y-1.5 text-sm text-ink">
-              {growth.nextActions.slice(0, 4).map((a, i) => (
-                <li key={i} className="flex items-start gap-2 leading-snug">
-                  <ArrowRightIcon className="mt-1 h-3 w-3 shrink-0 text-muted/60" />
-                  <span>{a}</span>
-                </li>
-              ))}
-            </ul>
-          </Collapsible>
+          <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
+            Next actions · GTM agent
+          </p>
+          {summary?.next && (
+            <p className="mt-1.5 flex items-start gap-1.5 text-sm leading-snug text-ink">
+              <SparkleIcon className="mt-0.5 h-3 w-3 shrink-0 text-muted/60" />
+              <span>{summary.next}</span>
+            </p>
+          )}
+          <div className="mt-2">
+            <Collapsible
+              title="Details"
+              count={Math.min(4, growth.nextActions.length)}
+              defaultOpen={false}
+              storageKey="afd-growth-nextactions"
+            >
+              <ul className="space-y-1.5 text-sm text-ink">
+                {growth.nextActions.slice(0, 4).map((a, i) => (
+                  <li key={i} className="flex items-start gap-2 leading-snug">
+                    <ArrowRightIcon className="mt-1 h-3 w-3 shrink-0 text-muted/60" />
+                    <span>{a}</span>
+                  </li>
+                ))}
+              </ul>
+            </Collapsible>
+          </div>
         </div>
       )}
 

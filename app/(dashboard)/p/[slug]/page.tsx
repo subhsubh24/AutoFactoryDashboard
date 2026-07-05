@@ -59,6 +59,7 @@ import { MarketingPanel } from "@/components/MarketingPanel";
 import { LoopHealthPanel } from "@/components/LoopHealthPanel";
 import { ValidatorPanel } from "@/components/ValidatorPanel";
 import { RoutineSchedule } from "@/components/RoutineSchedule";
+import { RoutineRuns, buildRoutineRunSummaries } from "@/components/RoutineRuns";
 import { SelfValidationPanel } from "@/components/SelfValidationPanel";
 import { QualityScorecardView, AuditorGaps } from "@/components/QualityScorecard";
 import { LivenessDot } from "@/components/LivenessDot";
@@ -117,6 +118,8 @@ export default async function ProjectPage({
   const launch = snapshot.readyForSubmission
     ? await getLaunchSummary(snapshot)
     : null;
+  // Per-routine "last run" digest — what each scheduled routine last did.
+  const routineRunSummaries = buildRoutineRunSummaries(snapshot, narrative, growthSummary);
 
   const pct = headlinePct(snapshot);
   // Progress is positive by default; only a blocked project gets the clay ring.
@@ -460,6 +463,15 @@ export default async function ProjectPage({
               </Collapsible>
             </div>
           </SectionCard>
+
+          {routineRunSummaries.length > 0 && (
+            <SectionCard
+              title="Routine runs"
+              subtitle="What each scheduled routine last did — AI run summaries + auditor grades"
+            >
+              <RoutineRuns runs={routineRunSummaries} />
+            </SectionCard>
+          )}
 
           {actionPlan.available && (
             <SectionCard
