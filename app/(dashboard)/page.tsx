@@ -882,14 +882,15 @@ function ProjectTile({
             </div>
           </div>
         </div>
-        {/* One attention corner: the badge says how loud, the line says why.
-            "needs you" is the curated human ask (matches the top count); a
-            stuck-only tile gets its own softer chip so it never inflates that
-            count. */}
-        <div className="flex shrink-0 flex-col items-end gap-1 text-right">
+        {/* One attention chip: the loud word + why, together. "needs you" is the
+            curated human ask (matches the top count); a stuck-only tile gets its
+            own softer chip so it never inflates that count. The reason wraps to a
+            second line on a narrow tile rather than crowding the name. */}
+        <div className="flex max-w-[45%] flex-col items-end">
           {asks.length > 0 ? (
-            <span className="rounded-full bg-clay-soft px-2.5 py-1 text-xs font-semibold text-clay-strong">
-              needs you
+            <span className="inline-flex max-w-full flex-wrap items-baseline justify-end gap-x-1.5 rounded-2xl bg-clay-soft px-2.5 py-1 text-[11px] leading-snug text-clay-strong">
+              <span className="font-semibold">needs you</span>
+              {reason && <span className="font-normal text-clay-strong/85">{reason}</span>}
             </span>
           ) : stuck > 0 ? (
             <Chip
@@ -910,9 +911,6 @@ function ProjectTile({
               <span className={cn("h-1.5 w-1.5 rounded-full", toneClasses(ci.tone).dot)} />
               CI {ci.label.toLowerCase()}
             </span>
-          )}
-          {asks.length > 0 && reason && (
-            <span className="text-[10px] leading-tight text-muted">{reason}</span>
           )}
         </div>
       </div>
