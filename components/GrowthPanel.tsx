@@ -652,7 +652,9 @@ export function GrowthPanel({
             storageKey="afd-growth-learnings"
           >
             <ul className="space-y-1 text-sm text-ink">
-              {growth.learnings.slice(0, 3).map((l, i) => (
+              {/* learnings[] is append-only across runs — show the 3 MOST RECENT
+                  (newest first), not the oldest, so the panel reflects current state. */}
+              {[...growth.learnings].slice(-3).reverse().map((l, i) => (
                 <li key={i} className="flex items-start gap-2">
                   <span aria-hidden className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-sage" />
                   <span>{l}</span>
