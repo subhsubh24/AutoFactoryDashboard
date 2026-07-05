@@ -35,23 +35,35 @@ const GRADE_TONE: Record<string, Tone> = {
   F: "clay",
 };
 
+/** First sentence of a digest, clipped — the "what it did" gist for one row. */
+function firstSentence(s: string, max = 180): string {
+  const t = s.replace(/\s+/g, " ").trim();
+  const m = t.match(/^(.*?[.!?])(?:\s|$)/);
+  const out = m ? m[1] : t;
+  return out.length > max ? `${out.slice(0, max).replace(/\s+\S*$/, "").trim()}…` : out;
+}
+
 function scorecardRow(
   type: RoutineType,
   label: string,
   sc: QualityScorecard,
 ): RoutineRunSummary {
   const graded = sc.available && !!sc.overall;
+  const top = sc.topGaps[0];
   return {
     type,
     label,
     when: sc.available ? sc.asOf ?? null : null,
     grade: graded ? sc.overall : null,
     gradeTone: graded ? GRADE_TONE[sc.overall!] ?? "muted" : "muted",
-    line: graded
-      ? sc.topGaps.length > 0
-        ? `${sc.topGaps.length} gap${sc.topGaps.length === 1 ? "" : "s"} to close`
-        : "No open gaps"
-      : "Not graded yet",
+    // The auditor's own top gap (verbatim) — what to fix — not just a count.
+    line: !graded
+      ? "Not graded yet"
+      : top
+        ? `${firstSentence(top.gap, 160)}${
+            sc.topGaps.length > 1 ? ` (+${sc.topGaps.length - 1} more)` : ""
+          }`
+        : "No open gaps",
     source: "structured",
   };
 }
@@ -76,7 +88,10 @@ export function buildRoutineRunSummaries(
             type: r.type,
             label: isModel ? "Model factory" : "Product factory",
             when: productWhen,
-            line: narrative.headline || "No recent run reported.",
+            // The actual AI run summary (what it did), not just the headline.
+            line: narrative.text
+              ? firstSentence(narrative.text, 200)
+              : narrative.headline || "No recent run reported.",
             source: narrative.source,
           };
         case "gtm_factory":
@@ -91,12 +106,15 @@ export function buildRoutineRunSummaries(
           return {
             type: r.type,
             label: "Research",
-            when: g.available ? g.asOf ?? null : productWhen,
+            when: productWhen,
+            // Prefer the go-live signal (research's own output); else the AI run digest.
             line: g.goLive?.status
               ? `Go-live: ${g.goLive.status.replace(/_/g, " ")}` +
                 (g.goLive.confidence ? ` (${g.goLive.confidence} confidence)` : "")
-              : "No structured research signal reported.",
-            source: "structured",
+              : narrative.text
+                ? firstSentence(narrative.text, 200)
+                : "No recent run reported.",
+            source: g.goLive?.status ? "structured" : narrative.source,
           };
         case "quality_auditor":
           return scorecardRow(r.type, "Quality audit", s.qualityScorecard);

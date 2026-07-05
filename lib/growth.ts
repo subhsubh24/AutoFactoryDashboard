@@ -468,7 +468,24 @@ function foldContinuations(
 ): [string, number] {
   let raw = seed;
   let i = start;
-  while (i < lines.length && lines[i].indent > parentIndent && !isSeqLine(lines[i].text)) {
+  // A quoted scalar stays "open" until its closing quote, so a more-indented
+  // continuation line that happens to start with "- " (a dash INSIDE the string)
+  // is text, not a new sequence item. Without this guard such a line ends the
+  // fold early and unwinds the parse — silently dropping every sibling key that
+  // follows (e.g. a next_actions block after a learnings item that wraps onto a
+  // dash-led line).
+  const q = seed.trimStart()[0];
+  const quoted = q === '"' || q === "'";
+  const stillOpen = (s: string): boolean => {
+    if (!quoted) return false;
+    const b = s.trimStart();
+    return !(b.length > 1 && b.trimEnd().endsWith(q));
+  };
+  while (
+    i < lines.length &&
+    lines[i].indent > parentIndent &&
+    (stillOpen(raw) || !isSeqLine(lines[i].text))
+  ) {
     raw += " " + lines[i].text;
     i++;
   }

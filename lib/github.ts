@@ -59,7 +59,9 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 //      scorecard dimensions now parse the list form (per-dimension grid).
 // v17: productCost (optional GROWTH_STATUS `cost` block → metered app LLM spend).
 // v18: GTM channel approvals — pending_approvals[] (GROWTH_STATUS) + approved_channels: (PENDING_OPS).
-const SNAPSHOT_CACHE_VERSION = "v18";
+// v19: YAML-subset fold fix — a "- " line inside an open quoted scalar no longer
+//      unwinds the parse (was silently dropping next_actions/demand_signal/etc.).
+const SNAPSHOT_CACHE_VERSION = "v19";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
