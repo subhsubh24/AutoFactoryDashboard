@@ -61,7 +61,7 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 // v18: GTM channel approvals — pending_approvals[] (GROWTH_STATUS) + approved_channels: (PENDING_OPS).
 // v19: YAML-subset fold fix — a "- " line inside an open quoted scalar no longer
 //      unwinds the parse (was silently dropping next_actions/demand_signal/etc.).
-const SNAPSHOT_CACHE_VERSION = "v20";
+const SNAPSHOT_CACHE_VERSION = "v21";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
@@ -221,6 +221,14 @@ async function fetchPulls(
       .filter((pr) => pr.merged_at)
       .map(toItem)
       .sort((a, b) => Date.parse(b.mergedAt!) - Date.parse(a.mergedAt!));
+
+    // Attach the description to ONLY the newest merged PR — the one the "last
+    // run" AI summary reads for full context. Truncated, and kept off every
+    // other item so the cached snapshot stays lean.
+    if (merged[0]) {
+      const raw = collected.find((pr) => pr.number === merged[0].number);
+      if (raw?.body) merged[0].body = raw.body.slice(0, 2500);
+    }
 
     const open = collected
       .filter((pr) => pr.state === "open")

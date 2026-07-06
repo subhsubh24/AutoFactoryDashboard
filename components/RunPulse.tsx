@@ -1,6 +1,6 @@
 import { RelativeTime } from "@/components/RelativeTime";
 import { NextRun } from "@/components/NextRun";
-import { ClockIcon, RocketIcon } from "@/components/icons";
+import { ClockIcon, RocketIcon, SparkleIcon } from "@/components/icons";
 
 /**
  * "Last run → next run" pulse — the heartbeat line under the 24-hour summary.
@@ -13,14 +13,17 @@ import { ClockIcon, RocketIcon } from "@/components/icons";
  */
 
 export interface RunPulseLast {
-  /** What the last run did — the most recent merged PR's title. */
-  title: string;
+  /** What the last run did — an AI summary read from the full PR (falls back to
+   *  the PR title). */
+  summary: string;
   /** Link to that PR. */
   href?: string;
   /** When it merged — drives the live "x ago". */
   when: string | null;
   /** Which line shipped it (fleet view only; omitted on a project's own page). */
   project?: string;
+  /** Provenance of `summary` — an honest AI/Template marker. */
+  source?: "llm" | "template" | null;
 }
 
 export interface RunPulseNext {
@@ -56,10 +59,17 @@ export function RunPulse({
 }) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:gap-5">
-      {/* Last shipped — the one most recent run: what it did + how long ago. */}
+      {/* Last run — an AI summary of the one most recent PR + how long ago. */}
       <div className="min-w-0 flex-1">
         <Eyebrow icon={<RocketIcon className="h-3 w-3 text-sage" />}>
           Last run
+          {last.source && (
+            <span className="inline-flex items-center gap-1 font-normal normal-case tracking-normal text-muted/80">
+              <span aria-hidden>·</span>
+              <SparkleIcon className="h-2.5 w-2.5" />
+              {last.source === "llm" ? "AI" : "Template"}
+            </span>
+          )}
         </Eyebrow>
         {last.href ? (
           <a
@@ -68,11 +78,11 @@ export function RunPulse({
             rel="noreferrer"
             className="mt-1.5 block text-sm font-medium leading-snug text-ink transition-colors hover:text-clay"
           >
-            {last.title}
+            {last.summary}
           </a>
         ) : (
           <p className="mt-1.5 text-sm font-medium leading-snug text-ink">
-            {last.title}
+            {last.summary}
           </p>
         )}
         {(last.project || last.when) && (

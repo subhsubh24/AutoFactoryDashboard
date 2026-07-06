@@ -8,6 +8,7 @@ import { getProjectSnapshot } from "@/lib/github";
 import {
   getActionPlan,
   getGrowthSummary,
+  getLastRunSummary,
   getNarrative,
   getLaunchSummary,
   getProjectTagline,
@@ -152,6 +153,9 @@ export default async function ProjectPage({
   const routineRuns = runsFor(routinesForSlug(slug));
   // The project pulse: the most recent PR it shipped + the next routine to fire.
   const lastPr = snapshot.recentMerged[0] ?? null;
+  const lastRunSummary = lastPr
+    ? await getLastRunSummary(lastPr, snapshot.displayName)
+    : null;
   const soonestRoutine = soonestRun(routineRuns);
   // Scheduled-run workload (the activity-as-cost proxy's backbone) — runs/week
   // per routine, computed live from the same authoritative cron schedule.
@@ -488,11 +492,12 @@ export default async function ProjectPage({
                     last={
                       lastPr
                         ? {
-                            title: lastPr.title,
+                            summary: lastRunSummary?.text ?? lastPr.title,
                             href: lastPr.url,
                             when: lastPr.mergedAt ?? null,
+                            source: lastRunSummary?.source ?? null,
                           }
-                        : { title: "Nothing shipped in the last 7 days", when: null }
+                        : { summary: "Nothing shipped in the last 7 days", when: null }
                     }
                     next={
                       soonestRoutine

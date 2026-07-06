@@ -4,6 +4,7 @@ import type {
   ActionPlan,
   ActionPriority,
   PlanItem,
+  PRItem,
   ProjectSnapshot,
 } from "@/lib/types";
 import { checkBriefing, checkNarrative, type Violation } from "@/lib/llm-guard";
@@ -1204,6 +1205,115 @@ export function getProjectTagline(s: ProjectSnapshot): Promise<string | null> {
     },
     cacheKey,
     { revalidate: 86_400 }, // daily; the SHA in the key busts it on any change
+  )();
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Last-run summary — one AI sentence for what the most recent run did, read
+// from the FULL pull request (title + description). Falls back to the PR title.
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface LastRunSummary {
+  /** One sentence: what the last run did. AI when a description exists, else the title. */
+  text: string;
+  source: "llm" | "template";
+  /** Diagnostic when the LLM was skipped/failed (mirrors Narrative.llmReason). */
+  llmReason?: string;
+}
+
+const LAST_RUN_SYSTEM =
+  "You summarize a SINGLE pull request for the owner of an autonomous product " +
+  "factory glancing at what just shipped. Reply with ONE concise sentence — plain " +
+  "prose, present tense — that says specifically WHAT changed and, if the PR says " +
+  "so, why it matters. Ground STRICTLY in the given title and description: never " +
+  "invent features, files, or metrics, and use only numbers that literally appear " +
+  "in the PR. Lead with the change itself (a verb or the feature) — do NOT begin " +
+  'with "This PR", "This change", or "The PR". No markdown, no preamble, no PR ' +
+  "number. Aim for under 24 words.";
+
+function lastRunContext(pr: PRItem, projectName: string): string {
+  return [
+    `Project: ${projectName}`,
+    `PR title: ${pr.title}`,
+    "",
+    "PR description:",
+    clip((pr.body ?? "").trim() || "(no description provided)", 2400),
+  ].join("\n");
+}
+
+/** Flag an invented multi-digit number — a metric the PR never actually stated. */
+function checkLastRun(text: string, sourceText: string): Violation[] {
+  const src = sourceText.replace(/,/g, "");
+  const invented = [...new Set(text.match(/\d{2,}/g) ?? [])].filter(
+    (n) => !src.includes(n),
+  );
+  return invented.length
+    ? [
+        {
+          rule: "invented-number",
+          message: `The number "${invented[0]}" does not appear in the PR — drop it or use only figures the PR states.`,
+        },
+      ]
+    : [];
+}
+
+function tidyLine(s: string, max = 180): string {
+  let t = s
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^["'“”]+|["'“”]+$/g, "")
+    .trim();
+  if (t.length > max) t = `${t.slice(0, max).replace(/\s+\S*$/, "").trim()}…`;
+  return t;
+}
+
+/**
+ * One AI sentence describing what the most recent run (its merged PR) did, read
+ * from the full PR title + description. Cached on the PR's URL (immutable once
+ * merged) so it generates once per new run. Falls back to the PR title when
+ * there's no description to read, no LLM key, or the number-guard trips.
+ */
+export function getLastRunSummary(
+  pr: PRItem,
+  projectName: string,
+): Promise<LastRunSummary> {
+  const fallback = (llmReason?: string): LastRunSummary => ({
+    text: tidyLine(pr.title, 160),
+    source: "template",
+    ...(llmReason ? { llmReason } : {}),
+  });
+
+  const body = (pr.body ?? "").trim();
+  // Nothing more to read than the title → the title IS the summary (no LLM cost).
+  if (body.length < 24) return Promise.resolve(fallback());
+  if (buildPhase()) return Promise.resolve(fallback());
+
+  const cacheKey = [
+    "afd-lastrun",
+    CACHE_VERSION,
+    currentModel(),
+    pr.url, // immutable per merged PR — regenerates only for a new run
+    String(body.length),
+  ];
+
+  return unstable_cache(
+    async (): Promise<LastRunSummary> => {
+      const out = await generateGuarded(
+        [
+          { role: "system", content: LAST_RUN_SYSTEM },
+          { role: "user", content: lastRunContext(pr, projectName) },
+        ],
+        140,
+        (text) => checkLastRun(text, `${pr.title}\n${body}`),
+      );
+      if (out.text) {
+        const t = tidyLine(out.text);
+        if (t.length >= 8) return { text: t, source: "llm" };
+      }
+      return fallback(out.reason);
+    },
+    cacheKey,
+    { revalidate: 86_400 },
   )();
 }
 

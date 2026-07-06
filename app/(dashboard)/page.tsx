@@ -12,6 +12,7 @@ import {
 import {
   getNarrative,
   getFactoryBriefing,
+  getLastRunSummary,
   getNeedsPlan,
   getProjectTagline,
   getValuation,
@@ -187,6 +188,10 @@ export default async function OverviewPage() {
     lastShipped &&
     (snapshots.find((s) => s.slug === lastShipped.projectSlug)?.displayName ??
       lastShipped.projectName);
+  // AI summary of that last run, read from the full PR (title + description).
+  const lastRunSummary = lastShipped
+    ? await getLastRunSummary(lastShipped, lastShipName ?? lastShipped.projectName)
+    : null;
   const fleetNext = snapshots
     .flatMap((s) =>
       runsFor(routinesForSlug(s.slug))
@@ -333,12 +338,13 @@ export default async function OverviewPage() {
               last={
                 lastShipped
                   ? {
-                      title: lastShipped.title,
+                      summary: lastRunSummary?.text ?? lastShipped.title,
                       href: lastShipped.url,
                       when: lastShipped.mergedAt ?? null,
                       project: lastShipName ?? undefined,
+                      source: lastRunSummary?.source ?? null,
                     }
-                  : { title: "Nothing shipped in the last 7 days", when: null }
+                  : { summary: "Nothing shipped in the last 7 days", when: null }
               }
               next={
                 fleetNext

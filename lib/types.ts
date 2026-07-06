@@ -29,6 +29,9 @@ export interface PRItem {
   number: number;
   title: string;
   url: string;
+  /** PR description. Populated only for the most recent merged PR (the one the
+   *  "last run" LLM summary reads) — kept off the rest to keep snapshots lean. */
+  body?: string;
   author?: string;
   /** ISO timestamp; present for merged PRs. */
   mergedAt?: string;
