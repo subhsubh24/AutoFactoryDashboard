@@ -58,7 +58,7 @@ function scorecardRow(
     : plain
       ? plain
       : top
-        ? `${firstSentence(top.gap, 160)}${
+        ? `${firstSentence(top.gap, 400)}${
             sc.topGaps.length > 1 ? ` (+${sc.topGaps.length - 1} more)` : ""
           }`
         : "No open gaps";
@@ -97,7 +97,7 @@ export function buildRoutineRunSummaries(
             when: productWhen,
             // The actual AI run summary (what it did), not just the headline.
             line: narrative.text
-              ? firstSentence(narrative.text, 200)
+              ? narrative.text
               : narrative.headline || "No recent run reported.",
             source: narrative.source,
           };
@@ -119,7 +119,7 @@ export function buildRoutineRunSummaries(
               ? `Go-live: ${g.goLive.status.replace(/_/g, " ")}` +
                 (g.goLive.confidence ? ` (${g.goLive.confidence} confidence)` : "")
               : narrative.text
-                ? firstSentence(narrative.text, 200)
+                ? narrative.text
                 : "No recent run reported.",
             source: g.goLive?.status ? "structured" : narrative.source,
           };

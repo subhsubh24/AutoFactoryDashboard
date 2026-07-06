@@ -1,6 +1,6 @@
 import type { GrowthDemand } from "@/lib/growth";
 import { cn } from "@/lib/utils";
-import { CheckIcon, ExternalLinkIcon, PulseIcon } from "@/components/icons";
+import { CheckIcon, ExternalLinkIcon, PulseIcon, SparkleIcon } from "@/components/icons";
 
 /**
  * Pre-launch market DEMAND signal (GTM_STANDARD §10) — corroborated pain themes
@@ -33,7 +33,15 @@ function SolvesTag({ solves }: { solves: string | null }) {
   );
 }
 
-export function DemandSignalPanel({ demand }: { demand?: GrowthDemand }) {
+export function DemandSignalPanel({
+  demand,
+  counterSummary,
+}: {
+  demand?: GrowthDemand;
+  /** Plain-language AI summary of ALL the counter-signal notes (falls back to
+      the raw list when absent). */
+  counterSummary?: string | null;
+}) {
   if (!demand || (demand.themes.length === 0 && !demand.overallStrength)) return null;
 
   const strength = demand.overallStrength ?? "none";
@@ -94,18 +102,30 @@ export function DemandSignalPanel({ demand }: { demand?: GrowthDemand }) {
         </ul>
       )}
 
-      {demand.disconfirming.length > 0 && (
+      {(counterSummary || demand.disconfirming.length > 0) && (
         <div className="mt-3 border-t border-hairline pt-2.5">
-          <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
+          <p className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
             Counter-signal
+            {counterSummary && (
+              <span className="inline-flex items-center gap-1 font-normal normal-case tracking-normal text-muted/80">
+                <span aria-hidden>·</span>
+                <SparkleIcon className="h-2.5 w-2.5" />
+                AI
+              </span>
+            )}
           </p>
-          <ul className="mt-1 space-y-1">
-            {demand.disconfirming.slice(0, 3).map((d, i) => (
-              <li key={i} className="text-[13px] leading-snug text-muted">
-                {d}
-              </li>
-            ))}
-          </ul>
+          {counterSummary ? (
+            // A plain-language read of ALL the run-by-run caveat notes.
+            <p className="mt-1 text-[13px] leading-relaxed text-muted">{counterSummary}</p>
+          ) : (
+            <ul className="mt-1 space-y-1">
+              {demand.disconfirming.slice(0, 3).map((d, i) => (
+                <li key={i} className="text-[13px] leading-snug text-muted">
+                  {d}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

@@ -61,7 +61,7 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 // v18: GTM channel approvals — pending_approvals[] (GROWTH_STATUS) + approved_channels: (PENDING_OPS).
 // v19: YAML-subset fold fix — a "- " line inside an open quoted scalar no longer
 //      unwinds the parse (was silently dropping next_actions/demand_signal/etc.).
-const SNAPSHOT_CACHE_VERSION = "v21";
+const SNAPSHOT_CACHE_VERSION = "v22";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
@@ -148,6 +148,23 @@ function isTodayUtc(iso?: string | null): boolean {
   if (!iso) return false;
   const today = new Date().toISOString().slice(0, 10);
   return iso.slice(0, 10) === today;
+}
+
+/**
+ * The canonical "this week" window — the current 7 UTC calendar days (today +
+ * the 6 prior days, from that day's 00:00 UTC). EVERY 7-day metric keys off this
+ * one predicate so counts are identical everywhere: the "Shipping this week" day
+ * bars, the work-mix donut, per-project "Merged 7d", and quality signals all
+ * count the exact same set of PRs. (A rolling 168h window would disagree with a
+ * by-calendar-day bar chart at the edges — that was the 872-vs-908 mismatch.)
+ */
+function withinCurrentWeekUtc(iso?: string | null): boolean {
+  if (!iso) return false;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return false;
+  const now = new Date();
+  const start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 6);
+  return t >= start;
 }
 
 function maxIso(...isos: (string | null | undefined)[]): string | null {
@@ -241,7 +258,7 @@ async function fetchPulls(
       })
       .sort((a, b) => (b.ageHours ?? 0) - (a.ageHours ?? 0));
 
-    const merged7dItems = merged.filter((m) => withinHours(m.mergedAt, 24 * 7));
+    const merged7dItems = merged.filter((m) => withinCurrentWeekUtc(m.mergedAt));
 
     return {
       mergedToday: merged.filter((m) => isTodayUtc(m.mergedAt)).length,

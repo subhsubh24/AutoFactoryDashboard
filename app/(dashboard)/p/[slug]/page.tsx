@@ -7,6 +7,7 @@ import { runsFor, soonestRun, workloadFor } from "@/lib/routine";
 import { getProjectSnapshot } from "@/lib/github";
 import {
   getActionPlan,
+  getCounterSignalSummary,
   getGrowthSummary,
   getLastRunSummary,
   getNarrative,
@@ -126,9 +127,13 @@ export default async function ProjectPage({
     : null;
   // Per-routine "last run" digest — what each scheduled routine last did. The
   // auditor rows get a plain-language AI read of their (engineer-facing) gaps.
-  const [qualityAuditSummary, gtmAuditSummary] = await Promise.all([
+  // The demand routine's counter-signal notes get the same plain-language read.
+  const [qualityAuditSummary, gtmAuditSummary, counterSignalSummary] = await Promise.all([
     getScorecardSummary(snapshot.qualityScorecard, "Quality audit"),
     getScorecardSummary(snapshot.gtmScorecard, "GTM audit"),
+    snapshot.growth.demand
+      ? getCounterSignalSummary(snapshot.growth.demand.disconfirming)
+      : Promise.resolve(null),
   ]);
   const routineRunSummaries = buildRoutineRunSummaries(
     snapshot,
@@ -667,6 +672,16 @@ export default async function ProjectPage({
             title="Growth & marketing"
             subtitle="From the Growth Agent (docs/growth/GROWTH_STATUS.md)"
           >
+            {/* Demand signal leads — the pre-launch direction signal sits ABOVE
+                product-market fit (which lives inside GrowthPanel). */}
+            {snapshot.growth.demand && (
+              <div className="mb-4">
+                <DemandSignalPanel
+                  demand={snapshot.growth.demand}
+                  counterSummary={counterSignalSummary}
+                />
+              </div>
+            )}
             <GrowthPanel
               growth={snapshot.growth}
               summary={growthSummary}
@@ -674,11 +689,6 @@ export default async function ProjectPage({
               mrrDelta={delta.dMrr}
               retentionTrend={retentionTrend}
             />
-            {snapshot.growth.demand && (
-              <div className="mt-4">
-                <DemandSignalPanel demand={snapshot.growth.demand} />
-              </div>
-            )}
           </SectionCard>
 
           {(snapshot.pendingApprovals.length > 0 ||

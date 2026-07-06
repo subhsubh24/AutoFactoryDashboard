@@ -264,7 +264,7 @@ export interface VelocityDay {
 const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 /** Bucket merged PRs into the last 7 UTC calendar days (oldest → newest). */
-function weeklyVelocity(feed: FeedEntry[]): VelocityDay[] {
+export function weeklyVelocity(feed: FeedEntry[]): VelocityDay[] {
   const now = new Date();
   const days: VelocityDay[] = [];
   const index = new Map<string, number>();

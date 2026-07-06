@@ -1327,7 +1327,7 @@ export function getLastRunSummary(
 
   const forward = forwardContext(s);
   const cacheKey = [
-    "afd-lastrun3",
+    "afd-lastrun4",
     CACHE_VERSION,
     currentModel(),
     pr.url, // immutable per merged PR — the "what/why" is frozen per run
@@ -1344,11 +1344,12 @@ export function getLastRunSummary(
           { role: "system", content: LAST_RUN_SYSTEM },
           { role: "user", content: lastRunContext(pr, s.displayName, forward) },
         ],
-        240, // 2-3 plain-language sentences (what · why · likely next)
+        320, // headroom for 2-3 plain-language sentences (what · why · likely next)
         (text) => checkLastRun(text, `${pr.title}\n${body}`),
       );
       if (out.text) {
-        const t = tidyLine(out.text, 340);
+        // Generous cap — the summary must never truncate mid-thought in the UI.
+        const t = tidyLine(out.text, 700);
         if (t.length >= 8) return { text: t, source: "llm" };
       }
       return fallback(out.reason);
@@ -1390,7 +1391,7 @@ export function getScorecardSummary(
     .map((g) => `- ${g.dimension}: ${clip(g.gap, 300)}`)
     .join("\n");
   const cacheKey = [
-    "afd-auditsum",
+    "afd-auditsum2",
     CACHE_VERSION,
     currentModel(),
     auditLabel,
@@ -1408,10 +1409,63 @@ export function getScorecardSummary(
             content: `${auditLabel} — overall grade ${sc.overall}.\n\nTop gaps the auditor flagged:\n${gapsText}`,
           },
         ],
-        160,
+        220,
       );
       if (out.text) {
-        const t = tidyLine(out.text, 240);
+        // Generous cap so the plain-language read never truncates in the UI.
+        const t = tidyLine(out.text, 600);
+        if (t.length >= 8) return t;
+      }
+      return null;
+    },
+    cacheKey,
+    { revalidate: 86_400 },
+  )();
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Counter-signal summary — the demand-research routine's caveat log (run-by-run
+// engineering notes) distilled into a plain founder-readable paragraph.
+// ────────────────────────────────────────────────────────────────────────────
+
+const COUNTER_SIGNAL_SYSTEM =
+  "You summarize the caveats and counter-evidence a pre-launch market-research " +
+  "routine logged while mining customer pain, for a busy, non-engineer founder. " +
+  "Combine ALL the notes into 1-3 short, plain sentences: what the research could " +
+  "NOT confirm or reach, and what that means for how much to trust the demand " +
+  "signal. NO jargon, no run numbers, no dates, no tool names unless essential. " +
+  "Ground strictly in the notes — invent nothing. Plain prose, no markdown, no lists.";
+
+/**
+ * Distill the demand routine's `disconfirming` notes (append-only, run-by-run,
+ * written for engineers) into one plain paragraph. Cached on the notes. Null
+ * when there are none / no LLM → caller falls back to the raw list.
+ */
+export function getCounterSignalSummary(updates: string[]): Promise<string | null> {
+  const notes = updates.map((u) => u.trim()).filter(Boolean);
+  if (notes.length === 0) return Promise.resolve(null);
+  if (buildPhase()) return Promise.resolve(null);
+
+  const joined = notes.map((n) => `- ${clip(n, 500)}`).join("\n");
+  const cacheKey = [
+    "afd-countersig",
+    CACHE_VERSION,
+    currentModel(),
+    String(notes.length),
+    joined.slice(0, 700),
+  ];
+
+  return unstable_cache(
+    async (): Promise<string | null> => {
+      const out = await callLLM(
+        [
+          { role: "system", content: COUNTER_SIGNAL_SYSTEM },
+          { role: "user", content: `Counter-signal / caveat notes:\n${joined}` },
+        ],
+        240,
+      );
+      if (out.text) {
+        const t = tidyLine(out.text, 600);
         if (t.length >= 8) return t;
       }
       return null;
