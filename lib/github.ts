@@ -61,7 +61,7 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 // v18: GTM channel approvals — pending_approvals[] (GROWTH_STATUS) + approved_channels: (PENDING_OPS).
 // v19: YAML-subset fold fix — a "- " line inside an open quoted scalar no longer
 //      unwinds the parse (was silently dropping next_actions/demand_signal/etc.).
-const SNAPSHOT_CACHE_VERSION = "v19";
+const SNAPSHOT_CACHE_VERSION = "v20";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
@@ -248,6 +248,32 @@ async function fetchPulls(
     };
   } catch (e) {
     errors.push(`pull requests: ${errorMessage(e)}`);
+    return null;
+  }
+}
+
+/**
+ * The factory's lifetime output: total merged PRs since the repo's first, plus
+ * when that first one was opened (the "since" date for the cumulative count).
+ * One search call returns both — `total_count` for the sum and, sorted oldest
+ * first, the first merged PR. Search has its own tight rate limit and this is a
+ * nice-to-have, so a failure returns null (the metric hides) and is NOT recorded
+ * as a snapshot error — it must never flip the whole snapshot to "partial".
+ */
+async function fetchAllTimePRs(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+): Promise<{ total: number; firstAt: string | null } | null> {
+  try {
+    const { data } = await octokit.rest.search.issuesAndPullRequests({
+      q: `repo:${owner}/${repo} is:pr is:merged`,
+      sort: "created",
+      order: "asc",
+      per_page: 1,
+    });
+    return { total: data.total_count, firstAt: data.items[0]?.created_at ?? null };
+  } catch {
     return null;
   }
 }
@@ -630,6 +656,8 @@ function degraded(
     merged7d: 0,
     merged7dItems: [],
     recentMerged: [],
+    allTimeMerged: null,
+    firstMergedAt: null,
     openPRs: [],
     stuckPRs: 0,
     commitsToday: null,
@@ -701,6 +729,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
   // 2) Everything else in parallel.
   const [
     pulls,
+    allTimePRs,
     commits,
     issues,
     ci,
@@ -721,6 +750,7 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     roadmapSteers,
   ] = await Promise.all([
     fetchPulls(octokit, owner, repo, errors),
+    fetchAllTimePRs(octokit, owner, repo),
     fetchCommits(octokit, owner, repo, workingBranch, errors),
     fetchIssues(octokit, owner, repo, errors),
     fetchCI(octokit, owner, repo, workingBranch, repoUrl, errors),
@@ -960,6 +990,8 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     merged7d: pulls?.merged7d ?? 0,
     merged7dItems: pulls?.merged7dItems ?? [],
     recentMerged: pulls?.recentMerged ?? [],
+    allTimeMerged: allTimePRs?.total ?? null,
+    firstMergedAt: allTimePRs?.firstAt ?? null,
     openPRs: pulls?.openPRs ?? [],
     stuckPRs: pulls?.stuckPRs ?? 0,
     commitsToday: commits ? commits.count : null,

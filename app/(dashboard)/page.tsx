@@ -204,6 +204,19 @@ export default async function OverviewPage() {
   const workMix = bucketThemes(overview.themes);
   const workMixTotal = workMix.reduce((n, b) => n + b.count, 0);
 
+  // Lifetime output banner: the cumulative PR count since the factory's first
+  // ship, its "since" date, and the sustained weekly average across that span.
+  const allTimePRs = overview.factory.allTimePRs;
+  const firstShipAt = overview.factory.firstShipAt;
+  const lifetimeWeeks = firstShipAt
+    ? Math.max(1, (Date.now() - Date.parse(firstShipAt)) / (7 * 24 * 3_600_000))
+    : null;
+  const lifetimeRate =
+    allTimePRs !== null && lifetimeWeeks ? Math.round(allTimePRs / lifetimeWeeks) : null;
+  const allTimePartial =
+    overview.factory.allTimePRLines > 0 &&
+    overview.factory.allTimePRLines < overview.factory.totalProjects;
+
   return (
     <div className="animate-fade-in mx-auto max-w-3xl">
       <Header fetchedAt={overview.oldestFetchedAt} />
@@ -427,9 +440,38 @@ export default async function OverviewPage() {
           </h2>
           <span className="text-xs text-muted">
             {overview.factory.activeProjects}/{overview.factory.totalProjects} lines
-            active · 7-day
+            active
           </span>
         </div>
+
+        {/* Lifetime output — the cumulative scale of the factory since its first
+            ship, framing the recent-performance detail below. */}
+        {allTimePRs !== null && (
+          <div className="mb-5 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-hairline pb-5">
+            <span className="flex items-baseline gap-2">
+              <span className="font-serif text-[28px] font-medium leading-none tabular text-ink">
+                {allTimePRs.toLocaleString()}
+              </span>
+              <span className="text-sm font-medium text-ink">
+                {pluralize(allTimePRs, "PR")} shipped all-time
+              </span>
+            </span>
+            <span className="text-xs text-muted">
+              {firstShipAt && <>since {formatShortDate(firstShipAt, true)}</>}
+              {lifetimeRate !== null && <> · ~{lifetimeRate}/wk avg</>}
+              {allTimePartial && (
+                <>
+                  {" "}
+                  ·{" "}
+                  <span title="Some lines' all-time counts were rate-limited; this is a partial total.">
+                    {overview.factory.allTimePRLines}/{overview.factory.totalProjects}{" "}
+                    lines counted
+                  </span>
+                </>
+              )}
+            </span>
+          </div>
+        )}
 
         {/* The headline trio — momentum, readiness, value — at real scale. */}
         <div className="grid grid-cols-3 gap-4">

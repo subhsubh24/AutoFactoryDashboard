@@ -206,6 +206,14 @@ export interface FactoryMetrics {
   wipStuck: number;
   activeProjects: number;
   totalProjects: number;
+  /** Cumulative merged PRs across every line since the factory's first ship;
+   *  null when no line could resolve its all-time count. */
+  allTimePRs: number | null;
+  /** How many lines contributed to `allTimePRs` (so an incomplete sum — some
+   *  lines rate-limited — can be flagged rather than shown as a false total). */
+  allTimePRLines: number;
+  /** Earliest first-merged-PR date across the fleet — the "since" for the count. */
+  firstShipAt: string | null;
 }
 
 function median(nums: number[]): number | null {
@@ -536,6 +544,21 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
     .map((s) => s.ci.passRate)
     .filter((n): n is number => n !== null);
   const fixes = themes.find((t) => t.key === "fix")?.count ?? 0;
+  // Lifetime output: sum the per-line all-time counts that resolved (search is
+  // rate-limited, so some may be null), and note how many contributed so a
+  // partial sum can be flagged rather than shown as a false grand total.
+  const allTimeCounts = snapshots
+    .map((s) => s.allTimeMerged)
+    .filter((n): n is number => n !== null);
+  const allTimePRs = allTimeCounts.length
+    ? allTimeCounts.reduce((a, b) => a + b, 0)
+    : null;
+  const firstShipAt = snapshots.reduce<string | null>((acc, s) => {
+    const d = s.firstMergedAt;
+    if (!d) return acc;
+    if (!acc) return d;
+    return Date.parse(d) < Date.parse(acc) ? d : acc;
+  }, null);
   const factory: FactoryMetrics = {
     throughputPerDay: Math.round((velocityTotal / 7) * 10) / 10,
     leadTimeHours: median(cycles),
@@ -551,6 +574,9 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
       (s) => s.status === "building" || s.merged24h > 0,
     ).length,
     totalProjects: snapshots.length,
+    allTimePRs,
+    allTimePRLines: allTimeCounts.length,
+    firstShipAt,
   };
 
   const oldestFetchedAt = snapshots.reduce<string | null>((acc, s) => {

@@ -326,6 +326,12 @@ export interface ProjectSnapshot {
   merged7dItems: PRItem[];
   /** Last 10 merged PRs (newest first). */
   recentMerged: PRItem[];
+  /** Total merged PRs since the repo's first — the factory's lifetime output.
+   *  null when the (rate-limited) search call couldn't resolve it. */
+  allTimeMerged: number | null;
+  /** When the first PR the factory ever merged was opened — the "since" date for
+   *  the cumulative count. null when unknown. */
+  firstMergedAt: string | null;
   openPRs: PRItem[];
   stuckPRs: number;
 
