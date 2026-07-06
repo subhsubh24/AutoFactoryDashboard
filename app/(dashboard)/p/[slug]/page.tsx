@@ -25,7 +25,6 @@ import {
   headlinePct,
   kindLabel,
   livenessMeta,
-  leadSentences,
   milestoneTitle,
   nextMilestone,
   pluralize,
@@ -492,8 +491,6 @@ export default async function ProjectPage({
                             title: lastPr.title,
                             href: lastPr.url,
                             when: lastPr.mergedAt ?? null,
-                            summary: leadSentences(narrative.text, 150) || undefined,
-                            source: narrative.source,
                           }
                         : { title: "Nothing shipped in the last 7 days", when: null }
                     }

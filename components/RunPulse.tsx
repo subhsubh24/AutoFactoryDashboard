@@ -1,26 +1,26 @@
 import { RelativeTime } from "@/components/RelativeTime";
 import { NextRun } from "@/components/NextRun";
-import { ClockIcon, RocketIcon, SparkleIcon } from "@/components/icons";
+import { ClockIcon, RocketIcon } from "@/components/icons";
 
 /**
- * "Last run → next run" pulse — the heartbeat line that sits right under the
- * 24-hour summary. Left: the most recent thing that shipped (regardless of which
- * project or routine), how long ago, and an AI one-line summary of that run.
- * Right: the very next routine scheduled to fire, with its local-time slot and a
- * live countdown. Used fleet-wide on the Floor and per-project on a detail page.
+ * "Last run → next run" pulse — the heartbeat line under the 24-hour summary.
+ * Left: the single most recent thing that shipped (any project / routine) — the
+ * actual PR title (what that last run did), which project it was, and how long
+ * ago. Deliberately NOT a 24-hour digest: it answers "what just happened", one
+ * run, one line. Right: the very next routine scheduled to fire, with its local
+ * slot + a live countdown. Used fleet-wide on the Floor and per-project on a
+ * detail page.
  */
 
 export interface RunPulseLast {
-  /** Bold primary line — the project (fleet) or the PR title (project page). */
+  /** What the last run did — the most recent merged PR's title. */
   title: string;
-  /** Link for the title — the PR that shipped. */
+  /** Link to that PR. */
   href?: string;
-  /** ISO of the run — drives the live "x ago". */
+  /** When it merged — drives the live "x ago". */
   when: string | null;
-  /** AI one-liner of what that run did. */
-  summary?: string;
-  /** Provenance of `summary` — an honest AI/Template marker. */
-  source?: "llm" | "template" | null;
+  /** Which line shipped it (fleet view only; omitted on a project's own page). */
+  project?: string;
 }
 
 export interface RunPulseNext {
@@ -56,41 +56,34 @@ export function RunPulse({
 }) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:gap-5">
-      {/* Last shipped — what just ran, how long ago, and what it did. */}
+      {/* Last shipped — the one most recent run: what it did + how long ago. */}
       <div className="min-w-0 flex-1">
         <Eyebrow icon={<RocketIcon className="h-3 w-3 text-sage" />}>
-          Last shipped
-          {last.source && (
-            <span className="inline-flex items-center gap-1 font-normal normal-case tracking-normal text-muted/80">
-              <span aria-hidden>·</span>
-              <SparkleIcon className="h-2.5 w-2.5" />
-              {last.source === "llm" ? "AI" : "Template"}
-            </span>
-          )}
+          Last run
         </Eyebrow>
-        <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          {last.href ? (
-            <a
-              href={last.href}
-              target="_blank"
-              rel="noreferrer"
-              className="min-w-0 text-sm font-medium leading-snug text-ink transition-colors hover:text-clay"
-            >
-              {last.title}
-            </a>
-          ) : (
-            <span className="text-sm font-medium leading-snug text-ink">
-              {last.title}
-            </span>
-          )}
-          {last.when && (
-            <span className="text-xs text-muted">
-              <RelativeTime iso={last.when} />
-            </span>
-          )}
-        </div>
-        {last.summary && (
-          <p className="mt-1 text-sm leading-snug text-muted">{last.summary}</p>
+        {last.href ? (
+          <a
+            href={last.href}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-1.5 block text-sm font-medium leading-snug text-ink transition-colors hover:text-clay"
+          >
+            {last.title}
+          </a>
+        ) : (
+          <p className="mt-1.5 text-sm font-medium leading-snug text-ink">
+            {last.title}
+          </p>
+        )}
+        {(last.project || last.when) && (
+          <p className="mt-1 text-xs text-muted">
+            {last.project && (
+              <>
+                {last.project} <span aria-hidden>· </span>
+              </>
+            )}
+            {last.when && <RelativeTime iso={last.when} />}
+          </p>
         )}
       </div>
 

@@ -187,9 +187,6 @@ export default async function OverviewPage() {
     lastShipped &&
     (snapshots.find((s) => s.slug === lastShipped.projectSlug)?.displayName ??
       lastShipped.projectName);
-  const lastShipNarrative = lastShipped
-    ? narratives.get(lastShipped.projectSlug)
-    : undefined;
   const fleetNext = snapshots
     .flatMap((s) =>
       runsFor(routinesForSlug(s.slug))
@@ -336,13 +333,10 @@ export default async function OverviewPage() {
               last={
                 lastShipped
                   ? {
-                      title: lastShipName!,
+                      title: lastShipped.title,
                       href: lastShipped.url,
                       when: lastShipped.mergedAt ?? null,
-                      summary: lastShipNarrative
-                        ? leadSentences(lastShipNarrative.text, 150)
-                        : undefined,
-                      source: lastShipNarrative?.source ?? null,
+                      project: lastShipName ?? undefined,
                     }
                   : { title: "Nothing shipped in the last 7 days", when: null }
               }
