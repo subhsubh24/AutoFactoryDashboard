@@ -184,14 +184,16 @@ export default async function OverviewPage() {
   // across every project. The "what it did" summary reuses the shipping
   // project's own cached AI digest — no extra LLM call.
   const lastShipped = overview.feed[0] ?? null;
-  const lastShipName =
-    lastShipped &&
-    (snapshots.find((s) => s.slug === lastShipped.projectSlug)?.displayName ??
-      lastShipped.projectName);
-  // AI summary of that last run, read from the full PR (title + description).
-  const lastRunSummary = lastShipped
-    ? await getLastRunSummary(lastShipped, lastShipName ?? lastShipped.projectName)
+  const lastShipSnap = lastShipped
+    ? snapshots.find((s) => s.slug === lastShipped.projectSlug) ?? null
     : null;
+  const lastShipName = lastShipSnap?.displayName ?? lastShipped?.projectName ?? null;
+  // AI summary of that last run — reads the full PR (title + description) and
+  // anticipates what's next from the project's roadmap + in-flight PRs.
+  const lastRunSummary =
+    lastShipped && lastShipSnap
+      ? await getLastRunSummary(lastShipped, lastShipSnap)
+      : null;
   const fleetNext = snapshots
     .flatMap((s) =>
       runsFor(routinesForSlug(s.slug))

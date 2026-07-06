@@ -22,6 +22,7 @@ import type { Growth } from "@/lib/growth";
 import {
   headlinePct,
   kindLabel,
+  milestoneTitle,
   nextMilestone,
   nextMilestoneShort,
   pluralize,
@@ -1229,22 +1230,51 @@ const LAST_RUN_SYSTEM =
   "running out of memory and crashing', 'RLS' → 'per-user data-access rules', " +
   "'middleware' → 'the code that runs on every request'). Cover, in order: " +
   "(1) what the run changed, in plain terms; (2) why — the problem it fixes or " +
-  "the goal it serves; and (3) what the factory will most likely work on next — " +
-  "base this on any next-steps the PR mentions or a reasonable follow-on, and " +
-  "phrase it modestly as an expectation ('next, it will likely …'). Ground " +
-  "everything in the given title and description: never invent features, metrics, " +
-  "or facts, and use only numbers that literally appear in the PR. Lead with the " +
-  'change itself — do NOT begin with "This PR" or "This change". Plain prose, no ' +
-  "markdown, no headings, no PR number.";
+  "the goal it serves; and (3) what the factory will most likely work on next. " +
+  "For (3), anticipate CONFIDENTLY and specifically by combining any next-steps " +
+  "the PR mentions with the 'What's queued next' section (the project's real " +
+  "roadmap milestone, the pull requests open right now, and any growth actions) — " +
+  "name the concrete next focus in plain terms, phrased as an expectation " +
+  "('next, it will likely …'). Ground everything in the material given: never " +
+  "invent features, metrics, or facts, and use only numbers that literally appear " +
+  "there. Lead with the change itself — do NOT begin with \"This PR\" or \"This " +
+  'change". Plain prose, no markdown, no headings, no PR number.';
 
-function lastRunContext(pr: PRItem, projectName: string): string {
+/**
+ * What the factory is teed up to work on next — the project's real roadmap
+ * milestone, its in-flight PRs, and any growth actions. Feeds beat (3) of the
+ * last-run summary so "what's next" is a grounded forecast, not a guess.
+ */
+function forwardContext(s: ProjectSnapshot): string {
+  const parts: string[] = [];
+  const milestone = nextMilestone(s);
+  if (milestone) parts.push(`Next roadmap milestone: ${milestoneTitle(milestone, 160)}`);
+  const inFlight = s.openPRs
+    .slice(0, 5)
+    .map((p) => `- ${clip(p.title, 100)}${p.draft ? " (draft)" : ""}`);
+  if (inFlight.length) {
+    parts.push(`Pull requests open right now (work in progress):\n${inFlight.join("\n")}`);
+  }
+  const gtmNext = s.growth.available ? s.growth.nextActions.slice(0, 3) : [];
+  if (gtmNext.length) {
+    parts.push(`Growth next actions:\n${gtmNext.map((a) => `- ${clip(a, 120)}`).join("\n")}`);
+  }
+  return parts.join("\n\n");
+}
+
+function lastRunContext(pr: PRItem, projectName: string, forward: string): string {
   return [
     `Project: ${projectName}`,
     `PR title: ${pr.title}`,
     "",
     "PR description:",
     clip((pr.body ?? "").trim() || "(no description provided)", 2400),
-  ].join("\n");
+    forward
+      ? `\nWhat's queued next for this project (use this to anticipate what the factory works on next):\n${forward}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 /** Flag an invented multi-digit number — a metric the PR never actually stated. */
@@ -1281,7 +1311,7 @@ function tidyLine(s: string, max = 180): string {
  */
 export function getLastRunSummary(
   pr: PRItem,
-  projectName: string,
+  s: ProjectSnapshot,
 ): Promise<LastRunSummary> {
   const fallback = (llmReason?: string): LastRunSummary => ({
     text: tidyLine(pr.title, 160),
@@ -1294,12 +1324,16 @@ export function getLastRunSummary(
   if (body.length < 24) return Promise.resolve(fallback());
   if (buildPhase()) return Promise.resolve(fallback());
 
+  const forward = forwardContext(s);
   const cacheKey = [
-    "afd-lastrun2",
+    "afd-lastrun3",
     CACHE_VERSION,
     currentModel(),
-    pr.url, // immutable per merged PR — regenerates only for a new run
+    pr.url, // immutable per merged PR — the "what/why" is frozen per run
     String(body.length),
+    // Regenerate the forecast when the queued-next picture shifts materially.
+    nextMilestone(s) ?? "",
+    String(s.openPRs.length),
   ];
 
   return unstable_cache(
@@ -1307,7 +1341,7 @@ export function getLastRunSummary(
       const out = await generateGuarded(
         [
           { role: "system", content: LAST_RUN_SYSTEM },
-          { role: "user", content: lastRunContext(pr, projectName) },
+          { role: "user", content: lastRunContext(pr, s.displayName, forward) },
         ],
         240, // 2-3 plain-language sentences (what · why · likely next)
         (text) => checkLastRun(text, `${pr.title}\n${body}`),

@@ -154,7 +154,7 @@ export default async function ProjectPage({
   // The project pulse: the most recent PR it shipped + the next routine to fire.
   const lastPr = snapshot.recentMerged[0] ?? null;
   const lastRunSummary = lastPr
-    ? await getLastRunSummary(lastPr, snapshot.displayName)
+    ? await getLastRunSummary(lastPr, snapshot)
     : null;
   const soonestRoutine = soonestRun(routineRuns);
   // Scheduled-run workload (the activity-as-cost proxy's backbone) — runs/week
