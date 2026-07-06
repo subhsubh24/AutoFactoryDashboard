@@ -1222,14 +1222,20 @@ export interface LastRunSummary {
 }
 
 const LAST_RUN_SYSTEM =
-  "You summarize a SINGLE pull request for the owner of an autonomous product " +
-  "factory glancing at what just shipped. Reply with ONE concise sentence — plain " +
-  "prose, present tense — that says specifically WHAT changed and, if the PR says " +
-  "so, why it matters. Ground STRICTLY in the given title and description: never " +
-  "invent features, files, or metrics, and use only numbers that literally appear " +
-  "in the PR. Lead with the change itself (a verb or the feature) — do NOT begin " +
-  'with "This PR", "This change", or "The PR". No markdown, no preamble, no PR ' +
-  "number. Aim for under 24 words.";
+  "You explain a SINGLE pull request to the busy, NON-engineer founder of an " +
+  "autonomous product factory, so they understand what just happened without " +
+  "reading any code. Write 2-3 short, plain, friendly sentences with NO jargon — " +
+  "translate technical terms into their everyday meaning (e.g. 'OOM' → 'the app " +
+  "running out of memory and crashing', 'RLS' → 'per-user data-access rules', " +
+  "'middleware' → 'the code that runs on every request'). Cover, in order: " +
+  "(1) what the run changed, in plain terms; (2) why — the problem it fixes or " +
+  "the goal it serves; and (3) what the factory will most likely work on next — " +
+  "base this on any next-steps the PR mentions or a reasonable follow-on, and " +
+  "phrase it modestly as an expectation ('next, it will likely …'). Ground " +
+  "everything in the given title and description: never invent features, metrics, " +
+  "or facts, and use only numbers that literally appear in the PR. Lead with the " +
+  'change itself — do NOT begin with "This PR" or "This change". Plain prose, no ' +
+  "markdown, no headings, no PR number.";
 
 function lastRunContext(pr: PRItem, projectName: string): string {
   return [
@@ -1289,7 +1295,7 @@ export function getLastRunSummary(
   if (buildPhase()) return Promise.resolve(fallback());
 
   const cacheKey = [
-    "afd-lastrun",
+    "afd-lastrun2",
     CACHE_VERSION,
     currentModel(),
     pr.url, // immutable per merged PR — regenerates only for a new run
@@ -1303,11 +1309,11 @@ export function getLastRunSummary(
           { role: "system", content: LAST_RUN_SYSTEM },
           { role: "user", content: lastRunContext(pr, projectName) },
         ],
-        140,
+        240, // 2-3 plain-language sentences (what · why · likely next)
         (text) => checkLastRun(text, `${pr.title}\n${body}`),
       );
       if (out.text) {
-        const t = tidyLine(out.text);
+        const t = tidyLine(out.text, 340);
         if (t.length >= 8) return { text: t, source: "llm" };
       }
       return fallback(out.reason);

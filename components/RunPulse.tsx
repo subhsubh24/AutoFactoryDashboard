@@ -59,7 +59,7 @@ export function RunPulse({
 }) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:gap-5">
-      {/* Last run — an AI summary of the one most recent PR + how long ago. */}
+      {/* Last run — project + when on top, then a plain-language AI summary. */}
       <div className="min-w-0 flex-1">
         <Eyebrow icon={<RocketIcon className="h-3 w-3 text-sage" />}>
           Last run
@@ -71,29 +71,31 @@ export function RunPulse({
             </span>
           )}
         </Eyebrow>
+        {(last.project || last.when) && (
+          <p className="mt-1.5 text-xs">
+            {last.project && (
+              <span className="font-semibold text-ink">{last.project}</span>
+            )}
+            {last.project && last.when && (
+              <span aria-hidden className="text-muted">
+                {" "}
+                ·{" "}
+              </span>
+            )}
+            {last.when && <RelativeTime iso={last.when} className="text-muted" />}
+          </p>
+        )}
         {last.href ? (
           <a
             href={last.href}
             target="_blank"
             rel="noreferrer"
-            className="mt-1.5 block text-sm font-medium leading-snug text-ink transition-colors hover:text-clay"
+            className="mt-1 block text-sm leading-relaxed text-ink transition-colors hover:text-clay"
           >
             {last.summary}
           </a>
         ) : (
-          <p className="mt-1.5 text-sm font-medium leading-snug text-ink">
-            {last.summary}
-          </p>
-        )}
-        {(last.project || last.when) && (
-          <p className="mt-1 text-xs text-muted">
-            {last.project && (
-              <>
-                {last.project} <span aria-hidden>· </span>
-              </>
-            )}
-            {last.when && <RelativeTime iso={last.when} />}
-          </p>
+          <p className="mt-1 text-sm leading-relaxed text-ink">{last.summary}</p>
         )}
       </div>
 
