@@ -47,24 +47,29 @@ function scorecardRow(
   type: RoutineType,
   label: string,
   sc: QualityScorecard,
+  /** Plain-language AI read of the gaps; falls back to the raw top gap. */
+  plain?: string | null,
 ): RoutineRunSummary {
   const graded = sc.available && !!sc.overall;
   const top = sc.topGaps[0];
+  // Prefer the plain-language AI read; else the auditor's own top gap verbatim.
+  const line = !graded
+    ? "Not graded yet"
+    : plain
+      ? plain
+      : top
+        ? `${firstSentence(top.gap, 160)}${
+            sc.topGaps.length > 1 ? ` (+${sc.topGaps.length - 1} more)` : ""
+          }`
+        : "No open gaps";
   return {
     type,
     label,
     when: sc.available ? sc.asOf ?? null : null,
     grade: graded ? sc.overall : null,
     gradeTone: graded ? GRADE_TONE[sc.overall!] ?? "muted" : "muted",
-    // The auditor's own top gap (verbatim) — what to fix — not just a count.
-    line: !graded
-      ? "Not graded yet"
-      : top
-        ? `${firstSentence(top.gap, 160)}${
-            sc.topGaps.length > 1 ? ` (+${sc.topGaps.length - 1} more)` : ""
-          }`
-        : "No open gaps",
-    source: "structured",
+    line,
+    source: graded && plain ? "llm" : "structured",
   };
 }
 
@@ -73,6 +78,8 @@ export function buildRoutineRunSummaries(
   s: ProjectSnapshot,
   narrative: Narrative,
   growth: GrowthSummary,
+  /** Plain-language AI summaries of the auditor gaps (project page only). */
+  audits?: { quality?: string | null; gtm?: string | null },
 ): RoutineRunSummary[] {
   const isModel = s.slug === "llm-quant";
   const lastShip = s.recentMerged[0]?.mergedAt ?? null;
@@ -117,9 +124,9 @@ export function buildRoutineRunSummaries(
             source: g.goLive?.status ? "structured" : narrative.source,
           };
         case "quality_auditor":
-          return scorecardRow(r.type, "Quality audit", s.qualityScorecard);
+          return scorecardRow(r.type, "Quality audit", s.qualityScorecard, audits?.quality);
         case "gtm_auditor":
-          return scorecardRow(r.type, "GTM audit", s.gtmScorecard);
+          return scorecardRow(r.type, "GTM audit", s.gtmScorecard, audits?.gtm);
         default:
           return { type: r.type, label: r.type, when: null, line: "" };
       }

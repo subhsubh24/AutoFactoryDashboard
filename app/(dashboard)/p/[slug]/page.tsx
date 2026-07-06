@@ -12,6 +12,7 @@ import {
   getNarrative,
   getLaunchSummary,
   getProjectTagline,
+  getScorecardSummary,
   getValuation,
 } from "@/lib/narrative";
 import { getHistory } from "@/lib/kv";
@@ -123,8 +124,18 @@ export default async function ProjectPage({
   const launch = snapshot.readyForSubmission
     ? await getLaunchSummary(snapshot)
     : null;
-  // Per-routine "last run" digest — what each scheduled routine last did.
-  const routineRunSummaries = buildRoutineRunSummaries(snapshot, narrative, growthSummary);
+  // Per-routine "last run" digest — what each scheduled routine last did. The
+  // auditor rows get a plain-language AI read of their (engineer-facing) gaps.
+  const [qualityAuditSummary, gtmAuditSummary] = await Promise.all([
+    getScorecardSummary(snapshot.qualityScorecard, "Quality audit"),
+    getScorecardSummary(snapshot.gtmScorecard, "GTM audit"),
+  ]);
+  const routineRunSummaries = buildRoutineRunSummaries(
+    snapshot,
+    narrative,
+    growthSummary,
+    { quality: qualityAuditSummary, gtm: gtmAuditSummary },
+  );
 
   const pct = headlinePct(snapshot);
   // Progress is positive by default; only a blocked project gets the clay ring.

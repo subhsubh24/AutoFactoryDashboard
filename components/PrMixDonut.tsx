@@ -65,7 +65,7 @@ export function PrMixDonut({
   });
 
   return (
-    <div className={cn("flex items-center gap-5", className)}>
+    <div className={cn("flex flex-col items-center gap-5", className)}>
       <div className="relative shrink-0" style={{ width: size, height: size }}>
         <svg
           viewBox="0 0 100 100"
@@ -117,12 +117,14 @@ export function PrMixDonut({
         </div>
       </div>
 
-      {/* Legend — identity carried by the label + count + share, not colour alone. */}
-      <ul className="min-w-0 flex-1 space-y-1.5">
+      {/* Legend — a compact block centred under the donut, so the counts sit
+          right next to their labels (not flung to the card's far edge).
+          Identity is carried by the label + count + share, not colour alone. */}
+      <ul className="w-60 max-w-full space-y-2 text-sm">
         {segs.map((s) => (
           <li
             key={s.key}
-            className="flex items-center gap-2 text-[13px]"
+            className="flex items-center gap-2.5"
             title={`${s.label}: ${s.count} of ${total} PRs (${s.share}%)`}
           >
             <span

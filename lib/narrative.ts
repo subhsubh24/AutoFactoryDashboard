@@ -19,6 +19,7 @@ import {
 import { extractThemes, themeSummary } from "@/lib/themes";
 import { parseBusinessCase, type Valuation } from "@/lib/businesscase";
 import type { Growth } from "@/lib/growth";
+import type { QualityScorecard } from "@/lib/scorecard";
 import {
   headlinePct,
   kindLabel,
@@ -1351,6 +1352,69 @@ export function getLastRunSummary(
         if (t.length >= 8) return { text: t, source: "llm" };
       }
       return fallback(out.reason);
+    },
+    cacheKey,
+    { revalidate: 86_400 },
+  )();
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Audit summary — a plain-language read of an auditor's top gaps (the raw
+// findings are written for engineers). Returns null → caller shows the raw gap.
+// ────────────────────────────────────────────────────────────────────────────
+
+const AUDIT_SYSTEM =
+  "You explain a software or go-to-market quality audit's findings to a busy, " +
+  "NON-engineer founder. In 1-2 short, plain, friendly sentences with NO jargon " +
+  "(translate technical terms into their everyday meaning), say what the main " +
+  "thing to improve is and why it matters. Do NOT restate the letter grade. " +
+  "Ground strictly in the gaps given — never invent findings or numbers. Plain " +
+  "prose, no markdown, no lists, no headings.";
+
+/**
+ * Turn an auditor's top gaps (engineer-facing text) into one or two plain
+ * sentences a founder can act on. Cached on the gap content + grade so it only
+ * regenerates when the audit changes. Null when not graded / no gaps / no LLM.
+ */
+export function getScorecardSummary(
+  sc: QualityScorecard,
+  auditLabel: string,
+): Promise<string | null> {
+  if (!sc.available || !sc.overall || sc.topGaps.length === 0) {
+    return Promise.resolve(null); // caller handles "not graded" / "no gaps"
+  }
+  if (buildPhase()) return Promise.resolve(null);
+
+  const gapsText = sc.topGaps
+    .slice(0, 3)
+    .map((g) => `- ${g.dimension}: ${clip(g.gap, 300)}`)
+    .join("\n");
+  const cacheKey = [
+    "afd-auditsum",
+    CACHE_VERSION,
+    currentModel(),
+    auditLabel,
+    sc.overall,
+    gapsText.slice(0, 500),
+  ];
+
+  return unstable_cache(
+    async (): Promise<string | null> => {
+      const out = await callLLM(
+        [
+          { role: "system", content: AUDIT_SYSTEM },
+          {
+            role: "user",
+            content: `${auditLabel} — overall grade ${sc.overall}.\n\nTop gaps the auditor flagged:\n${gapsText}`,
+          },
+        ],
+        160,
+      );
+      if (out.text) {
+        const t = tidyLine(out.text, 240);
+        if (t.length >= 8) return t;
+      }
+      return null;
     },
     cacheKey,
     { revalidate: 86_400 },
