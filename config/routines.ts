@@ -114,3 +114,17 @@ export function crossProjectRoutines(): Routine[] {
 export function routineShortLabel(type: RoutineType): string {
   return SHORT_LABEL[type];
 }
+
+/** Proper-case routine label for prose contexts (e.g. the "next up" pulse). */
+const FULL_LABEL: Record<RoutineType, string> = {
+  product_factory: "Product factory",
+  gtm_factory: "GTM factory",
+  research: "Research",
+  quality_auditor: "Quality audit",
+  gtm_auditor: "GTM audit",
+  digest: "Digest",
+};
+
+export function routineLabel(type: RoutineType): string {
+  return FULL_LABEL[type];
+}

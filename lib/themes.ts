@@ -53,6 +53,72 @@ export interface ThemeCount {
   count: number;
 }
 
+/**
+ * Coarse "work type" buckets — the owner's question is "how much of what shipped
+ * was real product work vs tests vs fixes vs plumbing?", not the 14 fine themes.
+ * Each fine theme rolls up into exactly one bucket, so bucket counts still sum to
+ * the PR total. Four buckets map cleanly onto the calm palette (sage / amber /
+ * muted / clay); the ORDER below is the canonical arc + legend order, chosen so
+ * the two warm hues (clay & amber) are never adjacent slices — that keeps the
+ * colour-blind separation strong (validated with the dataviz palette script).
+ */
+export type WorkBucket = "product" | "tests" | "upkeep" | "fixes";
+
+const BUCKET_OF: Record<ThemeKey, WorkBucket> = {
+  // Real, user-facing product work — the valuable output.
+  feature: "product",
+  design: "product",
+  mobile: "product",
+  monetization: "product",
+  auth: "product",
+  store: "product",
+  // Tests & evals — the owner called this one out explicitly ("% unit test").
+  tests: "tests",
+  // Reactive bug-fix work (also surfaced as the rework metric).
+  fix: "fixes",
+  // Plumbing & housekeeping — infra, hardening, and maintenance.
+  security: "upkeep",
+  perf: "upkeep",
+  infra: "upkeep",
+  refactor: "upkeep",
+  docs: "upkeep",
+  chore: "upkeep",
+};
+
+const BUCKET_LABEL: Record<WorkBucket, string> = {
+  product: "Product",
+  tests: "Tests",
+  upkeep: "Infra & upkeep",
+  fixes: "Fixes",
+};
+
+/** Canonical order — also the donut's arc + legend order (clay/amber never adjacent). */
+export const BUCKET_ORDER: WorkBucket[] = ["product", "tests", "upkeep", "fixes"];
+
+export interface BucketCount {
+  key: WorkBucket;
+  label: string;
+  count: number;
+}
+
+/**
+ * Roll the fine theme counts up into the four coarse work-type buckets, in
+ * canonical order (empty buckets dropped). Feeds the "work mix" donut on the
+ * Floor (fleet-wide) and each project page.
+ */
+export function bucketThemes(themes: ThemeCount[]): BucketCount[] {
+  const counts = new Map<WorkBucket, number>();
+  for (const t of themes) {
+    const b = BUCKET_OF[t.key];
+    counts.set(b, (counts.get(b) ?? 0) + t.count);
+  }
+  return BUCKET_ORDER.map((key) => ({
+    key,
+    label: BUCKET_LABEL[key],
+    count: counts.get(key) ?? 0,
+  })).filter((b) => b.count > 0);
+}
+
 function classify(title: string): ThemeDef {
   for (const t of THEMES) if (t.test.test(title)) return t;
   return THEMES.find((t) => t.key === "feature")!;

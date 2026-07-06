@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getProjectBySlug } from "@/config/projects";
-import { routinesForSlug, ROUTINE_SCHEDULE_AS_OF } from "@/config/routines";
-import { runsFor, workloadFor } from "@/lib/routine";
+import { routineLabel, routinesForSlug, ROUTINE_SCHEDULE_AS_OF } from "@/config/routines";
+import { runsFor, soonestRun, workloadFor } from "@/lib/routine";
 import { getProjectSnapshot } from "@/lib/github";
 import {
   getActionPlan,
@@ -25,12 +25,13 @@ import {
   headlinePct,
   kindLabel,
   livenessMeta,
+  leadSentences,
   milestoneTitle,
   nextMilestone,
   pluralize,
   toneClasses,
 } from "@/lib/utils";
-import { extractThemes, themeSummary } from "@/lib/themes";
+import { bucketThemes, extractThemes, themeSummary } from "@/lib/themes";
 import { qualitySignals, formatCycle } from "@/lib/quality";
 import { estimateCompletion, formatEtaDate, formatHorizon } from "@/lib/estimate";
 import { SectionCard } from "@/components/Section";
@@ -62,6 +63,8 @@ import { LoopHealthPanel } from "@/components/LoopHealthPanel";
 import { ValidatorPanel } from "@/components/ValidatorPanel";
 import { RoutineSchedule } from "@/components/RoutineSchedule";
 import { RoutineRuns, buildRoutineRunSummaries } from "@/components/RoutineRuns";
+import { RunPulse } from "@/components/RunPulse";
+import { PrMixDonut } from "@/components/PrMixDonut";
 import { SelfValidationPanel } from "@/components/SelfValidationPanel";
 import { QualityScorecardView, AuditorGaps } from "@/components/QualityScorecard";
 import { LivenessDot } from "@/components/LivenessDot";
@@ -130,6 +133,10 @@ export default async function ProjectPage({
   const blockReason = describeBlock(snapshot);
   const themes = extractThemes(snapshot.merged7dItems);
   const focus = themeSummary(themes);
+  // Coarse work-type split of the last 7 days of PRs (the donut). Total is the
+  // bucket sum so the slices add up to the number in the hole.
+  const projectMix = bucketThemes(themes);
+  const projectMixTotal = projectMix.reduce((n, b) => n + b.count, 0);
   const quality = qualitySignals(snapshot.merged7dItems, snapshot.ci);
   const eta = estimateCompletion(snapshot, history);
   const prog = snapshot.progress;
@@ -144,6 +151,9 @@ export default async function ProjectPage({
   // The project's autonomous routines + their next runs — from the authoritative
   // cron schedule (config/routines.ts), computed live in UTC (never cached).
   const routineRuns = runsFor(routinesForSlug(slug));
+  // The project pulse: the most recent PR it shipped + the next routine to fire.
+  const lastPr = snapshot.recentMerged[0] ?? null;
+  const soonestRoutine = soonestRun(routineRuns);
   // Scheduled-run workload (the activity-as-cost proxy's backbone) — runs/week
   // per routine, computed live from the same authoritative cron schedule.
   const workload = workloadFor(routinesForSlug(slug));
@@ -472,7 +482,54 @@ export default async function ProjectPage({
               title="Routine runs"
               subtitle="What each scheduled routine last did — AI run summaries + auditor grades"
             >
+              {/* The pulse first: what just shipped + what fires next. */}
+              {(lastPr || soonestRoutine) && (
+                <div className="mb-4 border-b border-hairline pb-4">
+                  <RunPulse
+                    last={
+                      lastPr
+                        ? {
+                            title: lastPr.title,
+                            href: lastPr.url,
+                            when: lastPr.mergedAt ?? null,
+                            summary: leadSentences(narrative.text, 150) || undefined,
+                            source: narrative.source,
+                          }
+                        : { title: "Nothing shipped in the last 7 days", when: null }
+                    }
+                    next={
+                      soonestRoutine
+                        ? {
+                            title: routineLabel(soonestRoutine.routine.type),
+                            at: soonestRoutine.nextAt,
+                            cron: soonestRoutine.routine.cron,
+                          }
+                        : { title: "—", at: null }
+                    }
+                  />
+                </div>
+              )}
               <RoutineRuns runs={routineRunSummaries} />
+            </SectionCard>
+          )}
+
+          {themes.length > 0 && (
+            <SectionCard
+              title="What shipped · 7 days"
+              subtitle="How the last 7 days of merged PRs split by work type"
+            >
+              {focus && (
+                <p className="mb-4 text-sm leading-relaxed text-ink">{focus}</p>
+              )}
+              <PrMixDonut buckets={projectMix} total={projectMixTotal} />
+              {themes.length > 1 && (
+                <div className="mt-5 border-t border-hairline pt-4">
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                    Detailed breakdown
+                  </p>
+                  <ThemeChips themes={themes} limit={10} />
+                </div>
+              )}
             </SectionCard>
           )}
 
@@ -659,17 +716,6 @@ export default async function ProjectPage({
               }
             >
               <RoadmapSteers steers={snapshot.roadmapSteers} />
-            </CollapsibleSection>
-          )}
-
-          {themes.length > 0 && (
-            <CollapsibleSection
-              title="What the work focused on"
-              subtitle="Themes across the last 7 days of merged PRs"
-              storageKey={`afd-themes-${slug}`}
-            >
-              {focus && <p className="mb-3 text-sm text-ink">{focus}</p>}
-              <ThemeChips themes={themes} limit={8} />
             </CollapsibleSection>
           )}
 

@@ -26,10 +26,12 @@ import { runsFor, soonestRun } from "@/lib/routine";
 import { getProjectBySlug } from "@/config/projects";
 import {
   crossProjectRoutines,
+  routineLabel,
   routineShortLabel,
   routinesForSlug,
   ROUTINE_SCHEDULE_AS_OF,
 } from "@/config/routines";
+import { bucketThemes } from "@/lib/themes";
 import type { ProjectSnapshot } from "@/lib/types";
 import {
   cn,
@@ -55,6 +57,8 @@ import { RoutineSchedule } from "@/components/RoutineSchedule";
 import { SelfValidationLine } from "@/components/SelfValidationPanel";
 import { LivenessDot } from "@/components/LivenessDot";
 import { WeekBars } from "@/components/WeekBars";
+import { PrMixDonut } from "@/components/PrMixDonut";
+import { RunPulse } from "@/components/RunPulse";
 import { ProgressTrend, type ProjectTrend } from "@/components/ProgressTrend";
 import { ValuationView } from "@/components/ValuationView";
 import { RelativeTime } from "@/components/RelativeTime";
@@ -174,6 +178,32 @@ export default async function OverviewPage() {
     0,
   );
 
+  // The fleet pulse: the most recent PR that shipped anywhere (the last routine
+  // output the dashboard can actually see) and the very next routine to fire
+  // across every project. The "what it did" summary reuses the shipping
+  // project's own cached AI digest — no extra LLM call.
+  const lastShipped = overview.feed[0] ?? null;
+  const lastShipName =
+    lastShipped &&
+    (snapshots.find((s) => s.slug === lastShipped.projectSlug)?.displayName ??
+      lastShipped.projectName);
+  const lastShipNarrative = lastShipped
+    ? narratives.get(lastShipped.projectSlug)
+    : undefined;
+  const fleetNext = snapshots
+    .flatMap((s) =>
+      runsFor(routinesForSlug(s.slug))
+        .filter((run) => run.nextAt)
+        .map((run) => ({ run, project: s.displayName })),
+    )
+    .sort((a, b) => Date.parse(a.run.nextAt!) - Date.parse(b.run.nextAt!))[0];
+
+  // Fleet-wide "work mix" — the 7-day PR total split across the four coarse work
+  // types (Product / Tests / Infra & upkeep / Fixes) for the donut. Total is the
+  // bucket sum so the slices always add up to the number in the hole.
+  const workMix = bucketThemes(overview.themes);
+  const workMixTotal = workMix.reduce((n, b) => n + b.count, 0);
+
   return (
     <div className="animate-fade-in mx-auto max-w-3xl">
       <Header fetchedAt={overview.oldestFetchedAt} />
@@ -285,6 +315,39 @@ export default async function OverviewPage() {
           </div>
         </div>
 
+        {/* The pulse: the last thing that shipped (any project/routine) + what
+            fires next — the live heartbeat under the 24h summary. */}
+        {(lastShipped || fleetNext) && (
+          <div className="mt-4 border-t border-hairline pt-4">
+            <RunPulse
+              last={
+                lastShipped
+                  ? {
+                      title: lastShipName!,
+                      href: lastShipped.url,
+                      when: lastShipped.mergedAt ?? null,
+                      summary: lastShipNarrative
+                        ? leadSentences(lastShipNarrative.text, 150)
+                        : undefined,
+                      source: lastShipNarrative?.source ?? null,
+                    }
+                  : { title: "Nothing shipped in the last 7 days", when: null }
+              }
+              next={
+                fleetNext
+                  ? {
+                      title: `${fleetNext.project} · ${routineLabel(
+                        fleetNext.run.routine.type,
+                      )}`,
+                      at: fleetNext.run.nextAt,
+                      cron: fleetNext.run.routine.cron,
+                    }
+                  : { title: "—", at: null }
+              }
+            />
+          </div>
+        )}
+
         {/* Loud loop-health flags: a stalled or churning loop, or a proposal. */}
         {(stalledLoops.length > 0 ||
           churningLoops.length > 0 ||
@@ -389,8 +452,10 @@ export default async function OverviewPage() {
           />
         </div>
 
-        {/* Shipping this week — the daily breakdown of that 7-day-avg throughput,
-            folded in so throughput lives in ONE place (number + its daily bars). */}
+        {/* This week — two views of the same 7-day window: daily volume (WHEN it
+            shipped) then the work mix (WHAT shipped), so throughput lives in one
+            place as a number, its daily bars, and its composition. Stacked, not
+            side-by-side: the page is capped narrow, so each chart gets full width. */}
         <div className="mt-6 border-t border-hairline pt-4">
           <div className="flex items-end justify-between">
             <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
@@ -411,6 +476,19 @@ export default async function OverviewPage() {
             </p>
           )}
         </div>
+        {workMixTotal > 0 && (
+          <div className="mt-5 border-t border-hairline pt-4">
+            <div className="flex items-end justify-between">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+                Work mix
+              </p>
+              <span className="text-xs text-muted">by type · 7-day</span>
+            </div>
+            <div className="mt-5">
+              <PrMixDonut buckets={workMix} total={workMixTotal} />
+            </div>
+          </div>
+        )}
 
         {/* Operational metrics — the diagnostics behind the trio. Deliberately
             NOT headline tiles (that would flatten the hierarchy into ten equal
