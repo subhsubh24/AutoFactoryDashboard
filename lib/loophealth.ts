@@ -38,6 +38,14 @@ export interface LoopRolling7d {
   recurringFailures: string[];
   /** Open `loop: harness improvement proposal` issues. */
   harnessProposalsOpen: number | null;
+  /**
+   * FACTORY_STANDARD §37 — shipped-change category → count over 7 days. Empty
+   * until the loop reports `rolling_7d.category_mix`; surfaces lever monoculture
+   * (diversity collapse) so it's visible, never inferred.
+   */
+  categoryMix: Record<string, number>;
+  /** The loop's one-line diversity read, e.g. "varied" / "concentrated: security". */
+  diversity: string | null;
 }
 
 export interface LoopHealth extends Availability {
@@ -78,6 +86,15 @@ function strArr(v: unknown): string[] {
         .filter((x): x is string => !!x)
     : [];
 }
+/** Parse a `{category: count}` map, keeping only real positive numeric counts. */
+function numMap(v: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [k, val] of Object.entries(asObj(v))) {
+    const n = num(val);
+    if (n !== null && n > 0 && k.trim()) out[k.trim()] = n;
+  }
+  return out;
+}
 
 function blank(): Omit<LoopHealth, "available"> {
   return {
@@ -95,6 +112,8 @@ function blank(): Omit<LoopHealth, "available"> {
       readinessRejected: null,
       recurringFailures: [],
       harnessProposalsOpen: null,
+      categoryMix: {},
+      diversity: null,
     },
     signal: null,
   };
@@ -145,6 +164,8 @@ export function parseLoopHealth(
       readinessRejected: num(r7.readiness_rejected),
       recurringFailures: strArr(r7.recurring_failures),
       harnessProposalsOpen: num(r7.harness_proposals_open),
+      categoryMix: numMap(r7.category_mix),
+      diversity: str(r7.diversity),
     },
     signal: SIGNALS.includes(signalStr as LoopSignal)
       ? (signalStr as LoopSignal)

@@ -36,6 +36,80 @@ const SIGNAL_FILL: Record<LoopSignal, string> = {
   stuck: "bg-clay",
 };
 
+/** Category mix sorted by count desc, with a deterministic name tiebreak. */
+const mixOrder = (mix: Record<string, number>): Array<[string, number]> =>
+  Object.entries(mix).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+
+/** The loop's own diversity read if given, else derive from concentration. */
+function diversityRead(
+  entries: Array<[string, number]>,
+  explicit: string | null,
+): { label: string; tone: Tone } {
+  if (explicit) return { label: explicit, tone: /concentrat/i.test(explicit) ? "amber" : "sage" };
+  const total = entries.reduce((s, [, n]) => s + n, 0);
+  const top = entries[0];
+  if (!top || total === 0) return { label: "—", tone: "muted" };
+  return entries.length <= 1 || top[1] / total >= 0.6
+    ? { label: `concentrated: ${top[0]}`, tone: "amber" }
+    : { label: "varied", tone: "sage" };
+}
+
+/**
+ * FACTORY_STANDARD §37 — the mix of shipped-change categories over 7 days, so a
+ * loop grinding the SAME lever every run (diversity collapse) is visible, not
+ * inferred. Monochrome segments keep it editorial (no competing accent colors);
+ * renders nothing until the loop reports `rolling_7d.category_mix`.
+ */
+function ChangeMix({
+  mix,
+  diversity,
+}: {
+  mix: Record<string, number>;
+  diversity: string | null;
+}) {
+  const entries = mixOrder(mix);
+  if (entries.length === 0) return null;
+  const total = entries.reduce((s, [, n]) => s + n, 0);
+  const read = diversityRead(entries, diversity);
+  const shade = (i: number) => Math.max(0.35, 1 - i * 0.16);
+  return (
+    <div className="border-t border-hairline pt-3">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
+          Change mix · 7d
+        </p>
+        <Chip tone={read.tone}>{read.label}</Chip>
+      </div>
+      <div
+        className="flex h-2 w-full overflow-hidden rounded-full bg-[var(--ring-track)]"
+        aria-hidden
+      >
+        {entries.map(([cat, n], i) => (
+          <span
+            key={cat}
+            title={`${cat} · ${n}`}
+            className="h-full bg-ink"
+            style={{ width: `${(n / total) * 100}%`, opacity: shade(i) }}
+          />
+        ))}
+      </div>
+      <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5">
+        {entries.map(([cat, n], i) => (
+          <li key={cat} className="flex items-center gap-1.5 text-[11px] text-muted">
+            <span
+              aria-hidden
+              className="h-1.5 w-1.5 rounded-full bg-ink"
+              style={{ opacity: shade(i) }}
+            />
+            <span className="text-ink">{cat}</span>
+            <span className="tabular">{n}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /**
  * A per-day strip of the loop's signal over recent polls — the trajectory the
  * owner actually cares about ("is this loop getting healthier?"). Hidden until
@@ -172,6 +246,8 @@ export function LoopHealthPanel({
           />
         </div>
       </div>
+
+      <ChangeMix mix={r7.categoryMix} diversity={r7.diversity} />
 
       {r7.recurringFailures.length > 0 && (
         <div className="border-t border-hairline pt-3">
