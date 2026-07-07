@@ -6,7 +6,6 @@ import { routineLabel, routinesForSlug, ROUTINE_SCHEDULE_AS_OF } from "@/config/
 import { runsFor, soonestRun, workloadFor } from "@/lib/routine";
 import { getProjectSnapshot } from "@/lib/github";
 import {
-  getActionPlan,
   getCounterSignalSummary,
   getGrowthSummary,
   getLastRunSummary,
@@ -17,7 +16,7 @@ import {
   getValuation,
 } from "@/lib/narrative";
 import { getHistory } from "@/lib/kv";
-import { projectDelta } from "@/lib/aggregate";
+import { buildOwnerReview, projectDelta } from "@/lib/aggregate";
 import type { FeedEntry, ProjectSnapshot } from "@/lib/types";
 import {
   cn,
@@ -45,7 +44,6 @@ import { ValuationView } from "@/components/ValuationView";
 import { DemandConfidenceNote } from "@/components/DemandConfidenceNote";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { ActionItemsPanel } from "@/components/ActionItemsPanel";
-import { ActionPlan } from "@/components/ActionPlan";
 import { Chip } from "@/components/Chip";
 import { Collapsible } from "@/components/Collapsible";
 import { CollapsibleSection } from "@/components/CollapsibleSection";
@@ -66,6 +64,7 @@ import { ValidatorPanel } from "@/components/ValidatorPanel";
 import { RoutineSchedule } from "@/components/RoutineSchedule";
 import { RoutineRuns, buildRoutineRunSummaries } from "@/components/RoutineRuns";
 import { RunPulse } from "@/components/RunPulse";
+import { OwnerReview } from "@/components/OwnerReview";
 import { PrMixDonut } from "@/components/PrMixDonut";
 import { SelfValidationPanel } from "@/components/SelfValidationPanel";
 import { QualityScorecardView, AuditorGaps } from "@/components/QualityScorecard";
@@ -112,15 +111,17 @@ export default async function ProjectPage({
   if (!project) notFound();
 
   const snapshot = await getProjectSnapshot(project);
-  const [narrative, history, valuation, actionPlan, tagline, growthSummary] =
+  const [narrative, history, valuation, tagline, growthSummary] =
     await Promise.all([
       getNarrative(snapshot),
       getHistory(slug),
       getValuation(snapshot),
-      getActionPlan(snapshot),
       getProjectTagline(snapshot),
       getGrowthSummary(snapshot),
     ]);
+  // Everything waiting on you for THIS project — bucketed exactly like the Floor
+  // review and mirrored in the tile, so the owner-actions concept is consistent.
+  const ownerReview = buildOwnerReview([snapshot]);
   // "What the factory built" — only meaningful once flagged ready to submit.
   const launch = snapshot.readyForSubmission
     ? await getLaunchSummary(snapshot)
@@ -445,6 +446,20 @@ export default async function ProjectPage({
       <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr] lg:items-start">
         {/* Main column */}
         <div className="space-y-6">
+          {/* Owner actions lead — the same bucketed "Needs you" as the Floor
+              review, scoped to this project, so a review is action-first. */}
+          {ownerReview.total > 0 && (
+            <SectionCard
+              title="Needs you"
+              subtitle="Everything waiting on you for this project"
+              aside={
+                <span className="text-xs tabular text-muted">{ownerReview.total}</span>
+              }
+            >
+              <OwnerReview review={ownerReview} />
+            </SectionCard>
+          )}
+
           <SectionCard
             title="Last 24 hours"
             subtitle="What the agent shipped"
@@ -548,29 +563,6 @@ export default async function ProjectPage({
                   <ThemeChips themes={themes} limit={10} />
                 </div>
               )}
-            </SectionCard>
-          )}
-
-          {actionPlan.available && (
-            <SectionCard
-              title="Action plan"
-              subtitle="What needs you — organized from PENDING_OPS.md"
-              aside={
-                <Chip tone={actionPlan.source === "llm" ? "clay" : "muted"}>
-                  <SparkleIcon className="h-3 w-3" />
-                  {actionPlan.source === "llm" ? "AI" : "Template"}
-                </Chip>
-              }
-            >
-              <ActionPlan
-                plan={actionPlan}
-                storageKey={`afd-actions-${slug}`}
-                sourceUrl={
-                  snapshot.files.pendingOps.available
-                    ? fileHref(snapshot.files.pendingOps.path)
-                    : undefined
-                }
-              />
             </SectionCard>
           )}
 

@@ -2,18 +2,15 @@ import Link from "next/link";
 import { getAllSnapshots } from "@/lib/github";
 import {
   buildOverview,
+  buildOwnerReview,
   factoryDelta,
-  humanAsksFor,
   projectDelta,
-  type NeedEntry,
-  type NeedGroup,
   type ProjectDelta,
 } from "@/lib/aggregate";
 import {
   getNarrative,
   getFactoryBriefing,
   getLastRunSummary,
-  getNeedsPlan,
   getProjectTagline,
   getValuation,
   type Narrative,
@@ -37,7 +34,6 @@ import type { ProjectSnapshot } from "@/lib/types";
 import {
   cn,
   ciMeta,
-  cleanProposalTitle,
   formatMoney,
   formatShortDate,
   headlinePct,
@@ -51,7 +47,6 @@ import {
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { Delta24h, DeltaPill } from "@/components/Delta";
 import { GrowthLine } from "@/components/GrowthPanel";
-import { Chip } from "@/components/Chip";
 import { LoopSignalChip } from "@/components/LoopHealthPanel";
 import { NextRun } from "@/components/NextRun";
 import { RoutineSchedule } from "@/components/RoutineSchedule";
@@ -60,6 +55,7 @@ import { LivenessDot } from "@/components/LivenessDot";
 import { WeekBars } from "@/components/WeekBars";
 import { PrMixDonut } from "@/components/PrMixDonut";
 import { RunPulse } from "@/components/RunPulse";
+import { OwnerReview, OwnerActionsMini } from "@/components/OwnerReview";
 import { ProgressTrend, type ProjectTrend } from "@/components/ProgressTrend";
 import { ValuationView } from "@/components/ValuationView";
 import { RelativeTime } from "@/components/RelativeTime";
@@ -92,8 +88,11 @@ export default async function OverviewPage() {
     snapshots.some((s) => s.errors.some((e) => /HTTP 40[13]/.test(e)));
 
   const shipped = overview.totalMerged24h;
-  const asks = overview.needs;
   const overnightCount = overview.overnightFeed.length;
+  // Everything genuinely waiting on the owner, across all projects — the morning
+  // review, bucketed (ship / unblock / approve / do). The same builder, scoped to
+  // one project, feeds each tile's compact "Needs you" and the project page.
+  const ownerReview = buildOwnerReview(snapshots);
 
   // KV history (per project) → progress trend + completion estimates.
   const HISTORY_DAYS = 21;
@@ -128,13 +127,9 @@ export default async function OverviewPage() {
     return (b.progress.buildPct ?? -1) - (a.progress.buildPct ?? -1);
   });
 
-  // Loop health at a glance: stalled loops + open harness-improvement proposals.
+  // Loop health at a glance: stalled + churning loops. (Harness proposals now
+  // live in the owner review's Approve bucket, so they aren't duplicated here.)
   const stalledLoops = snapshots.filter((s) => s.liveness.stalled);
-  const proposals = snapshots.flatMap((s) =>
-    s.attentionIssues
-      .filter((a) => a.kind === "harness_proposal")
-      .map((a) => ({ ...a, projectName: s.displayName })),
-  );
   // The loop's own "I'm stuck/churning" signal (LOOP_HEALTH) — distinct from the
   // cadence-based "stalled" flag; surfaces the recurring wall it can't clear.
   const churningLoops = snapshots.filter(
@@ -147,10 +142,9 @@ export default async function OverviewPage() {
   // and clustering the cross-project "Needs you" list (same task → one card).
   // Group the "Needs you" asks first, so the briefing's "N items need you" count
   // is the SAME number the Floor lists + badges (one card per clustered task).
-  const askGroups = await getNeedsPlan(asks);
   const [briefing, narrativeEntries, valuationEntries, taglineEntries] =
     await Promise.all([
-      getFactoryBriefing(snapshots, askGroups.length),
+      getFactoryBriefing(snapshots, ownerReview.total),
       Promise.all(snapshots.map(async (s) => [s.slug, await getNarrative(s)] as const)),
       Promise.all(snapshots.map(async (s) => [s.slug, await getValuation(s)] as const)),
       Promise.all(snapshots.map(async (s) => [s.slug, await getProjectTagline(s)] as const)),
@@ -265,7 +259,7 @@ export default async function OverviewPage() {
 
         <p className="mt-3 text-sm leading-relaxed text-ink/90">{briefing.text}</p>
 
-        <Verdict count={askGroups.length} />
+        <Verdict count={ownerReview.total} />
 
         {/* At-a-glance state + the since-yesterday delta (the old digest, folded
             into the hero so there's one masthead, not two stacked boxes). */}
@@ -363,10 +357,8 @@ export default async function OverviewPage() {
           </div>
         )}
 
-        {/* Loud loop-health flags: a stalled or churning loop, or a proposal. */}
-        {(stalledLoops.length > 0 ||
-          churningLoops.length > 0 ||
-          proposals.length > 0) && (
+        {/* Loud loop-health flags: a stalled or churning loop. */}
+        {(stalledLoops.length > 0 || churningLoops.length > 0) && (
           <div className="mt-3 space-y-1.5">
             <p className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted">
               <RefreshIcon className="h-3 w-3" />
@@ -398,38 +390,22 @@ export default async function OverviewPage() {
                 </p>
               );
             })}
-            {proposals.map((p) => (
-              <a
-                key={`${p.projectName}-${p.number}`}
-                href={p.url}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-start gap-1.5 text-xs text-muted transition-colors hover:text-clay"
-              >
-                <SparkleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber" />
-                <span className="line-clamp-2">
-                  <span className="font-medium text-ink">{p.projectName}</span>{" "}
-                  harness proposal: {cleanProposalTitle(p.title)}
-                </span>
-              </a>
-            ))}
           </div>
         )}
       </section>
 
-      {/* 2 — Only the things that genuinely need you — kept prominent, up top.
-          Gate + count on the GROUPED cards so the masthead number matches what's
-          actually listed (a same-task-across-N-projects ask is one card). */}
-      {askGroups.length > 0 && (
-        <section className="mb-6">
-          <h2 className="mb-3 px-1 text-sm font-semibold tracking-tight text-ink">
-            Needs you
-          </h2>
-          <ul className="space-y-2">
-            {askGroups.map((group) => (
-              <AskRow key={group.id} group={group} />
-            ))}
-          </ul>
+      {/* 2 — The morning review: EVERYTHING waiting on you, across all projects,
+          bucketed (ship / unblock / approve / do) so you can clear it without
+          opening a tile. Same-task-across-N-projects clusters into one row. */}
+      {ownerReview.total > 0 && (
+        <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 sm:p-6">
+          <div className="mb-4 flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold tracking-tight text-ink">Needs you</h2>
+            <span className="text-xs text-muted">
+              {ownerReview.total} {pluralize(ownerReview.total, "thing")} · your review
+            </span>
+          </div>
+          <OwnerReview review={ownerReview} />
         </section>
       )}
 
@@ -822,109 +798,11 @@ function Verdict({ count }: { count: number }) {
   );
 }
 
-/** One true human ask, phrased plainly. */
-function AskRow({ group }: { group: NeedGroup }) {
-  const isReady = group.kind === "ready";
-  // Render one chip per DISTINCT project — a group can carry several members of
-  // the same project (clustered same-task asks); they must not repeat or inflate
-  // the "N projects" count.
-  const projects = Array.from(
-    new Map(group.members.map((m) => [m.projectSlug, m])).values(),
-  );
-  const multi = projects.length > 1;
-  const single = projects[0];
-  return (
-    <li
-      className={cn(
-        "flex items-start gap-3 rounded-xl border p-3.5",
-        isReady ? "border-sage/30 bg-sage-soft/50" : "border-clay/20 bg-card",
-      )}
-    >
-      <span
-        className={cn(
-          "mt-1.5 h-2 w-2 shrink-0 rounded-full",
-          isReady ? "bg-sage" : "bg-clay",
-        )}
-      />
-      <div className="min-w-0 flex-1">
-        {multi ? (
-          // Same task across several projects — one card, a chip per project.
-          <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-            {projects.map((m) => (
-              <Link
-                key={m.projectSlug}
-                href={`/p/${m.projectSlug}`}
-                className="rounded-full bg-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted transition-colors hover:text-clay"
-              >
-                {m.projectName}
-              </Link>
-            ))}
-            <span className="text-[10px] font-medium tabular text-muted">
-              {projects.length} projects
-            </span>
-          </div>
-        ) : (
-          <Link
-            href={`/p/${single.projectSlug}`}
-            className="text-[11px] font-semibold uppercase tracking-wide text-muted transition-colors hover:text-clay"
-          >
-            {single.projectName}
-          </Link>
-        )}
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <p className="text-sm leading-snug text-ink">{group.text}</p>
-          {group.tag && (
-            <span className="rounded-full bg-bg px-1.5 py-0.5 text-[10px] font-medium text-muted">
-              {group.tag}
-            </span>
-          )}
-        </div>
-        {group.howTo && (
-          <p className="mt-0.5 text-xs text-muted">{group.howTo}</p>
-        )}
-        {multi && (
-          <p className="mt-1 text-[11px] text-muted">
-            Same task on each — do it once per project.
-          </p>
-        )}
-      </div>
-      {!multi && single.url && (
-        <a
-          href={single.url}
-          target="_blank"
-          rel="noreferrer"
-          aria-label="Open on GitHub"
-          className="mt-0.5 shrink-0 text-muted transition-colors hover:text-clay"
-        >
-          <ExternalLinkIcon className="h-4 w-4" />
-        </a>
-      )}
-    </li>
-  );
-}
-
 /**
- * A project briefing tile: name → live app, a did/now/next summary, a progress
- * bar + completion estimate, and a Dashboard link.
+ * A project briefing tile: name → live app, a did/now/next summary, a compact
+ * "Needs you" block (the same owner actions as the project page), a progress bar
+ * + completion estimate, and a Dashboard link. The corner reads CI status only.
  */
-/**
- * A short "why" line for a tile's attention corner — the genuine human asks
- * (priority order) with stuck PRs folded in. Capped at two phrases + a "+N" so
- * it stays glanceable; the full list lives in "Needs you" and the project page.
- */
-function attentionReason(asks: NeedEntry[], stuck: number): string | null {
-  const parts: string[] = [];
-  if (asks.some((a) => a.kind === "ready")) parts.push("ready to ship");
-  if (asks.some((a) => a.kind === "urgent_action")) parts.push("owner action");
-  const blockers = asks.filter((a) => a.kind === "blocker").length;
-  if (blockers > 0) parts.push(blockers > 1 ? `${blockers} blockers` : "blocker");
-  if (asks.some((a) => a.kind === "ci")) parts.push("CI failing");
-  if (stuck > 0) parts.push(`${stuck} stuck`);
-  if (parts.length === 0) return null;
-  if (parts.length <= 2) return parts.join(" · ");
-  return `${parts[0]} · ${parts[1]} · +${parts.length - 2}`;
-}
-
 function ProjectTile({
   snapshot: s,
   narrative,
@@ -942,11 +820,9 @@ function ProjectTile({
 }) {
   const status = statusMeta(s.status);
   const ci = ciMeta(s.ci.status);
-  // Attention: genuine human asks (drive the "needs you" badge + the top count)
-  // and stuck PRs (a softer, separate signal). One corner block summarizes both.
-  const asks = humanAsksFor(s);
-  const stuck = s.stuckPRs;
-  const reason = attentionReason(asks, stuck);
+  // This project's owner actions — the SAME builder as the Floor review and the
+  // project page, flattened to a compact "Needs you" block in the tile body.
+  const tileActions = buildOwnerReview([s]).sections.flatMap((sec) => sec.groups);
   const appUrl = getProjectBySlug(s.slug)?.appUrl;
   const pct = headlinePct(s); // submission readiness (headline)
   const build = s.progress.buildPct; // build completeness (secondary)
@@ -1004,38 +880,24 @@ function ProjectTile({
             </div>
           </div>
         </div>
-        {/* One attention chip: the loud word + why, together. "needs you" is the
-            curated human ask (matches the top count); a stuck-only tile gets its
-            own softer chip so it never inflates that count. The reason wraps to a
-            second line on a narrow tile rather than crowding the name. */}
-        <div className="flex max-w-[45%] flex-col items-end">
-          {asks.length > 0 ? (
-            <span className="inline-flex max-w-full flex-col items-end gap-0.5 rounded-2xl bg-clay-soft px-2.5 py-1 text-right text-[11px] leading-tight text-clay-strong">
-              <span className="font-semibold">needs you</span>
-              {reason && <span className="font-normal text-clay-strong/85">{reason}</span>}
-            </span>
-          ) : stuck > 0 ? (
-            <Chip
-              tone="clay"
-              title={`${stuck} open pull request${
-                stuck === 1 ? " has" : "s have"
-              } been open past 12h — review, merge, or close it to unblock the loop.`}
-            >
-              {stuck} stuck
-            </Chip>
-          ) : (
-            <span
-              className={cn(
-                "flex items-center gap-1.5 text-xs",
-                toneClasses(ci.tone).text,
-              )}
-            >
-              <span className={cn("h-1.5 w-1.5 rounded-full", toneClasses(ci.tone).dot)} />
-              CI {ci.label.toLowerCase()}
-            </span>
-          )}
+        {/* Corner reads CI status only — a glanceable health light. What needs
+            YOU lives in the "Needs you" block below (and the Floor review). */}
+        <div className="shrink-0">
+          <span
+            className={cn(
+              "flex items-center gap-1.5 text-xs",
+              toneClasses(ci.tone).text,
+            )}
+          >
+            <span className={cn("h-1.5 w-1.5 rounded-full", toneClasses(ci.tone).dot)} />
+            CI {ci.label.toLowerCase()}
+          </span>
         </div>
       </div>
+
+      {/* What needs you for THIS project — same owner-actions concept as the
+          Floor review + the project page, shrunk to the top items. */}
+      <OwnerActionsMini groups={tileActions} slug={s.slug} />
 
       {tagline && (
         // What the product IS (stable identity) — calm, above the status story.

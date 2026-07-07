@@ -10,6 +10,7 @@ export type NeedKind =
   | "stuck"
   | "blocker"
   | "proposal"
+  | "approval"
   | "fyi"
   | "action";
 
@@ -230,8 +231,9 @@ const KIND_PRIORITY: Record<NeedKind, number> = {
   ci: 3,
   stuck: 4,
   proposal: 5,
-  action: 6,
-  fyi: 7,
+  approval: 6,
+  action: 7,
+  fyi: 8,
 };
 
 /**
@@ -374,6 +376,22 @@ export function needsFor(s: ProjectSnapshot): NeedEntry[] {
     });
   }
 
+  // 6) GTM channel proposals awaiting the owner's approve/decline call.
+  const pendingOpsUrl = s.files.pendingOps.available
+    ? `${s.repoUrl}/blob/${s.workingBranch}/${s.files.pendingOps.path}`
+    : undefined;
+  for (const ap of s.pendingApprovals) {
+    out.push({
+      ...tag,
+      id: `${s.slug}:approval:${ap.actionId}`,
+      text: `Approve or decline the ${ap.channel} channel`,
+      howTo: ap.thesis ?? "Review the channel proposal — approve or decline it.",
+      url: pendingOpsUrl,
+      kind: "approval",
+      priority: KIND_PRIORITY.approval,
+    });
+  }
+
   return out;
 }
 
@@ -483,6 +501,64 @@ export function groupNeeds(needs: NeedEntry[]): NeedGroup[] {
   return groups.sort(
     (a, b) => a.priority - b.priority || b.members.length - a.members.length,
   );
+}
+
+// ── Owner review — the whole "what needs me" list, bucketed for a morning pass ──
+
+/** The four kinds of owner action, in the order a morning review reads best. */
+export type ReviewBucket = "ship" | "unblock" | "approve" | "do";
+
+/** Which bucket each ask kind belongs to; null = informational, excluded. */
+const BUCKET_OF_KIND: Record<NeedKind, ReviewBucket | null> = {
+  ready: "ship",
+  ci: "unblock",
+  blocker: "unblock",
+  stuck: "unblock",
+  proposal: "approve",
+  approval: "approve",
+  urgent_action: "do",
+  action: "do",
+  fyi: null,
+};
+
+const REVIEW_ORDER: ReviewBucket[] = ["ship", "unblock", "approve", "do"];
+
+export interface ReviewSection {
+  key: ReviewBucket;
+  groups: NeedGroup[];
+}
+
+export interface OwnerReview {
+  /** Non-empty buckets, in review order. */
+  sections: ReviewSection[];
+  /** Total distinct owner actions across all buckets — the "N need you" count. */
+  total: number;
+}
+
+/**
+ * Everything genuinely waiting on the owner, across all projects, clustered
+ * (same task on N projects → one card) and sorted into four buckets — so a
+ * 5-minute morning pass covers it without opening a single project tile. FYIs
+ * (informational, no action) are excluded.
+ */
+export function buildOwnerReview(snapshots: ProjectSnapshot[]): OwnerReview {
+  const entries = snapshots
+    .flatMap(needsFor)
+    .filter((e) => BUCKET_OF_KIND[e.kind] !== null);
+  const groups = groupNeeds(entries); // clusters same task across projects, priority-sorted
+  const byBucket = new Map<ReviewBucket, NeedGroup[]>();
+  for (const g of groups) {
+    const b = BUCKET_OF_KIND[g.kind];
+    if (!b) continue;
+    const arr = byBucket.get(b);
+    if (arr) arr.push(g);
+    else byBucket.set(b, [g]);
+  }
+  const sections = REVIEW_ORDER.map((key) => ({
+    key,
+    groups: byBucket.get(key) ?? [],
+  })).filter((s) => s.groups.length > 0);
+  return { sections, total: sections.reduce((n, s) => n + s.groups.length, 0) };
 }
 
 export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
