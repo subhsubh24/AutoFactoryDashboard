@@ -61,7 +61,7 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 // v18: GTM channel approvals — pending_approvals[] (GROWTH_STATUS) + approved_channels: (PENDING_OPS).
 // v19: YAML-subset fold fix — a "- " line inside an open quoted scalar no longer
 //      unwinds the parse (was silently dropping next_actions/demand_signal/etc.).
-const SNAPSHOT_CACHE_VERSION = "v22";
+const SNAPSHOT_CACHE_VERSION = "v23";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
@@ -584,19 +584,19 @@ async function fetchCI(
   }
 }
 
-// Bound cached file content. Append-only logs (IMPROVEMENT_LOG.md, LOOP_MEMORY.md)
-// grow unboundedly; left whole they can push the cached snapshot past Vercel's
-// ~2 MB Data-Cache entry limit → it silently won't cache → every render re-runs
-// the full ~25-call GitHub fetch. The LLM contexts already clip these to a few KB
-// and the UI only reads available/path, so a generous cap is free.
-const MAX_FILE_CONTENT_CHARS = 16_000;
-
 async function fetchFile(
   octokit: Octokit,
   owner: string,
   repo: string,
   ref: string,
   path: string,
+  // OPT-IN cap, in chars. Files that are structurally PARSED (ROADMAP → readiness,
+  // PENDING_OPS → owner actions, BUSINESS_CASE → valuation, the scorecards, …)
+  // MUST be fetched whole — truncating them silently drops the section the parser
+  // needs. Only pass this for an append-only log that's read for LLM context /
+  // display but never parsed (IMPROVEMENT_LOG.md), where a cap bounds the cached
+  // snapshot without losing anything meaningful.
+  maxChars?: number,
 ): Promise<RawFile> {
   try {
     const { data } = await octokit.rest.repos.getContent({ owner, repo, path, ref });
@@ -604,8 +604,7 @@ async function fetchFile(
       return { available: false, path, reason: "Not a file." };
     }
     const raw = Buffer.from(data.content, "base64").toString("utf8");
-    const content =
-      raw.length > MAX_FILE_CONTENT_CHARS ? raw.slice(0, MAX_FILE_CONTENT_CHARS) : raw;
+    const content = maxChars && raw.length > maxChars ? raw.slice(0, maxChars) : raw;
     return { available: true, path, content };
   } catch (e) {
     const code = statusCode(e);
@@ -848,7 +847,9 @@ async function buildSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
     fetchCI(octokit, owner, repo, workingBranch, repoUrl, errors),
     fetchFile(octokit, owner, repo, workingBranch, "ROADMAP.md"),
     fetchFile(octokit, owner, repo, workingBranch, "PENDING_OPS.md"),
-    fetchFile(octokit, owner, repo, workingBranch, "IMPROVEMENT_LOG.md"),
+    // The only capped fetch: IMPROVEMENT_LOG.md is append-only + unbounded and is
+    // read only for LLM context (clipped to ~600) / display, never parsed.
+    fetchFile(octokit, owner, repo, workingBranch, "IMPROVEMENT_LOG.md", 32_000),
     fetchFirstFile(octokit, owner, repo, workingBranch, [
       "docs/loop-memory.md",
       "docs/autonomous-loop/LOOP_MEMORY.md",
