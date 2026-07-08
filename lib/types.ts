@@ -160,6 +160,12 @@ export interface ActionItemsInfo extends Availability {
   note?: string;
   /** Raw "Pending" section text surfaced when parsing is ambiguous. */
   rawSection?: string;
+  /**
+   * Count of OWNER_ACTIONS items the loop marked `status: done` (FACTORY_STANDARD
+   * §38) — surfaced as a quiet "resolved" tally so the audit trail is visible
+   * without cluttering the actionable list. Undefined when no structured block.
+   */
+  resolvedCount?: number;
 }
 
 export interface ReadyInfo {
