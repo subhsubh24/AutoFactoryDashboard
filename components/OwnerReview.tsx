@@ -1,32 +1,35 @@
 import Link from "next/link";
 import type { NeedGroup, OwnerReview as OwnerReviewData, ReviewBucket } from "@/lib/aggregate";
+import type { BacklogSummary } from "@/lib/narrative";
 import { cn, type Tone } from "@/lib/utils";
 import {
   AlertIcon,
   ArrowRightIcon,
   ExternalLinkIcon,
+  RefreshIcon,
   RocketIcon,
   SparkleIcon,
 } from "@/components/icons";
 
 /**
- * "Needs you" — the whole morning review in one place. Everything genuinely
- * waiting on the owner, across every project, sorted into four buckets so a
- * 5-minute pass covers it without opening a project tile:
- *   Ship it · Unblock the loop · Approve · Do.
- * The Do bucket (usually the biggest) collapses PER PROJECT, and each project's
- * tasks group by type (Security / Billing / Deploy / …) so a long backlog stays
- * scannable. Identical tasks across projects are clustered upstream.
+ * The owner review, in two tiers. "Needs you" is the time-sensitive set — a
+ * 5-minute morning pass covers it without opening a project tile:
+ *   Urgent · Ship it · Unblock the loop · Approve.
+ * The routine hands-on chores live in a separate, calmer "Backlog" (rendered by
+ * OwnerBacklog) that collapses PER PROJECT → by type, so a long list stays
+ * scannable and never inflates the "needs you now" badge. Identical tasks across
+ * projects are clustered upstream.
  */
 
 const META: Record<
   ReviewBucket,
   { label: string; hint: string; icon: typeof RocketIcon; tone: Tone }
 > = {
+  urgent: { label: "Urgent", hint: "confirmed risk — clear it now", icon: AlertIcon, tone: "clay" },
   ship: { label: "Ship it", hint: "cleared the gate — your sign-off ships it", icon: RocketIcon, tone: "sage" },
-  unblock: { label: "Unblock the loop", hint: "stopping the factory from moving", icon: AlertIcon, tone: "clay" },
+  unblock: { label: "Unblock the loop", hint: "stopping the factory from moving", icon: RefreshIcon, tone: "clay" },
   approve: { label: "Approve", hint: "quick yes / no calls", icon: SparkleIcon, tone: "amber" },
-  do: { label: "Do", hint: "hands-on owner tasks", icon: ArrowRightIcon, tone: "muted" },
+  do: { label: "Backlog", hint: "hands-on owner chores", icon: ArrowRightIcon, tone: "muted" },
 };
 
 const DOT: Record<Tone, string> = {
@@ -242,18 +245,33 @@ export function OwnerActionsMini({
   groups,
   slug,
   limit = 2,
+  backlogCount = 0,
 }: {
   groups: NeedGroup[];
   slug: string;
   limit?: number;
+  /** Routine chores for this project — shown as a calm footer, not an alarm. */
+  backlogCount?: number;
 }) {
-  if (groups.length === 0) return null;
+  if (groups.length === 0 && backlogCount === 0) return null;
+  // Only routine chores (nothing time-sensitive) → a quiet one-liner, no clay.
+  if (groups.length === 0) {
+    return (
+      <Link
+        href={`/p/${slug}`}
+        className="flex items-center gap-1.5 rounded-xl border border-hairline bg-bg/40 px-3 py-2 text-[12px] text-muted transition-colors hover:text-clay"
+      >
+        <ArrowRightIcon className="h-3 w-3 shrink-0" />
+        {backlogCount} hands-on {backlogCount === 1 ? "chore" : "chores"} in the backlog
+      </Link>
+    );
+  }
   const shown = groups.slice(0, limit);
   const more = groups.length - shown.length;
   return (
     <div className="rounded-xl border border-clay/20 bg-clay-soft/40 px-3 py-2.5">
       <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-clay-strong">
-        Needs you <span className="tabular">· {groups.length}</span>
+        Needs you now <span className="tabular">· {groups.length}</span>
       </p>
       <ul className="mt-1.5 space-y-1.5">
         {shown.map((g) => (
@@ -263,18 +281,27 @@ export function OwnerActionsMini({
           </li>
         ))}
       </ul>
-      {more > 0 && (
-        <Link
-          href={`/p/${slug}`}
-          className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-clay-strong transition-colors hover:underline"
-        >
-          +{more} more <ArrowRightIcon className="h-3 w-3" />
-        </Link>
-      )}
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+        {more > 0 && (
+          <Link
+            href={`/p/${slug}`}
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-clay-strong transition-colors hover:underline"
+          >
+            +{more} more <ArrowRightIcon className="h-3 w-3" />
+          </Link>
+        )}
+        {backlogCount > 0 && (
+          <span className="text-[11px] text-muted">
+            · {backlogCount} in backlog
+          </span>
+        )}
+      </div>
     </div>
   );
 }
 
+/** The time-sensitive tier — urgent / ship / unblock / approve, each a short
+ *  flat list. The routine chores render separately via <OwnerBacklog>. */
 export function OwnerReview({ review }: { review: OwnerReviewData }) {
   if (review.total === 0) return null; // caller renders the calm "all clear"
   return (
@@ -282,8 +309,6 @@ export function OwnerReview({ review }: { review: OwnerReviewData }) {
       {review.sections.map((section) => {
         const meta = META[section.key];
         const Icon = meta.icon;
-        // The Do bucket collapses per project once it's more than a handful.
-        const grouped = section.key === "do" && section.groups.length > 6;
         return (
           <div key={section.key}>
             <div className="flex items-baseline gap-2">
@@ -294,18 +319,43 @@ export function OwnerReview({ review }: { review: OwnerReviewData }) {
               </p>
               <span className="text-[11px] text-muted">· {meta.hint}</span>
             </div>
-            {grouped ? (
-              <DoBucket groups={section.groups} />
-            ) : (
-              <ul className="mt-1.5 divide-y divide-hairline border-t border-hairline pt-1">
-                {section.groups.map((g) => (
-                  <ReviewRow key={g.id} group={g} tone={meta.tone} />
-                ))}
-              </ul>
-            )}
+            <ul className="mt-1.5 divide-y divide-hairline border-t border-hairline pt-1">
+              {section.groups.map((g) => (
+                <ReviewRow key={g.id} group={g} tone={meta.tone} />
+              ))}
+            </ul>
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * The routine hands-on backlog — the same tasks, split off from the "needs you
+ * now" tier so the badge stays honest. Leads with a one-line AI read of what the
+ * pile is about, then the collapsible Project → Type → tasks tree.
+ */
+export function OwnerBacklog({
+  groups,
+  summary,
+}: {
+  groups: NeedGroup[];
+  summary?: BacklogSummary | null;
+}) {
+  if (groups.length === 0) return null;
+  return (
+    <div>
+      {summary && (
+        <p className="flex items-start gap-1.5 text-[13px] leading-snug text-muted">
+          <SparkleIcon className="mt-0.5 h-3 w-3 shrink-0 text-muted" aria-hidden />
+          <span>
+            {summary.text}
+            {summary.source === "llm" && <span className="ml-1 text-[10px] uppercase tracking-wide text-muted/70">AI</span>}
+          </span>
+        </p>
+      )}
+      <DoBucket groups={groups} />
     </div>
   );
 }

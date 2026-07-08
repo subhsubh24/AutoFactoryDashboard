@@ -6,6 +6,7 @@ import { routineLabel, routinesForSlug, ROUTINE_SCHEDULE_AS_OF } from "@/config/
 import { runsFor, soonestRun, workloadFor } from "@/lib/routine";
 import { getProjectSnapshot } from "@/lib/github";
 import {
+  getBacklogSummary,
   getCounterSignalSummary,
   getGrowthSummary,
   getLastRunSummary,
@@ -64,7 +65,7 @@ import { ValidatorPanel } from "@/components/ValidatorPanel";
 import { RoutineSchedule } from "@/components/RoutineSchedule";
 import { RoutineRuns, buildRoutineRunSummaries } from "@/components/RoutineRuns";
 import { RunPulse } from "@/components/RunPulse";
-import { OwnerReview } from "@/components/OwnerReview";
+import { OwnerReview, OwnerBacklog } from "@/components/OwnerReview";
 import { PrMixDonut } from "@/components/PrMixDonut";
 import { SelfValidationPanel } from "@/components/SelfValidationPanel";
 import { QualityScorecardView, AuditorGaps } from "@/components/QualityScorecard";
@@ -129,13 +130,16 @@ export default async function ProjectPage({
   // Per-routine "last run" digest — what each scheduled routine last did. The
   // auditor rows get a plain-language AI read of their (engineer-facing) gaps.
   // The demand routine's counter-signal notes get the same plain-language read.
-  const [qualityAuditSummary, gtmAuditSummary, counterSignalSummary] = await Promise.all([
-    getScorecardSummary(snapshot.qualityScorecard, "Quality audit"),
-    getScorecardSummary(snapshot.gtmScorecard, "GTM audit"),
-    snapshot.growth.demand
-      ? getCounterSignalSummary(snapshot.growth.demand.disconfirming)
-      : Promise.resolve(null),
-  ]);
+  // The chore backlog gets a one-line AI read of what the pile is about.
+  const [qualityAuditSummary, gtmAuditSummary, counterSignalSummary, backlogSummary] =
+    await Promise.all([
+      getScorecardSummary(snapshot.qualityScorecard, "Quality audit"),
+      getScorecardSummary(snapshot.gtmScorecard, "GTM audit"),
+      snapshot.growth.demand
+        ? getCounterSignalSummary(snapshot.growth.demand.disconfirming)
+        : Promise.resolve(null),
+      getBacklogSummary(ownerReview.backlog),
+    ]);
   const routineRunSummaries = buildRoutineRunSummaries(
     snapshot,
     narrative,
@@ -532,18 +536,32 @@ export default async function ProjectPage({
             </SectionCard>
           )}
 
-          {/* Everything waiting on you for THIS project — the same bucketed
-              "Needs you" as the Floor review, scoped here and sitting just below
-              the routine runs so the run story reads first, then the to-do. */}
+          {/* The TIME-SENSITIVE things waiting on you for THIS project — the same
+              bucketed tier as the Floor review, scoped here and sitting just below
+              the routine runs so the run story reads first, then what needs you. */}
           {ownerReview.total > 0 && (
             <SectionCard
-              title="Needs you"
-              subtitle="Everything waiting on you for this project"
+              title="Needs you now"
+              subtitle="Time-sensitive: sign-offs, blockers, quick approvals, confirmed risks"
               aside={
                 <span className="text-xs tabular text-muted">{ownerReview.total}</span>
               }
             >
               <OwnerReview review={ownerReview} />
+            </SectionCard>
+          )}
+
+          {/* The routine chore backlog for this project — separate from the count
+              above, led by a one-line AI read, then the collapsible type tree. */}
+          {ownerReview.backlogTotal > 0 && (
+            <SectionCard
+              title="Backlog"
+              subtitle="Hands-on owner chores — do them when you have time"
+              aside={
+                <span className="text-xs tabular text-muted">{ownerReview.backlogTotal}</span>
+              }
+            >
+              <OwnerBacklog groups={ownerReview.backlog} summary={backlogSummary} />
             </SectionCard>
           )}
 

@@ -506,7 +506,7 @@ export function groupNeeds(needs: NeedEntry[]): NeedGroup[] {
 // ── Owner review — the whole "what needs me" list, bucketed for a morning pass ──
 
 /** The four kinds of owner action, in the order a morning review reads best. */
-export type ReviewBucket = "ship" | "unblock" | "approve" | "do";
+export type ReviewBucket = "urgent" | "ship" | "unblock" | "approve" | "do";
 
 /** Which bucket each ask kind belongs to; null = informational, excluded. */
 const BUCKET_OF_KIND: Record<NeedKind, ReviewBucket | null> = {
@@ -516,12 +516,18 @@ const BUCKET_OF_KIND: Record<NeedKind, ReviewBucket | null> = {
   stuck: "unblock",
   proposal: "approve",
   approval: "approve",
-  urgent_action: "do",
+  urgent_action: "urgent",
   action: "do",
   fyi: null,
 };
 
-const REVIEW_ORDER: ReviewBucket[] = ["ship", "unblock", "approve", "do"];
+// Two tiers. The "Needs you" tier is time-sensitive — confirmed risks
+// (urgent_action), ready-to-ship sign-offs, blockers, and quick approvals — and
+// it's what the masthead badge counts. The backlog tier ("do") is the routine
+// hands-on owner chores: important, but "when you can", not "right now". Keeping
+// them apart stops a long chore list from inflating the "needs you now" badge.
+const NEEDS_YOU_ORDER: ReviewBucket[] = ["urgent", "ship", "unblock", "approve"];
+const BACKLOG_ORDER: ReviewBucket[] = ["do"];
 
 export interface ReviewSection {
   key: ReviewBucket;
@@ -529,16 +535,24 @@ export interface ReviewSection {
 }
 
 export interface OwnerReview {
-  /** Non-empty buckets, in review order. */
+  /** The time-sensitive tier (urgent / ship / unblock / approve), non-empty
+   *  buckets in review order — what the masthead "N need you" badge counts. */
   sections: ReviewSection[];
-  /** Total distinct owner actions across all buckets — the "N need you" count. */
+  /** Count across the needs-you tier — the badge number. */
   total: number;
+  /** The routine hands-on backlog (the old "do" bucket), clustered — calm and
+   *  separate, so a long chore list doesn't inflate the "right now" badge. */
+  backlog: NeedGroup[];
+  /** Count of backlog items. */
+  backlogTotal: number;
 }
 
 /**
  * Everything genuinely waiting on the owner, across all projects, clustered
- * (same task on N projects → one card) and sorted into four buckets — so a
- * 5-minute morning pass covers it without opening a single project tile. FYIs
+ * (same task on N projects → one card) and split into two tiers: the
+ * time-sensitive "Needs you" set (urgent / ship / unblock / approve — the badge
+ * count) and a routine hands-on "backlog" (the do chores). A 5-minute morning
+ * pass clears the first tier; the backlog is there when there's time. FYIs
  * (informational, no action) are excluded.
  */
 export function buildOwnerReview(snapshots: ProjectSnapshot[]): OwnerReview {
@@ -554,11 +568,17 @@ export function buildOwnerReview(snapshots: ProjectSnapshot[]): OwnerReview {
     if (arr) arr.push(g);
     else byBucket.set(b, [g]);
   }
-  const sections = REVIEW_ORDER.map((key) => ({
+  const sections = NEEDS_YOU_ORDER.map((key) => ({
     key,
     groups: byBucket.get(key) ?? [],
   })).filter((s) => s.groups.length > 0);
-  return { sections, total: sections.reduce((n, s) => n + s.groups.length, 0) };
+  const backlog = BACKLOG_ORDER.flatMap((key) => byBucket.get(key) ?? []);
+  return {
+    sections,
+    total: sections.reduce((n, s) => n + s.groups.length, 0),
+    backlog,
+    backlogTotal: backlog.length,
+  };
 }
 
 export function buildOverview(snapshots: ProjectSnapshot[]): Overview {

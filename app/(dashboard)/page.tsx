@@ -10,6 +10,7 @@ import {
 import {
   getNarrative,
   getFactoryBriefing,
+  getBacklogSummary,
   getLastRunSummary,
   getProjectTagline,
   getValuation,
@@ -55,7 +56,7 @@ import { LivenessDot } from "@/components/LivenessDot";
 import { WeekBars } from "@/components/WeekBars";
 import { PrMixDonut } from "@/components/PrMixDonut";
 import { RunPulse } from "@/components/RunPulse";
-import { OwnerReview, OwnerActionsMini } from "@/components/OwnerReview";
+import { OwnerReview, OwnerBacklog, OwnerActionsMini } from "@/components/OwnerReview";
 import { ProgressTrend, type ProjectTrend } from "@/components/ProgressTrend";
 import { ValuationView } from "@/components/ValuationView";
 import { RelativeTime } from "@/components/RelativeTime";
@@ -142,9 +143,10 @@ export default async function OverviewPage() {
   // and clustering the cross-project "Needs you" list (same task → one card).
   // Group the "Needs you" asks first, so the briefing's "N items need you" count
   // is the SAME number the Floor lists + badges (one card per clustered task).
-  const [briefing, narrativeEntries, valuationEntries, taglineEntries] =
+  const [briefing, backlogSummary, narrativeEntries, valuationEntries, taglineEntries] =
     await Promise.all([
       getFactoryBriefing(snapshots, ownerReview.total),
+      getBacklogSummary(ownerReview.backlog),
       Promise.all(snapshots.map(async (s) => [s.slug, await getNarrative(s)] as const)),
       Promise.all(snapshots.map(async (s) => [s.slug, await getValuation(s)] as const)),
       Promise.all(snapshots.map(async (s) => [s.slug, await getProjectTagline(s)] as const)),
@@ -259,7 +261,7 @@ export default async function OverviewPage() {
 
         <p className="mt-3 text-sm leading-relaxed text-ink/90">{briefing.text}</p>
 
-        <Verdict count={ownerReview.total} />
+        <Verdict count={ownerReview.total} backlog={ownerReview.backlogTotal} />
 
         {/* At-a-glance state + the since-yesterday delta (the old digest, folded
             into the hero so there's one masthead, not two stacked boxes). */}
@@ -394,18 +396,34 @@ export default async function OverviewPage() {
         )}
       </section>
 
-      {/* 2 — The morning review: EVERYTHING waiting on you, across all projects,
-          bucketed (ship / unblock / approve / do) so you can clear it without
-          opening a tile. Same-task-across-N-projects clusters into one row. */}
+      {/* 2 — The morning review: the TIME-SENSITIVE things waiting on you across
+          all projects (urgent / ship / unblock / approve), so you can clear them
+          without opening a tile. Same-task-across-N-projects clusters into one
+          row. The routine chore backlog is the calmer section right below. */}
       {ownerReview.total > 0 && (
         <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 sm:p-6">
           <div className="mb-4 flex items-baseline justify-between">
-            <h2 className="text-sm font-semibold tracking-tight text-ink">Needs you</h2>
+            <h2 className="text-sm font-semibold tracking-tight text-ink">Needs you now</h2>
             <span className="text-xs text-muted">
               {ownerReview.total} {pluralize(ownerReview.total, "thing")} · your review
             </span>
           </div>
           <OwnerReview review={ownerReview} />
+        </section>
+      )}
+
+      {/* 2b — The backlog: routine hands-on owner chores, kept separate from the
+          "needs you now" count so a long list never inflates the badge. Led by a
+          one-line AI read of what the pile is about, then a collapsible tree. */}
+      {ownerReview.backlogTotal > 0 && (
+        <section className="mb-6 rounded-2xl border border-hairline bg-card p-5 sm:p-6">
+          <div className="mb-3 flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold tracking-tight text-ink">Backlog</h2>
+            <span className="text-xs text-muted">
+              {ownerReview.backlogTotal} hands-on {pluralize(ownerReview.backlogTotal, "chore")} · when you have time
+            </span>
+          </div>
+          <OwnerBacklog groups={ownerReview.backlog} summary={backlogSummary} />
         </section>
       )}
 
@@ -776,13 +794,26 @@ function OpStat({
   );
 }
 
-/** The single verdict line under the hero — time-aware. */
-function Verdict({ count }: { count: number }) {
+/**
+ * The single verdict line under the hero — time-aware. `count` is the
+ * TIME-SENSITIVE tier only (urgent / ship / unblock / approve); the routine
+ * chore `backlog` is mentioned but never inflates the headline number.
+ */
+function Verdict({ count, backlog }: { count: number; backlog: number }) {
   if (count === 0) {
     return (
       <div className="mt-4 flex items-center gap-2 rounded-xl bg-sage-soft/60 px-3.5 py-2.5 text-sm font-medium text-sage-strong">
         <CheckIcon className="h-4 w-4 shrink-0" />
-        <CalmCoda />
+        {backlog > 0 ? (
+          <span>
+            Nothing urgent <TimeOfDay /> —{" "}
+            <span className="font-normal text-sage-strong/80">
+              {backlog} hands-on {pluralize(backlog, "chore")} in the backlog when you have time.
+            </span>
+          </span>
+        ) : (
+          <CalmCoda />
+        )}
       </div>
     );
   }
@@ -793,6 +824,9 @@ function Verdict({ count }: { count: number }) {
       </span>
       <span>
         {count === 1 ? "thing needs" : "things need"} your attention <TimeOfDay />.
+        {backlog > 0 && (
+          <span className="font-normal text-clay-strong/70"> Plus {backlog} in the backlog.</span>
+        )}
       </span>
     </div>
   );
@@ -821,8 +855,10 @@ function ProjectTile({
   const status = statusMeta(s.status);
   const ci = ciMeta(s.ci.status);
   // This project's owner actions — the SAME builder as the Floor review and the
-  // project page, flattened to a compact "Needs you" block in the tile body.
-  const tileActions = buildOwnerReview([s]).sections.flatMap((sec) => sec.groups);
+  // project page. The time-sensitive tier flattens into the compact "Needs you
+  // now" block; the chore backlog is a quiet count beside it.
+  const tileReview = buildOwnerReview([s]);
+  const tileActions = tileReview.sections.flatMap((sec) => sec.groups);
   const appUrl = getProjectBySlug(s.slug)?.appUrl;
   const pct = headlinePct(s); // submission readiness (headline)
   const build = s.progress.buildPct; // build completeness (secondary)
@@ -965,7 +1001,11 @@ function ProjectTile({
       {/* What needs you for THIS project — same owner-actions concept as the
           Floor review + the project page, shrunk to the top items. Sits just
           above the growth line, closing out the tile's status story. */}
-      <OwnerActionsMini groups={tileActions} slug={s.slug} />
+      <OwnerActionsMini
+        groups={tileActions}
+        slug={s.slug}
+        backlogCount={tileReview.backlogTotal}
+      />
 
       <GrowthLine growth={s.growth} />
 

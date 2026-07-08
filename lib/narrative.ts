@@ -1802,3 +1802,117 @@ export function getValuation(s: ProjectSnapshot): Promise<Valuation> {
     { revalidate: 3600 },
   )();
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Backlog summary — one plain sentence on what the hands-on chore pile is about
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface BacklogSummary {
+  text: string;
+  source: "llm" | "template";
+}
+
+// Short human phrase per task-type, for both the grounded fallback and to steer
+// the model toward the owner's vocabulary (not the raw tag slug).
+const BACKLOG_TAG_PHRASE: Record<string, string> = {
+  security: "security key rotations",
+  billing: "billing & spend caps",
+  deploy: "deploy & DNS",
+  store: "app-store setup",
+  data: "data plumbing",
+  ci: "CI",
+  growth: "growth setup",
+  ops: "ops chores",
+};
+
+const BACKLOG_SUMMARY_SYSTEM =
+  "You summarize a backlog of hands-on chores waiting on the owner of several " +
+  "autonomous software projects. Write ONE plain sentence describing what the " +
+  "pile is MOSTLY about — the dominant themes — so they know its shape without " +
+  "reading every row. Lead with the biggest themes (e.g. security key rotations, " +
+  "app-store setup, DNS/deploy, spend caps). Describe proportions qualitatively " +
+  "('mostly', 'a few', 'some') — do NOT invent exact counts or lead with a raw " +
+  "number, and never invent a task, tool, or project not in the data. Warm, " +
+  "concise, plain prose — no markdown, no preamble.";
+
+/** Tag distribution (desc) for a set of backlog groups. */
+function backlogTagCounts(groups: NeedGroup[]): [string, number][] {
+  const counts = new Map<string, number>();
+  for (const g of groups) {
+    const t = g.tag ?? "ops";
+    counts.set(t, (counts.get(t) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+function backlogContext(groups: NeedGroup[]): string {
+  const projects = new Set(groups.flatMap((g) => g.members.map((m) => m.projectName)));
+  const byType = backlogTagCounts(groups)
+    .map(([tag, n]) => {
+      const examples = groups
+        .filter((g) => (g.tag ?? "ops") === tag)
+        .slice(0, 3)
+        .map((g) => clip(g.text, 110));
+      return `- ${BACKLOG_TAG_PHRASE[tag] ?? tag} (${n}): ${examples.join("; ")}`;
+    })
+    .join("\n");
+  return (
+    `Backlog of ${groups.length} owner ${pluralize(groups.length, "chore")} across ` +
+    `${projects.size} ${pluralize(projects.size, "project")}, by type:\n${byType}`
+  );
+}
+
+/** Grounded fallback: name the top two or three themes + project spread. */
+function templateBacklogSummary(groups: NeedGroup[]): BacklogSummary {
+  const top = backlogTagCounts(groups)
+    .slice(0, 3)
+    .map(([t]) => BACKLOG_TAG_PHRASE[t] ?? t);
+  const projects = new Set(groups.flatMap((g) => g.members.map((m) => m.projectSlug))).size;
+  const themes =
+    top.length > 1 ? `${top.slice(0, -1).join(", ")} and ${top[top.length - 1]}` : top[0] ?? "assorted chores";
+  return {
+    text: `Mostly ${themes}, across ${projects} ${pluralize(projects, "project")}.`,
+    source: "template",
+  };
+}
+
+/**
+ * One AI sentence on what the owner backlog is mostly about, so a long chore
+ * list reads as a shape ("mostly key rotations + store setup") instead of a wall
+ * of rows. Deterministic and never-throwing; the count itself stays deterministic
+ * (this is prose only, so it can't drift the badge). Cached ~1h, keyed on the
+ * backlog's type distribution so it refreshes when the mix changes.
+ */
+export function getBacklogSummary(groups: NeedGroup[]): Promise<BacklogSummary | null> {
+  if (groups.length === 0) return Promise.resolve(null);
+  if (buildPhase()) return Promise.resolve(templateBacklogSummary(groups));
+
+  const cacheKey = [
+    "afd-backlog-summary",
+    CACHE_VERSION,
+    currentModel(),
+    String(groups.length),
+    backlogTagCounts(groups)
+      .map(([t, n]) => `${t}:${n}`)
+      .join(","),
+    groups.slice(0, 8).map((g) => g.id).join(","),
+  ];
+
+  return unstable_cache(
+    async (): Promise<BacklogSummary> => {
+      const out = await generateGuarded(
+        [
+          { role: "system", content: BACKLOG_SUMMARY_SYSTEM },
+          { role: "user", content: backlogContext(groups) },
+        ],
+        160,
+        // Prose-only, no headline metric to guard; grounding lives in the prompt.
+        () => [],
+      );
+      if (out.text) return { text: tidyLine(out.text, 240), source: "llm" };
+      return templateBacklogSummary(groups);
+    },
+    cacheKey,
+    { revalidate: 3600 },
+  )();
+}
