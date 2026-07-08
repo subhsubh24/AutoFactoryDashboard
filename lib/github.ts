@@ -98,17 +98,70 @@ function computeLiveness(
 // Octokit
 // ────────────────────────────────────────────────────────────────────────────
 
+// A cold render builds 5 snapshots concurrently, each firing ~25 GitHub calls —
+// ~125 requests in one burst, which trips GitHub's SECONDARY rate limit (the
+// prod 403s). A tiny semaphore at the fetch layer caps global concurrency so the
+// burst is bounded without threading a limiter through every call site.
+const MAX_CONCURRENT_GH = 6;
+const GH_TIMEOUT_MS = 15_000;
+const GH_MAX_RETRIES = 3;
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+
+let ghActive = 0;
+const ghWaiters: Array<() => void> = [];
+async function ghAcquire(): Promise<void> {
+  if (ghActive < MAX_CONCURRENT_GH) {
+    ghActive += 1;
+    return;
+  }
+  await new Promise<void>((resolve) => ghWaiters.push(resolve));
+  ghActive += 1;
+}
+function ghRelease(): void {
+  ghActive -= 1;
+  ghWaiters.shift()?.();
+}
+const ghSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** How long to back off before a retry: honor Retry-After / x-ratelimit-reset,
+ *  else exponential with jitter; capped so one call can't stall the render. */
+function ghBackoffMs(res: Response, attempt: number): number {
+  const retryAfter = Number(res.headers.get("retry-after"));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return Math.min(retryAfter * 1000, 8000);
+  const resetMs = Number(res.headers.get("x-ratelimit-reset")) * 1000;
+  if (resetMs && resetMs > Date.now()) return Math.min(resetMs - Date.now(), 8000);
+  return Math.min(500 * 2 ** attempt, 8000) + Math.floor(Math.random() * 250);
+}
+
+/** Fetch used by Octokit: concurrency-gated + retry on 429/5xx and secondary
+ *  rate limits (403 with a Retry-After / exhausted x-ratelimit-remaining). */
+async function githubFetch(url: string, opts: RequestInit): Promise<Response> {
+  await ghAcquire();
+  try {
+    for (let attempt = 0; ; attempt += 1) {
+      const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(GH_TIMEOUT_MS) });
+      const secondaryLimited =
+        (res.status === 403 || res.status === 429) &&
+        (res.headers.get("retry-after") !== null ||
+          res.headers.get("x-ratelimit-remaining") === "0");
+      if (attempt < GH_MAX_RETRIES && (RETRYABLE_STATUS.has(res.status) || secondaryLimited)) {
+        await ghSleep(ghBackoffMs(res, attempt));
+        continue;
+      }
+      return res;
+    }
+  } finally {
+    ghRelease();
+  }
+}
+
 function getOctokit(): Octokit | null {
   const token = process.env.GITHUB_TOKEN;
   if (!token) return null;
   return new Octokit({
     auth: token,
     userAgent: "AutoFactoryDashboard",
-    request: {
-      // Keep individual calls from hanging the whole render.
-      fetch: (url: string, opts: RequestInit) =>
-        fetch(url, { ...opts, signal: AbortSignal.timeout(15000) }),
-    },
+    request: { fetch: githubFetch },
   });
 }
 
@@ -531,6 +584,13 @@ async function fetchCI(
   }
 }
 
+// Bound cached file content. Append-only logs (IMPROVEMENT_LOG.md, LOOP_MEMORY.md)
+// grow unboundedly; left whole they can push the cached snapshot past Vercel's
+// ~2 MB Data-Cache entry limit → it silently won't cache → every render re-runs
+// the full ~25-call GitHub fetch. The LLM contexts already clip these to a few KB
+// and the UI only reads available/path, so a generous cap is free.
+const MAX_FILE_CONTENT_CHARS = 16_000;
+
 async function fetchFile(
   octokit: Octokit,
   owner: string,
@@ -543,7 +603,9 @@ async function fetchFile(
     if (Array.isArray(data) || data.type !== "file" || !("content" in data)) {
       return { available: false, path, reason: "Not a file." };
     }
-    const content = Buffer.from(data.content, "base64").toString("utf8");
+    const raw = Buffer.from(data.content, "base64").toString("utf8");
+    const content =
+      raw.length > MAX_FILE_CONTENT_CHARS ? raw.slice(0, MAX_FILE_CONTENT_CHARS) : raw;
     return { available: true, path, content };
   } catch (e) {
     const code = statusCode(e);
@@ -1059,10 +1121,16 @@ function statusCodeFromErrors(errors: string[]): boolean {
  * was built, which is what the UI shows as "last updated".
  */
 export function getProjectSnapshot(project: ProjectConfig): Promise<ProjectSnapshot> {
+  // Stagger expiries by a deterministic per-project offset (0–599s) so the five
+  // snapshots don't all revalidate on the same tick and re-burst GitHub together.
+  const jitter = [...project.slug].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 600, 0);
   return unstable_cache(
     () => buildSnapshot(project),
     ["afd-snapshot", SNAPSHOT_CACHE_VERSION, project.slug],
-    { revalidate: SNAPSHOT_REVALIDATE_SECONDS, tags: [`project:${project.slug}`] },
+    {
+      revalidate: SNAPSHOT_REVALIDATE_SECONDS + jitter,
+      tags: [`project:${project.slug}`],
+    },
   )();
 }
 

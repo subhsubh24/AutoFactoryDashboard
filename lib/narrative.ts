@@ -1425,7 +1425,15 @@ export function getValuation(s: ProjectSnapshot): Promise<Valuation> {
       //    ARR total (we'd rather show no number than a fabricated one).
       if (bc?.available && bc.content) {
         const sourceUrl = `${s.repoUrl}/blob/${s.workingBranch}/${bc.path ?? "docs/BUSINESS_CASE.md"}`;
-        const parsed = parseBusinessCase(bc.content, sourceUrl, bc.lastCommitDate);
+        // Never let a malformed BUSINESS_CASE.md throw out of this cached call —
+        // it runs inside the Floor's Promise.all, so an uncaught throw here would
+        // reject the whole batch and blank the entire page (error boundary).
+        let parsed: Valuation | null = null;
+        try {
+          parsed = parseBusinessCase(bc.content, sourceUrl, bc.lastCommitDate);
+        } catch (e) {
+          console.warn(`[valuation] ${s.slug}: BUSINESS_CASE.md parse threw — ${String(e)}`);
+        }
         if (parsed) {
           console.info(
             `[valuation] ${s.slug}: business_case base=$${parsed.arrExpected} ` +

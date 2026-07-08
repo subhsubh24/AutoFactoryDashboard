@@ -82,11 +82,19 @@ export default async function OverviewPage() {
   const snapshots = await getAllSnapshots();
   const overview = buildOverview(snapshots);
   const tokenMissing = !process.env.GITHUB_TOKEN;
+  // Every repo failed to load — the dashboard couldn't reach GitHub. This is
+  // CRITICALLY different from "the factory is quiet": we must not render a green
+  // "all clear, enjoy your coffee" when we simply couldn't check. Split out the
+  // specific causes so we can show the right guidance (bad token vs rate limit).
+  const dataUnavailable =
+    !tokenMissing && snapshots.length > 0 && snapshots.every((s) => !s.repoMeta.available);
   const authError =
-    !tokenMissing &&
-    snapshots.length > 0 &&
-    snapshots.every((s) => !s.repoMeta.available) &&
-    snapshots.some((s) => s.errors.some((e) => /HTTP 40[13]/.test(e)));
+    dataUnavailable && snapshots.some((s) => s.errors.some((e) => /HTTP 40[13]/.test(e)));
+  const rateLimited =
+    dataUnavailable && snapshots.some((s) => s.errors.some((e) => /rate limit/i.test(e)));
+  // Some (not all) repos failed — figures below are partial, not wrong.
+  const partialData =
+    !dataUnavailable && snapshots.some((s) => !s.repoMeta.available);
 
   const shipped = overview.totalMerged24h;
   const overnightCount = overview.overnightFeed.length;
@@ -236,6 +244,23 @@ export default async function OverviewPage() {
           invalid or lacks read access to these repos.
         </div>
       )}
+      {dataUnavailable && !authError && (
+        <div className="mb-6 rounded-xl border border-amber/30 bg-amber-soft px-4 py-3 text-sm text-amber-strong">
+          <strong className="font-semibold">
+            {rateLimited
+              ? "GitHub rate limit reached."
+              : "Couldn't load fresh data from GitHub."}
+          </strong>{" "}
+          This is a data outage, not a quiet factory — the figures below may be
+          empty or stale, and the true state is unknown until it clears (usually
+          within the hour).
+        </div>
+      )}
+      {partialData && (
+        <div className="mb-6 rounded-xl border border-amber/30 bg-amber-soft/60 px-4 py-3 text-sm text-amber-strong">
+          Some projects couldn&apos;t be loaded from GitHub — the figures below are partial.
+        </div>
+      )}
 
       {/* 1 — The one-glance state: what shipped + a factory briefing + verdict. */}
       <section className="mb-5 rounded-2xl border border-hairline bg-card p-6 shadow-card sm:p-8">
@@ -243,7 +268,12 @@ export default async function OverviewPage() {
           <RocketIcon className="h-3.5 w-3.5 text-sage" />
           Shipped · last 24 hours
         </div>
-        {shipped > 0 ? (
+        {dataUnavailable ? (
+          <p className="mt-2 font-serif text-3xl font-medium leading-tight tracking-tight text-ink sm:text-4xl">
+            State unknown
+            <span className="text-muted"> — couldn&apos;t reach GitHub</span>
+          </p>
+        ) : shipped > 0 ? (
           <p className="mt-2 font-serif text-3xl font-medium leading-tight tracking-tight text-ink sm:text-4xl">
             {shipped} {pluralize(shipped, "PR")} shipped
             <span className="text-muted">
@@ -259,30 +289,36 @@ export default async function OverviewPage() {
           </p>
         )}
 
-        <p className="mt-3 text-sm leading-relaxed text-ink/90">{briefing.text}</p>
-
-        <Verdict count={ownerReview.total} backlog={ownerReview.backlogTotal} />
+        {/* The AI briefing + the green "all clear" verdict are meaningful ONLY when
+            we actually loaded data — hide both on an outage so absence-of-asks
+            can't read as "nothing to do". */}
+        {!dataUnavailable && (
+          <>
+            <p className="mt-3 text-sm leading-relaxed text-ink/90">{briefing.text}</p>
+            <Verdict count={ownerReview.total} backlog={ownerReview.backlogTotal} />
+          </>
+        )}
 
         {/* At-a-glance state + the since-yesterday delta (the old digest, folded
             into the hero so there's one masthead, not two stacked boxes). */}
         <div className="mt-4 space-y-1.5 border-t border-hairline pt-3 text-xs">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="text-muted">
-              CI{" "}
-              <span
-                className={cn(
-                  "tabular font-medium",
-                  overview.ci.total === 0
-                    ? "text-muted"
-                    : overview.ci.anyFailing
-                      ? "text-clay-strong"
-                      : "text-sage-strong",
-                )}
-              >
-                {overview.ci.passing}/{overview.ci.total}
-              </span>{" "}
-              green
-            </span>
+            {overview.ci.total === 0 ? (
+              <span className="text-muted">CI · no data</span>
+            ) : (
+              <span className="text-muted">
+                CI{" "}
+                <span
+                  className={cn(
+                    "tabular font-medium",
+                    overview.ci.anyFailing ? "text-clay-strong" : "text-sage-strong",
+                  )}
+                >
+                  {overview.ci.passing}/{overview.ci.total}
+                </span>{" "}
+                green
+              </span>
+            )}
             {overview.closestToLaunch && (
               <>
                 <span aria-hidden className="text-muted/60">·</span>
