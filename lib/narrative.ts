@@ -50,7 +50,7 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 // why an old wrong ARR could persist even after fixing the parser).
 // v9: briefing attention count = grouped "Needs you" cards (matches the badge);
 //     factoryContext drops per-project ask counts so the prose can't contradict it.
-const CACHE_VERSION = "v9";
+const CACHE_VERSION = "v10";
 
 /** True during `next build` (prerender). Used to skip external LLM calls. */
 function buildPhase(): boolean {
@@ -78,12 +78,24 @@ function currentModel(): string {
 }
 
 const SYSTEM_PROMPT =
-  "You write a status update for an autonomous software project that a " +
-  "scheduled coding agent ships to. Respond in EXACTLY this format, nothing " +
+  "You are the writer for a dashboard an operator skims each morning. For one " +
+  "autonomous software project (a scheduled coding agent ships code to it), " +
+  "write a short status note the way a sharp teammate would tell you what " +
+  "happened — not a report generator. Respond in EXACTLY this format, nothing " +
   "else:\n" +
   "HEADLINE: <a punchy 3-7 word headline, no trailing period>\n" +
-  "DIGEST: <2 sentences — what shipped in the last 24h and where it stands; " +
-  "then what's coming next>\n\n" +
+  "DIGEST: <2 sentences: what the last day of work was really about and where " +
+  "the project stands, then the single most useful thing coming next>\n\n" +
+  "VOICE (this is what separates a real read from a metrics readout):\n" +
+  "- Lead with the SUBSTANCE of the work — what it was for, what got better — " +
+  "NOT a PR count. Do not open with '<N> PRs shipped…'; a count is background, " +
+  "fold it in later only if it earns its place.\n" +
+  "- Do NOT follow a fixed template. In particular, avoid the shape '<N> PRs " +
+  "shipped …, including X and Y, bringing readiness to Z%.' Vary how each " +
+  "update opens and how the sentences are built.\n" +
+  "- Be concrete: name the actual work from the shipped PR titles / roadmap " +
+  "(e.g. 'hardened the checkout retry path'), not vague buckets like " +
+  "'performance improvements'.\n\n" +
   "GROUNDING RULES (critical — accuracy over enthusiasm):\n" +
   "- There are THREE independent axes; never conflate them: submission " +
   "readiness % (the Definition-of-Done gate — the real 'how done is it'), build " +
@@ -285,7 +297,7 @@ async function callOpenRouter(
         "Content-Type": "application/json",
         "X-Title": "AutoFactoryDashboard",
       },
-      body: JSON.stringify({ model, max_tokens: maxTokens, temperature: 0.4, messages }),
+      body: JSON.stringify({ model, max_tokens: maxTokens, temperature: 0.6, messages }),
       signal: AbortSignal.timeout(12_000),
       cache: "no-store",
     });
@@ -326,7 +338,7 @@ async function geminiCall(
       body: JSON.stringify({
         ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
         contents: [{ role: "user", parts: [{ text: user }] }],
-        generationConfig: { maxOutputTokens: maxTokens, temperature: 0.4 },
+        generationConfig: { maxOutputTokens: maxTokens, temperature: 0.6 },
       }),
       signal: AbortSignal.timeout(12_000),
       cache: "no-store",
