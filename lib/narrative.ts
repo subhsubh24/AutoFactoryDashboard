@@ -50,7 +50,7 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 // why an old wrong ARR could persist even after fixing the parser).
 // v9: briefing attention count = grouped "Needs you" cards (matches the badge);
 //     factoryContext drops per-project ask counts so the prose can't contradict it.
-const CACHE_VERSION = "v10";
+const CACHE_VERSION = "v11";
 
 /** True during `next build` (prerender). Used to skip external LLM calls. */
 function buildPhase(): boolean {
@@ -597,16 +597,19 @@ const FACTORY_SYSTEM =
   "You write a 2-sentence status briefing for someone running several " +
   "autonomous software projects shipped by scheduled coding agents. Sentence " +
   "one: overall momentum across all projects in the last 24 hours (lead with " +
-  "what shipped and what it focused on). Sentence two: the one or two things " +
-  "most worth their attention (a blocker, red CI, something ready to ship) — or " +
-  "that nothing needs them. Specific, warm, concise. Plain prose only: no " +
-  "markdown, no lists, no preamble.\n" +
+  "what shipped and what it focused on). Sentence two: name the single most " +
+  "pressing thing worth their attention — a specific blocker, red CI, or " +
+  "something ready to ship (say WHICH project) — or that nothing needs them. " +
+  "Specific, warm, concise. Plain prose only: no markdown, no lists, no " +
+  "preamble.\n" +
   "Accuracy over enthusiasm: only call a project ready/done/launched if the " +
   "data marks it ready for submission. These are works in progress — do not " +
   "imply they are finished or live.\n" +
-  "If you mention how many things need the owner's attention, use ONLY the single " +
-  "total given in the user message — never break it into per-project counts or " +
-  "invent a number (the UI shows that total separately, so they must match).";
+  "CRITICAL — do NOT state a COUNT of how many things need the owner: no 'six " +
+  "items need you', no 'a few things', no per-project tallies, no number at all " +
+  "for the attention list. The dashboard prints the exact count right beside " +
+  "your text, so any number you invent would clash with it. Describe WHAT needs " +
+  "them, never HOW MANY. (A count of what SHIPPED in sentence one is fine.)";
 
 function factoryContext(snapshots: ProjectSnapshot[]): string {
   return snapshots
@@ -690,7 +693,10 @@ export function getFactoryBriefing(
             role: "user",
             content:
               `Projects:\n${factoryContext(snapshots)}\n\n` +
-              `Total merged in last 24h: ${totalMerged}. Items needing the human: ${needs}.`,
+              `Total merged in last 24h: ${totalMerged}. ` +
+              (needs > 0
+                ? `Some items need the owner (do NOT state how many — the UI shows the count).`
+                : `Nothing needs the owner right now.`),
           },
         ],
         200,

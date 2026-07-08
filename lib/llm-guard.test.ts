@@ -129,5 +129,27 @@ const bflags = (t: string, anyReady: boolean) => checkBriefing(t, { anyReady }).
 expect("flags 'all projects are ready' when none ready", bflags("Great momentum — all projects are ready to launch.", false), true);
 expect("allows 'all projects shipped PRs'", bflags("All projects shipped PRs overnight; nothing needs you.", false), false);
 
+console.log("── briefing: no stray attention count (the badge owns the number) ──");
+// The reported bug: briefing said "Six items require your attention" while the
+// masthead badge said 69.
+expect(
+  "flags 'Six items require your attention'",
+  bflags("42 PRs shipped across the factory. Six items require your attention to keep things moving.", false),
+  true,
+);
+expect("flags 'a few items need you'", bflags("Momentum is strong. A few items need you before the next run.", false), true);
+expect("flags 'two projects need your attention'", bflags("Busy day. Two projects need your attention.", false), true);
+expect(
+  "allows naming one specific thing (no count)",
+  bflags("Steady progress overall. GroceryManager's billing blocker needs clearing.", false),
+  false,
+);
+expect("allows 'nothing needs you'", bflags("42 items merged, focused on tests. Nothing needs you right now.", false), false);
+expect(
+  "does not flag the merged count in sentence one",
+  bflags("Six PRs merged across three projects, focusing on features. GroceryManager is ready for your sign-off.", false),
+  false,
+);
+
 console.log(failed === 0 ? "\nALL PASS" : `\n${failed} FAILED`);
 if (failed) process.exitCode = 1;

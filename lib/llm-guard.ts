@@ -72,19 +72,46 @@ export interface BriefingFacts {
   anyReady: boolean;
 }
 
-/** Check the factory-wide briefing for false universal claims. */
+// The briefing must not state its OWN count of what needs the owner — the
+// masthead badge is the single source of that number, so a hand-written count
+// (e.g. "six items require your attention") drifts from it and contradicts the
+// badge. Catch a quantity attached to an item noun in a clause that's about
+// needing attention. A count of what SHIPPED ("42 items merged") is fine — the
+// merged/shipped exclusion and the attention-verb requirement both spare it.
+const ATTN_QUANTITY_RE =
+  /\b(?:\d{1,3}|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a few|a couple|couple of|several|a handful|handful of|a dozen|dozens?|numerous|multiple)\s+(?:\w+\s+){0,2}?(?:items?|things?|tasks?|actions?|prs?|pull requests?|projects?|blockers?|approvals?|decisions?|reviews?)\b/i;
+const ATTN_VERB_RE =
+  /\b(?:need|needs|require|requires|await|awaiting|waiting|attention|for your review|sign-?off|approv)\w*/i;
+const MERGED_RE = /\b(?:merged|shipped|ship|shipping|landed)\b/i;
+
+/** Check the factory-wide briefing for false universal claims + stray counts. */
 export function checkBriefing(text: string, f: BriefingFacts): Violation[] {
+  const out: Violation[] = [];
+
   const ALL_DONE_RE =
     /\b(everything|all (?:projects?|of them|are)|the (?:whole|entire) factory)\b[^.]*\b(ready|done|complete|completed|launched|live|shipped to production)\b/i;
   if (!f.anyReady && ALL_DONE_RE.test(text)) {
-    return [
-      {
-        rule: "false-all-ready",
-        message:
-          "No project is ready for submission yet — do not say everything/all projects " +
-          "are ready, done, or launched.",
-      },
-    ];
+    out.push({
+      rule: "false-all-ready",
+      message:
+        "No project is ready for submission yet — do not say everything/all projects " +
+        "are ready, done, or launched.",
+    });
   }
-  return [];
+
+  // Per clause (the merged count and the attention line are separate sentences),
+  // flag a quantity of items that sits in an attention clause but isn't merged.
+  for (const clause of text.split(/[.;\n]/)) {
+    if (ATTN_QUANTITY_RE.test(clause) && ATTN_VERB_RE.test(clause) && !MERGED_RE.test(clause)) {
+      out.push({
+        rule: "attention-count",
+        message:
+          "Do not state HOW MANY items need the owner — the dashboard prints that exact " +
+          "number beside your text. Describe WHICH thing needs attention, with no count.",
+      });
+      break;
+    }
+  }
+
+  return out;
 }
