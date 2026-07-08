@@ -77,6 +77,9 @@ import {
 // Gemini) is memoised in unstable_cache, so this does NOT re-hit the APIs per
 // request — a warm load is just cache reads.
 export const dynamic = "force-dynamic";
+// Bound a cold render (GitHub + Gemini fan-out) so a slow provider can't hang
+// the function past the platform default; comfortably within Hobby + Pro limits.
+export const maxDuration = 60;
 
 export default async function OverviewPage() {
   const snapshots = await getAllSnapshots();
@@ -264,6 +267,7 @@ export default async function OverviewPage() {
 
       {/* 1 — The one-glance state: what shipped + a factory briefing + verdict. */}
       <section className="mb-5 rounded-2xl border border-hairline bg-card p-6 shadow-card sm:p-8">
+        <h2 className="sr-only">This morning&apos;s summary</h2>
         <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted">
           <RocketIcon className="h-3.5 w-3.5 text-sage" />
           Shipped · last 24 hours
@@ -319,23 +323,8 @@ export default async function OverviewPage() {
                 green
               </span>
             )}
-            {overview.closestToLaunch && (
-              <>
-                <span aria-hidden className="text-muted/60">·</span>
-                <span className="text-muted">
-                  closest to launch{" "}
-                  <Link
-                    href={`/p/${overview.closestToLaunch.slug}`}
-                    className="font-medium text-ink transition-colors hover:text-clay"
-                  >
-                    {overview.closestToLaunch.name}
-                  </Link>{" "}
-                  <span className="tabular text-sage-strong">
-                    {overview.closestToLaunch.pct}%
-                  </span>
-                </span>
-              </>
-            )}
+            {/* "Closest to launch" is owned by the Progress-to-launch section
+                below (and the ranked tiles) — not repeated a third time here. */}
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="font-medium uppercase tracking-wide text-muted">
@@ -521,8 +510,11 @@ export default async function OverviewPage() {
           <PrimaryStat
             label="Est. value"
             value={formatMoney(factoryArr)}
-            unit="annual · see note"
-            tone={bcVals.length > 0 ? "sage" : "muted"}
+            unit="annual · pre-launch estimate"
+            // Confident green ONLY when the MAJORITY of the figure is modeled
+            // business cases — not just because one project has one. Otherwise a
+            // mostly-heuristic, pre-launch number would read as trustworthy.
+            tone={bcArr > heurArr ? "sage" : "muted"}
           />
         </div>
 
@@ -683,10 +675,16 @@ export default async function OverviewPage() {
       {/* 3 — A briefing tile per project (ranked closest-to-launch first): name
           opens the live app; a did/now/next summary; progress + ETA; Dashboard. */}
       <section className="mb-6">
-        <div className="mb-3 flex items-end justify-between px-1">
+        <div className="mb-1.5 flex items-end justify-between px-1">
           <h2 className="text-sm font-semibold tracking-tight text-ink">Projects</h2>
           <span className="text-xs text-muted">closest to launch first</span>
         </div>
+        {/* The load-bearing honesty note, made VISIBLE (was a per-tile title
+            tooltip — invisible on mobile/keyboard/screen readers). */}
+        <p className="mb-3 px-1 text-xs leading-relaxed text-muted">
+          &ldquo;% to submission&rdquo; is the final Definition-of-Done gate — it stays
+          low until the very end, so a mostly-built product can still read near 0%.
+        </p>
         <div className="space-y-4">
           {ranked.map((s) => (
             <ProjectTile
@@ -914,27 +912,31 @@ function ProjectTile({
             )}
             aria-hidden
           />
+          {/* Status is otherwise color-only (the dot) — name it for SR/colorblind. */}
+          <span className="sr-only">Status: {status.label}. </span>
           <div className="min-w-0">
-            {appUrl ? (
-              <a
-                href={appUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="group inline-flex max-w-full items-center gap-1.5 text-ink transition-colors hover:text-clay"
-              >
-                <span className="truncate font-serif text-lg font-medium leading-tight">
+            {/* Tile name is an <h3> so SR users can jump between projects under
+                the "Projects" <h2>. */}
+            <h3 className="min-w-0 font-serif text-lg font-medium leading-tight">
+              {appUrl ? (
+                <a
+                  href={appUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group inline-flex max-w-full items-center gap-1.5 text-ink transition-colors hover:text-clay"
+                >
+                  <span className="truncate">{s.displayName}</span>
+                  <ExternalLinkIcon className="h-3.5 w-3.5 shrink-0 text-muted transition-colors group-hover:text-clay" />
+                </a>
+              ) : (
+                <Link
+                  href={`/p/${s.slug}`}
+                  className="block truncate text-ink transition-colors hover:text-clay"
+                >
                   {s.displayName}
-                </span>
-                <ExternalLinkIcon className="h-3.5 w-3.5 shrink-0 text-muted transition-colors group-hover:text-clay" />
-              </a>
-            ) : (
-              <Link
-                href={`/p/${s.slug}`}
-                className="truncate font-serif text-lg font-medium leading-tight text-ink transition-colors hover:text-clay"
-              >
-                {s.displayName}
-              </Link>
-            )}
+                </Link>
+              )}
+            </h3>
             <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
               <span>{kindLabel(s.kind)}</span>
               <span aria-hidden>·</span>

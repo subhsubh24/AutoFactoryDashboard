@@ -25,17 +25,40 @@ export function isAuthConfigured(): boolean {
   return dashboardPassword() !== undefined;
 }
 
-async function sha256Hex(input: string): Promise<string> {
-  const bytes = new TextEncoder().encode(input);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest))
+const toHex = (buf: ArrayBuffer): string =>
+  Array.from(new Uint8Array(buf))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+
+async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return toHex(digest);
 }
 
-/** Cookie token for a given plaintext password. */
+async function hmacSha256Hex(key: string, msg: string): Promise<string> {
+  const enc = new TextEncoder();
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(key),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", cryptoKey, enc.encode(msg));
+  return toHex(sig);
+}
+
+/**
+ * Cookie token for a given plaintext password. When AUTH_SECRET is configured we
+ * key the token with it (HMAC) so a leaked cookie can't be brute-forced offline
+ * against the open-source prefix; without it we fall back to the plain hash
+ * (unchanged — the gate still works with only DASHBOARD_PASSWORD set).
+ */
 export function tokenForPassword(password: string): Promise<string> {
-  return sha256Hex(`afd::v1::${password}`);
+  const secret = process.env.AUTH_SECRET;
+  return secret
+    ? hmacSha256Hex(secret, `afd::v1::${password}`)
+    : sha256Hex(`afd::v1::${password}`);
 }
 
 /** Expected cookie token for the configured password (null when disabled). */

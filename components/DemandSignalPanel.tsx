@@ -10,11 +10,14 @@ import { CheckIcon, ExternalLinkIcon, PulseIcon, SparkleIcon } from "@/component
  * `demand_signal` block; absent → the panel doesn't render.
  */
 
+// On-palette + monotonic: muted → amber → sage (one green for both positive
+// levels; the label carries emerging-vs-strong, not a second hue). Raw amber-500/
+// emerald-500 were off the sage/clay/amber/muted system and untuned for dark.
 const STRENGTH_META: Record<string, { label: string; dot: string; text: string }> = {
   none: { label: "No demand signal yet", dot: "bg-muted", text: "text-muted" },
-  weak: { label: "Weak", dot: "bg-amber-500", text: "text-amber-600 dark:text-amber-400" },
-  emerging: { label: "Emerging", dot: "bg-sage", text: "text-sage" },
-  strong: { label: "Strong", dot: "bg-emerald-500", text: "text-emerald-600 dark:text-emerald-400" },
+  weak: { label: "Weak", dot: "bg-amber", text: "text-amber-strong" },
+  emerging: { label: "Emerging", dot: "bg-sage/70", text: "text-sage-strong" },
+  strong: { label: "Strong", dot: "bg-sage", text: "text-sage-strong" },
 };
 
 function SolvesTag({ solves }: { solves: string | null }) {
@@ -22,9 +25,9 @@ function SolvesTag({ solves }: { solves: string | null }) {
   const s = solves.toLowerCase();
   const meta =
     s === "yes"
-      ? { label: "we solve", cls: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400" }
+      ? { label: "we solve", cls: "border-sage/40 text-sage-strong" }
       : s === "partial"
-        ? { label: "partial", cls: "border-amber-500/40 text-amber-600 dark:text-amber-400" }
+        ? { label: "partial", cls: "border-amber/40 text-amber-strong" }
         : { label: "not solved", cls: "border-hairline text-muted" };
   return (
     <span className={cn("rounded border px-1.5 py-0.5 text-[10px] font-medium", meta.cls)}>
@@ -133,7 +136,7 @@ export function DemandSignalPanel({
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-hairline pt-2.5 text-[11px]">
           {demand.sourcesCovered.length > 0 && (
             <span className="inline-flex items-center gap-1 text-muted">
-              <CheckIcon className="h-3 w-3 text-emerald-500" />
+              <CheckIcon className="h-3 w-3 text-sage" />
               covered: {demand.sourcesCovered.join(", ")}
             </span>
           )}

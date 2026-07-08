@@ -7,6 +7,7 @@ import {
 } from "@/lib/kv";
 import { headlinePct } from "@/lib/utils";
 import { getValuation } from "@/lib/narrative";
+import { safeEqual } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,8 +22,15 @@ export const dynamic = "force-dynamic";
  */
 function authorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
-  if (!secret) return true;
-  return req.headers.get("authorization") === `Bearer ${secret}`;
+  if (!secret) {
+    // Open when unset (keeps local/preview usable + doesn't silently break an
+    // existing cron that never set the secret). Set CRON_SECRET to lock it down.
+    if (process.env.NODE_ENV === "production") {
+      console.warn("[cron] CRON_SECRET is unset — snapshot endpoint is unauthenticated.");
+    }
+    return true;
+  }
+  return safeEqual(req.headers.get("authorization") ?? "", `Bearer ${secret}`);
 }
 
 export async function GET(req: Request) {

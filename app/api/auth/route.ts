@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   AUTH_COOKIE,
   dashboardPassword,
+  expectedToken,
   safeEqual,
   sanitizeNext,
   tokenForPassword,
@@ -25,14 +26,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.redirect(new URL(next, req.url), { status: 303 });
   }
 
-  if (!safeEqual(submitted, configured)) {
+  // Compare the derived tokens (fixed-length hex), never the raw plaintext — a
+  // length-aware compare on plaintext would leak the configured password's length.
+  const token = await tokenForPassword(submitted);
+  const expected = await expectedToken();
+  if (!expected || !safeEqual(token, expected)) {
     const url = new URL("/login", req.url);
     url.searchParams.set("error", "1");
     if (next !== "/") url.searchParams.set("next", next);
     return NextResponse.redirect(url, { status: 303 });
   }
 
-  const token = await tokenForPassword(submitted);
   const res = NextResponse.redirect(new URL(next, req.url), { status: 303 });
   res.cookies.set(AUTH_COOKIE, token, {
     httpOnly: true,

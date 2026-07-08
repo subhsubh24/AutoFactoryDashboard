@@ -77,24 +77,33 @@ export function CollapsibleSection({
 
   return (
     <section className={cn("card overflow-hidden", className)}>
-      <button
-        type="button"
-        onClick={toggle}
-        aria-expanded={open}
-        className="group flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors hover:bg-bg/50"
-      >
-        <div className="min-w-0">
-          <span className="flex items-center gap-2 text-muted transition-colors group-hover:text-clay">
-            <Caret open={open} />
-            <span className="text-sm font-semibold tracking-tight text-ink">{title}</span>
+      {/* Disclosure pattern: the toggle lives inside a heading so screen-reader
+          users reach these deep-dive sections via heading navigation, like the
+          non-collapsible SectionCards (which render <h2>). */}
+      <h2 className="text-sm font-semibold tracking-tight">
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          className="group flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors hover:bg-bg/50"
+        >
+          <span className="min-w-0">
+            <span className="flex items-center gap-2 text-muted transition-colors group-hover:text-clay">
+              <Caret open={open} />
+              <span className="text-ink">{title}</span>
+            </span>
+            {subtitle && (
+              <span className="mt-0.5 block pl-[1.375rem] text-xs font-normal text-muted">
+                {subtitle}
+              </span>
+            )}
           </span>
-          {subtitle && <p className="mt-0.5 pl-[1.375rem] text-xs text-muted">{subtitle}</p>}
-        </div>
-        <span className="flex shrink-0 items-center gap-2">
-          {aside}
-          <span className="text-[10px] font-medium text-muted/70">{open ? "Hide" : "Show"}</span>
-        </span>
-      </button>
+          <span className="flex shrink-0 items-center gap-2">
+            {aside}
+            <span className="text-[10px] font-medium text-muted/70">{open ? "Hide" : "Show"}</span>
+          </span>
+        </button>
+      </h2>
       <div
         className={cn(
           "grid",

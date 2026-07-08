@@ -524,6 +524,17 @@ export function getNarrative(s: ProjectSnapshot): Promise<Narrative> {
     });
   }
 
+  // Dormant project (nothing shipped in 7 days, not flagged ready): the grounded
+  // template already says it best — skip the LLM call entirely rather than pay a
+  // round-trip to narrate "no recent activity".
+  if (s.merged7d === 0 && !s.readyForSubmission) {
+    return Promise.resolve({
+      headline: templateHeadline(s),
+      text: templateNarrative(s),
+      source: "template",
+    });
+  }
+
   const cacheKey = [
     "afd-narrative",
     CACHE_VERSION,

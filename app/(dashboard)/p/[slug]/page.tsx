@@ -91,6 +91,7 @@ import {
 // The GitHub + Gemini work stays memoised in unstable_cache, so a warm load is
 // just cache reads. Unknown slugs still 404 via the notFound() check below.
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function generateMetadata({
   params,
