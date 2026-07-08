@@ -564,10 +564,14 @@ export function parsePendingOps(md: string | null | undefined): ActionItemsInfo 
     for (const row of table.rows) {
       if (row.every((c) => c === "" || /^[-—–]+$/.test(c))) continue;
       const status = statusIdx >= 0 ? row[statusIdx] ?? "" : "";
+      // With a status column, trust it. WITHOUT one, only treat rows as pending
+      // when the table has an explicit action/task/todo column — otherwise a
+      // plain reference table (e.g. `| Variable | Value |`) would turn every row
+      // into a bogus owner action and inflate the pending-ops count.
       const looksPending =
         statusIdx >= 0
           ? PENDING_STATUS_RE.test(status) && !DONE_STATUS_RE.test(status)
-          : true;
+          : actionIdx >= 0;
       if (!looksPending) continue;
       const text =
         actionIdx >= 0 && row[actionIdx]
@@ -682,7 +686,9 @@ export function parseLoopMemory(md: string | null | undefined): LoopMemoryHealth
     const date = ISO_DATE_RE.exec(line)?.[1];
     const completed =
       /\b(complete|completed|performed|ran|done|clean)\b/i.test(line) &&
-      !/\bnot\s+(due|run)\b|skip|overdue|due\b/i.test(line);
+      // Negate only genuine not-done markers — NOT a bare "due", which also
+      // appears in a completed line naming the NEXT audit's due date.
+      !/\bnot\s+(due|run)\b|\bskip\b|\boverdue\b/i.test(line);
     const note = clip(stripMarkdown(line), 150);
     const hit: Hit = { date, note, completed, idx: i };
     if (!best || isMoreRecent(hit, best)) best = hit;
@@ -754,9 +760,12 @@ export function parseReadyEvidence(
 
   // ── Auditors ────────────────────────────────────────────────────────────
   let auditorCount: number | null = null;
+  // Require the number to be ADJACENT to "auditors" ("3 auditors", "3 independent
+  // auditors", "auditors: 3") — not just "the first digit somewhere after the
+  // word", which would read "auditors reviewed 12 flows" as "12 auditors".
   const countMatch =
     /\b(\d+)\s+(?:independent\s+|adversarial\s+|fresh\s+)*auditors?\b/i.exec(body) ||
-    /\bauditors?\b[^.\n]*?\b(\d+)\b/i.exec(body);
+    /\bauditors?\s*[:=]\s*(\d+)\b/i.exec(body);
   if (countMatch) {
     const n = Number(countMatch[1]);
     if (n > 0 && n < 50) auditorCount = n;

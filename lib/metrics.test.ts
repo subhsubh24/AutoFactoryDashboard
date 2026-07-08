@@ -86,5 +86,32 @@ console.log("── the whole point: donut total === WeekBars total for the same
   expectEq("donut vs weekbars", donutTotal, velTotal);
 }
 
+// The subtle production bug the earlier evals CAN'T catch: merged7dItems is
+// windowed when the snapshot is cached, then frozen; the donut later counts that
+// frozen set while WeekBars re-windowed against a fresh render-time `now`. After
+// a UTC-midnight rollover (warm cache) the two windows differ and the totals
+// diverge. The fix: window ONCE at render and pass that same instant to
+// weeklyVelocity. This locks that a shared instant keeps them equal AND excludes
+// out-of-window PRs from BOTH surfaces identically.
+console.log("── cache/render skew: donut + bars share ONE window instant (no midnight drift) ──");
+{
+  const nowMs = Date.parse("2026-03-10T00:20:00Z"); // just after a UTC midnight
+  const d = new Date(nowMs);
+  const weekStart = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - 6);
+  const at = (dayOffset: number) =>
+    new Date(Date.UTC(2026, 2, 10 - dayOffset, 0, 0, 0)).toISOString();
+  // offsets 0..6 are in the 7-day window; 7 and 8 fall just outside it.
+  const all = [8, 7, 6, 5, 3, 1, 0].map((off) => pr(off, TITLES[off % TITLES.length], at(off)));
+  const inWeekFeed = all.filter((p) => {
+    const t = Date.parse(p.mergedAt ?? "");
+    return !Number.isNaN(t) && t >= weekStart;
+  });
+  const donutTotal = bucketThemes(extractThemes(inWeekFeed)).reduce((s, b) => s + b.count, 0);
+  const velTotal = weeklyVelocity(inWeekFeed.map(feedEntry), nowMs).reduce((s, x) => s + x.count, 0);
+  expectEq("in-window set is the 7 recent days", inWeekFeed.length, 5); // offsets 6,5,3,1,0
+  expectEq("donut(inWeek) == bars(inWeek, sameNow)", donutTotal, velTotal);
+  expectEq("both == in-window count", velTotal, inWeekFeed.length);
+}
+
 console.log(failed === 0 ? "\nAll metric-consistency evals passed." : `\n${failed} FAILED`);
 if (failed > 0) process.exit(1);

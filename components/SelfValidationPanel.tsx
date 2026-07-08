@@ -131,7 +131,7 @@ export function SelfValidationPanel({
               </ul>
               <p className="mt-2 text-[11px] leading-relaxed text-muted">
                 Each is an urgent <span className="font-mono">validation-capability-*</span> owner
-                action in the Action plan — the loop can&apos;t validate these flows until you wire the secret.
+                action in &ldquo;Needs you now&rdquo; — the loop can&apos;t validate these flows until you wire the secret.
               </p>
             </div>
           ) : (

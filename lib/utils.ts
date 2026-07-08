@@ -329,7 +329,19 @@ export function headlinePct(s: ProjectSnapshot): number | null {
   return s.progress.percentToSubmission;
 }
 
-/** Secondary % = build completeness (Track sections), or null if unmeasured. */
-export function buildPct(s: ProjectSnapshot): number | null {
-  return s.progress.buildPct;
+/**
+ * Allow only http(s) URLs through to an `href`. Repo docs — and especially the
+ * demand-signal "sources", which are mined from public forums — can carry a
+ * `javascript:` (or `data:`) URL, and React does NOT sanitize hrefs; a scheme
+ * allowlist at parse time is the fix. Returns undefined for anything unsafe or
+ * unparseable, so callers can drop the link entirely.
+ */
+export function safeHttpUrl(u?: string | null): string | undefined {
+  if (!u) return undefined;
+  try {
+    const { protocol } = new URL(u.trim());
+    return protocol === "https:" || protocol === "http:" ? u.trim() : undefined;
+  } catch {
+    return undefined;
+  }
 }

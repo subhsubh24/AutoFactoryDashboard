@@ -269,7 +269,12 @@ async function fetchPulls(
       openPRs: open,
       stuckPRs: open.filter((p) => p.stuck).length,
       latestMergedAt: merged[0]?.mergedAt ?? null,
-      latestOpenUpdatedAt: open[0]?.updatedAt ?? null,
+      // `open` is sorted oldest-first (by age), so open[0] is the OLDEST PR —
+      // take the max updatedAt across all open PRs for the truly-latest activity.
+      latestOpenUpdatedAt: open.reduce<string | null>((acc, p) => {
+        if (!p.updatedAt) return acc;
+        return !acc || Date.parse(p.updatedAt) > Date.parse(acc) ? p.updatedAt : acc;
+      }, null),
     };
   } catch (e) {
     errors.push(`pull requests: ${errorMessage(e)}`);

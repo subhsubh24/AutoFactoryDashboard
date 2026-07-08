@@ -38,13 +38,13 @@ export interface NeedGroup {
   url?: string;
   kind: NeedKind;
   priority: number;
-  /** One-word category, e.g. billing / deploy / store — shared with the Action plan. */
+  /** One-word category, e.g. billing / deploy / store — drives the owner-review grouping. */
   tag?: string;
   /** 1+ members; >1 means the same task spans several projects. */
   members: NeedEntry[];
 }
 
-/** One-word category for an owner action — same vocabulary as the Action plan. */
+/** One-word category for an owner action — the owner-review type vocabulary. */
 export function inferNeedTag(text: string): string {
   const t = text.toLowerCase();
   if (/\b(app ?store|play ?store|eas|testflight|submit|signing)\b/.test(t)) return "store";
@@ -70,8 +70,6 @@ export interface Overview {
   totalMerged24h: number;
   /** Number of distinct projects that shipped at least one PR in the last 24h. */
   projectsShippedOvernight: number;
-  /** Only the things that genuinely require the human (see HUMAN_ASK_KINDS). */
-  needs: NeedEntry[];
   ci: CIHealthSummary;
   /** All merged PRs in the last 7 days, newest first. */
   feed: FeedEntry[];
@@ -265,9 +263,11 @@ export interface VelocityDay {
 
 const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
-/** Bucket merged PRs into the last 7 UTC calendar days (oldest → newest). */
-export function weeklyVelocity(feed: FeedEntry[]): VelocityDay[] {
-  const now = new Date();
+/** Bucket merged PRs into the last 7 UTC calendar days (oldest → newest). The
+ *  reference instant is injectable so callers that also window the feed against
+ *  "now" use the SAME instant (no cross-midnight skew between the two). */
+export function weeklyVelocity(feed: FeedEntry[], nowMs: number = Date.now()): VelocityDay[] {
+  const now = new Date(nowMs);
   const days: VelocityDay[] = [];
   const index = new Map<string, number>();
   for (let i = 6; i >= 0; i--) {
@@ -505,7 +505,8 @@ export function groupNeeds(needs: NeedEntry[]): NeedGroup[] {
 
 // ── Owner review — the whole "what needs me" list, bucketed for a morning pass ──
 
-/** The four kinds of owner action, in the order a morning review reads best. */
+/** The owner-action buckets: four time-sensitive "needs you now" tiers
+ *  (urgent → ship → unblock → approve) plus `do`, the routine chore backlog. */
 export type ReviewBucket = "urgent" | "ship" | "unblock" | "approve" | "do";
 
 /** Which bucket each ask kind belongs to; null = informational, excluded. */
@@ -582,17 +583,6 @@ export function buildOwnerReview(snapshots: ProjectSnapshot[]): OwnerReview {
 }
 
 export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
-  // Only the true human asks make it to the overview — the rest is noise for a
-  // morning glance and stays on the per-project pages.
-  const needs = snapshots
-    .flatMap(needsFor)
-    .filter(isHumanAsk)
-    .sort((a, b) =>
-      a.priority !== b.priority
-        ? a.priority - b.priority
-        : a.projectName.localeCompare(b.projectName),
-    );
-
   const feed: FeedEntry[] = snapshots
     .flatMap((s) =>
       s.merged7dItems.map((pr) => ({
@@ -604,17 +594,29 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
     )
     .sort((a, b) => Date.parse(b.mergedAt ?? "") - Date.parse(a.mergedAt ?? ""));
 
-  const cutoff = Date.now() - OVERNIGHT_MS;
+  const now = Date.now();
   const overnightFeed = feed.filter((e) => {
     const t = Date.parse(e.mergedAt ?? "");
-    return !Number.isNaN(t) && t >= cutoff;
+    return !Number.isNaN(t) && t >= now - OVERNIGHT_MS;
   });
 
-  const velocity = weeklyVelocity(feed);
-  const velocityTotal = velocity.reduce((n, d) => n + d.count, 0);
+  // Window the merged feed to the last 7 UTC days ONCE, here at render time, and
+  // drive BOTH the WeekBars (WHEN it shipped) and the work-mix donut (WHAT
+  // shipped) from that identical set. merged7dItems was frozen when the snapshot
+  // was cached (up to an hour ago), so deriving one surface from the frozen set
+  // and the other from a render-time window made the two totals disagree for up
+  // to an hour after each UTC midnight. Sharing one render-time `now` (also
+  // passed to weeklyVelocity) keeps donut total == bars total by construction.
+  const d = new Date(now);
+  const weekStart = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - 6);
+  const inWeekFeed = feed.filter((e) => {
+    const t = Date.parse(e.mergedAt ?? "");
+    return !Number.isNaN(t) && t >= weekStart;
+  });
 
-  const allMerged = snapshots.flatMap((s) => s.merged7dItems);
-  const themes = extractThemes(allMerged);
+  const velocity = weeklyVelocity(inWeekFeed, now);
+  const velocityTotal = velocity.reduce((n, dd) => n + dd.count, 0);
+  const themes = extractThemes(inWeekFeed);
   const mean = (xs: number[]): number | null =>
     xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null;
   const avgReady = mean(
@@ -629,7 +631,7 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
   const avgProgress = avgBuild;
 
   // Factory KPIs.
-  const cycles = allMerged
+  const cycles = inWeekFeed
     .map((p) => {
       if (!p.createdAt || !p.mergedAt) return null;
       const dt = Date.parse(p.mergedAt) - Date.parse(p.createdAt);
@@ -661,8 +663,8 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
     firstPassYield: passRates.length
       ? Math.round(passRates.reduce((a, b) => a + b, 0) / passRates.length)
       : null,
-    reworkRate: allMerged.length
-      ? Math.round((fixes / allMerged.length) * 100)
+    reworkRate: inWeekFeed.length
+      ? Math.round((fixes / inWeekFeed.length) * 100)
       : null,
     wipOpen: snapshots.reduce((n, s) => n + s.openPRs.length, 0),
     wipStuck: snapshots.reduce((n, s) => n + s.stuckPRs, 0),
@@ -682,9 +684,11 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
 
   return {
     totalMergedToday: snapshots.reduce((n, s) => n + s.mergedToday, 0),
-    totalMerged24h: snapshots.reduce((n, s) => n + s.merged24h, 0),
-    projectsShippedOvernight: snapshots.filter((s) => s.merged24h > 0).length,
-    needs,
+    // Derive the 24h count + project spread from the SAME render-time overnight
+    // feed the "what shipped" list renders, so the hero number and the list can't
+    // disagree (the per-snapshot merged24h was frozen at cache time).
+    totalMerged24h: overnightFeed.length,
+    projectsShippedOvernight: new Set(overnightFeed.map((e) => e.projectSlug)).size,
     ci: summarizeCI(snapshots),
     feed,
     overnightFeed,

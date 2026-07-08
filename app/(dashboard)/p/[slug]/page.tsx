@@ -86,7 +86,7 @@ import {
   SparkleIcon,
 } from "@/components/icons";
 
-// Render dynamically (like the Floor) so the AI digest + action plan show on
+// Render dynamically (like the Floor) so the AI digest + owner review show on
 // the first load after a deploy instead of the build-time "Summary" placeholder.
 // The GitHub + Gemini work stays memoised in unstable_cache, so a warm load is
 // just cache reads. Unknown slugs still 404 via the notFound() check below.

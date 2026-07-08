@@ -25,6 +25,7 @@
  */
 
 import type { Availability } from "@/lib/types";
+import { safeHttpUrl } from "@/lib/utils";
 
 export type GrowthPhase = "pre_launch" | "launching" | "post_launch";
 
@@ -996,7 +997,7 @@ export function parseGrowth(
     ownerBlockers: strArr(root.owner_blockers),
     links: {
       inAppAnalytics: str(li.in_app_analytics),
-      ownerDoc: str(li.owner_doc),
+      ownerDoc: safeHttpUrl(str(li.owner_doc)) ?? null,
     },
     // Sub-blocks attached only when the repo actually publishes them, so the UI
     // can key off existence and products that haven't added a block stay clean.
@@ -1029,7 +1030,8 @@ function parseDemandBlock(m: Record<string, Yaml>): GrowthDemand {
           (solvedBool === true ? "yes" : solvedBool === false ? "no" : null),
         quote: str(t.quote) ?? str(first.quote),
         source: str(t.source) ?? str(first.source),
-        url: str(t.url) ?? str(first.url),
+        // Mined from public forums → semi-untrusted; allow only http(s) in href.
+        url: safeHttpUrl(str(t.url) ?? str(first.url)) ?? null,
       };
     })
     .filter((t) => t.label);

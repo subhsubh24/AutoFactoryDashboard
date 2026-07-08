@@ -10,6 +10,7 @@
  */
 import type { Availability } from "@/lib/types";
 import { parseYamlBlock } from "@/lib/growth";
+import { safeHttpUrl } from "@/lib/utils";
 
 export type FlowStatus = "pass" | "fail" | "skipped";
 export type FindingSeverity = "high" | "med" | "low";
@@ -80,7 +81,7 @@ function parseFindings(v: unknown): ValidatorFinding[] {
         ? (severity as FindingSeverity)
         : null,
       note: str(o.note),
-      issueUrl: str(o.issue_url),
+      issueUrl: safeHttpUrl(str(o.issue_url)) ?? null,
     });
   }
   return out;

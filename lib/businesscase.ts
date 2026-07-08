@@ -336,10 +336,13 @@ function parseScenarios(
   if (allValues.length === 0) return null;
 
   const sorted = [...allValues].sort((a, b) => a - b);
+  const hadExplicitBase = byLabel.expected !== undefined;
   let expected = byLabel.expected;
   if (expected === undefined) {
-    if (allValues.length >= 3) expected = sorted[Math.floor(sorted.length / 2)];
-    else if (allValues.length) expected = sorted[sorted.length - 1];
+    // No line labeled "base"/"expected": take the lower-median so an unlabeled
+    // "conservative + optimistic" pair ships the CONSERVATIVE figure, never the
+    // optimistic one, as the headline. (len 1 → itself; 2 → lower; 3 → middle.)
+    expected = sorted[Math.floor((sorted.length - 1) / 2)];
   }
   if (expected === undefined) return null;
 
@@ -352,8 +355,10 @@ function parseScenarios(
     arrLow: low,
     arrExpected: expected,
     arrHigh: high,
-    rationale: "Base/planning case; range shown is conservative → optimistic.",
-    scenarioLabel: "base case",
+    rationale: hadExplicitBase
+      ? "Base/planning case; range shown is conservative → optimistic."
+      : "No labeled base case — conservative midpoint of the stated scenarios; range is conservative → optimistic.",
+    scenarioLabel: hadExplicitBase ? "base case" : "midpoint estimate",
     source: "business_case",
     sourceUrl,
     asOf,
