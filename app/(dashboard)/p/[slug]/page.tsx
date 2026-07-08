@@ -446,20 +446,6 @@ export default async function ProjectPage({
       <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr] lg:items-start">
         {/* Main column */}
         <div className="space-y-6">
-          {/* Owner actions lead — the same bucketed "Needs you" as the Floor
-              review, scoped to this project, so a review is action-first. */}
-          {ownerReview.total > 0 && (
-            <SectionCard
-              title="Needs you"
-              subtitle="Everything waiting on you for this project"
-              aside={
-                <span className="text-xs tabular text-muted">{ownerReview.total}</span>
-              }
-            >
-              <OwnerReview review={ownerReview} />
-            </SectionCard>
-          )}
-
           <SectionCard
             title="Last 24 hours"
             subtitle="What the agent shipped"
@@ -543,6 +529,21 @@ export default async function ProjectPage({
                 </div>
               )}
               <RoutineRuns runs={routineRunSummaries} />
+            </SectionCard>
+          )}
+
+          {/* Everything waiting on you for THIS project — the same bucketed
+              "Needs you" as the Floor review, scoped here and sitting just below
+              the routine runs so the run story reads first, then the to-do. */}
+          {ownerReview.total > 0 && (
+            <SectionCard
+              title="Needs you"
+              subtitle="Everything waiting on you for this project"
+              aside={
+                <span className="text-xs tabular text-muted">{ownerReview.total}</span>
+              }
+            >
+              <OwnerReview review={ownerReview} />
             </SectionCard>
           )}
 

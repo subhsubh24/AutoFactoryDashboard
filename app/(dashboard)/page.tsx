@@ -895,10 +895,6 @@ function ProjectTile({
         </div>
       </div>
 
-      {/* What needs you for THIS project — same owner-actions concept as the
-          Floor review + the project page, shrunk to the top items. */}
-      <OwnerActionsMini groups={tileActions} slug={s.slug} />
-
       {tagline && (
         // What the product IS (stable identity) — calm, above the status story.
         <p className="-mt-1 text-[13.5px] italic leading-snug text-muted">
@@ -965,6 +961,11 @@ function ProjectTile({
           hasBaseline={delta.hasBaseline}
         />
       )}
+
+      {/* What needs you for THIS project — same owner-actions concept as the
+          Floor review + the project page, shrunk to the top items. Sits just
+          above the growth line, closing out the tile's status story. */}
+      <OwnerActionsMini groups={tileActions} slug={s.slug} />
 
       <GrowthLine growth={s.growth} />
 

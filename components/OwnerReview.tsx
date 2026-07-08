@@ -1,4 +1,3 @@
-import { Fragment } from "react";
 import Link from "next/link";
 import type { NeedGroup, OwnerReview as OwnerReviewData, ReviewBucket } from "@/lib/aggregate";
 import { cn, type Tone } from "@/lib/utils";
@@ -76,29 +75,19 @@ function byType(groups: NeedGroup[]): { tag: string; groups: NeedGroup[] }[] {
     .sort((a, b) => tagRank(a.tag) - tagRank(b.tag));
 }
 
-/** Split the Do bucket into per-project sections (multi-project tasks first). */
+/** Split the Do bucket into per-project sections, heaviest first. A task that
+ *  spans several projects is filed under its primary (highest-priority) one. */
 function organizeDo(groups: NeedGroup[]) {
-  const across: NeedGroup[] = [];
   const byProject = new Map<string, { name: string; groups: NeedGroup[] }>();
   for (const g of groups) {
-    const projects = Array.from(new Map(g.members.map((m) => [m.projectSlug, m])).values());
-    if (projects.length > 1) {
-      across.push(g);
-      continue;
-    }
-    const p = projects[0];
-    const e = byProject.get(p.projectSlug);
+    const primary = g.members[0]; // members are priority-sorted, distinct projects
+    const e = byProject.get(primary.projectSlug);
     if (e) e.groups.push(g);
-    else byProject.set(p.projectSlug, { name: p.projectName, groups: [g] });
+    else byProject.set(primary.projectSlug, { name: primary.projectName, groups: [g] });
   }
-  const sections: { slug: string; name: string; groups: NeedGroup[] }[] = [];
-  if (across.length) sections.push({ slug: "across", name: "Across projects", groups: across });
-  for (const [slug, e] of byProject) sections.push({ slug, name: e.name, groups: e.groups });
-  // "Across" first, then heaviest projects on top.
-  sections.sort((a, b) =>
-    a.slug === "across" ? -1 : b.slug === "across" ? 1 : b.groups.length - a.groups.length,
-  );
-  return sections.map((s) => ({ ...s, byType: byType(s.groups) }));
+  return [...byProject.entries()]
+    .map(([slug, e]) => ({ slug, name: e.name, groups: e.groups, byType: byType(e.groups) }))
+    .sort((a, b) => b.groups.length - a.groups.length);
 }
 
 function ReviewRow({
@@ -201,13 +190,14 @@ function TypeDetails({
   );
 }
 
-/** The Do bucket — collapsible groups so a long backlog stays scannable. On a
+/** The Do bucket — a collapsible tree so a long backlog stays scannable. On a
  *  single project (the project page) it collapses BY TYPE; across the fleet (the
- *  Floor) it collapses BY PROJECT, with type sub-headers inside each. */
+ *  Floor) it's a two-level tree: Project → Type → tasks, each level its own
+ *  independent collapsible. */
 function DoBucket({ groups }: { groups: NeedGroup[] }) {
   const sections = organizeDo(groups);
   // Single project (project page) → group directly by type, no redundant wrapper.
-  if (sections.length === 1 && sections[0].slug !== "across") {
+  if (sections.length === 1) {
     return (
       <div className="mt-1.5 border-t border-hairline">
         {sections[0].byType.map((t) => (
@@ -219,7 +209,7 @@ function DoBucket({ groups }: { groups: NeedGroup[] }) {
   return (
     <div className="mt-1.5 border-t border-hairline">
       {sections.map((proj) => (
-        <details key={proj.slug} className="group border-b border-hairline last:border-b-0">
+        <details key={proj.slug} className="group/proj border-b border-hairline last:border-b-0">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 py-2.5">
             <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
               <span className="text-[13px] font-medium text-ink">{proj.name}</span>
@@ -235,20 +225,11 @@ function DoBucket({ groups }: { groups: NeedGroup[] }) {
                 ))}
               </span>
             </span>
-            <ArrowRightIcon className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-90" />
+            <ArrowRightIcon className="h-4 w-4 shrink-0 text-muted transition-transform group-open/proj:rotate-90" />
           </summary>
-          <div className="pb-1.5">
+          <div className="border-t border-hairline pl-3">
             {proj.byType.map((t) => (
-              <Fragment key={t.tag}>
-                <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
-                  {TAG_LABEL[t.tag] ?? t.tag}
-                </p>
-                <ul className="divide-y divide-hairline border-t border-hairline">
-                  {t.groups.map((g) => (
-                    <ReviewRow key={g.id} group={g} tone="muted" showProject={proj.slug === "across"} />
-                  ))}
-                </ul>
-              </Fragment>
+              <TypeDetails key={t.tag} tag={t.tag} groups={t.groups} showProject={false} />
             ))}
           </div>
         </details>
