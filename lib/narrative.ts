@@ -1,12 +1,18 @@
 import { unstable_cache } from "next/cache";
 import type { PRItem, ProjectSnapshot } from "@/lib/types";
-import { checkBriefing, checkNarrative, type Violation } from "@/lib/llm-guard";
+import {
+  checkBriefing,
+  checkNarrative,
+  checkNoFalseLaunch,
+  type Violation,
+} from "@/lib/llm-guard";
 import { groupNeeds, humanAsksFor, type NeedGroup } from "@/lib/aggregate";
 import { extractThemes, themeSummary } from "@/lib/themes";
 import { parseBusinessCase, type Valuation } from "@/lib/businesscase";
 import type { Growth } from "@/lib/growth";
 import type { QualityScorecard } from "@/lib/scorecard";
 import {
+  firstSentence,
   headlinePct,
   kindLabel,
   milestoneTitle,
@@ -792,12 +798,13 @@ export function getLaunchSummary(s: ProjectSnapshot): Promise<LaunchSummary> {
 
   return unstable_cache(
     async (): Promise<LaunchSummary> => {
-      const llm = await callLLM(
+      const llm = await generateGuarded(
         [
           { role: "system", content: LAUNCH_SYSTEM },
           { role: "user", content: launchContext(s) },
         ],
         700,
+        checkNoFalseLaunch, // ROADMAP-fed → guard against a false "now live" claim
       );
       if (llm.text) {
         const { overview, features } = parseLaunch(llm.text);
@@ -811,13 +818,6 @@ export function getLaunchSummary(s: ProjectSnapshot): Promise<LaunchSummary> {
 }
 
 /** First sentence of a string, clipped — used by the growth summary fallback. */
-function firstSentence(s: string, max = 150): string {
-  const t = s.replace(/\s+/g, " ").trim();
-  const m = t.match(/^(.*?[.!?])(?:\s|$)/);
-  const out = m ? m[1] : t;
-  return out.length > max ? `${out.slice(0, max).trim()}…` : out;
-}
-
 // ────────────────────────────────────────────────────────────────────────────
 // Product tagline — a stable one-liner "what this product is" (LLM, README-led)
 // ────────────────────────────────────────────────────────────────────────────
@@ -892,12 +892,13 @@ export function getProjectTagline(s: ProjectSnapshot): Promise<string | null> {
 
   return unstable_cache(
     async (): Promise<string | null> => {
-      const out = await callLLM(
+      const out = await generateGuarded(
         [
           { role: "system", content: TAGLINE_SYSTEM },
           { role: "user", content: taglineContext(s) },
         ],
         60, // a one-sentence tagline needs almost nothing
+        checkNoFalseLaunch, // README-fed → don't let it claim the product is live
       );
       if (out.text) {
         let t = out.text
@@ -1050,7 +1051,8 @@ export function getLastRunSummary(
           { role: "user", content: lastRunContext(pr, s.displayName, forward) },
         ],
         320, // headroom for 2-3 plain-language sentences (what · why · likely next)
-        (text) => checkLastRun(text, `${pr.title}\n${body}`),
+        // PR-body-fed → the existing number guard PLUS a false-launch guard.
+        (text) => [...checkLastRun(text, `${pr.title}\n${body}`), ...checkNoFalseLaunch(text)],
       );
       if (out.text) {
         // Generous cap — the summary must never truncate mid-thought in the UI.

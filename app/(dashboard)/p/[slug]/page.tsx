@@ -113,34 +113,45 @@ export default async function ProjectPage({
   if (!project) notFound();
 
   const snapshot = await getProjectSnapshot(project);
-  const [narrative, history, valuation, tagline, growthSummary] =
-    await Promise.all([
-      getNarrative(snapshot),
-      getHistory(slug),
-      getValuation(snapshot),
-      getProjectTagline(snapshot),
-      getGrowthSummary(snapshot),
-    ]);
-  // Everything waiting on you for THIS project — bucketed exactly like the Floor
-  // review and mirrored in the tile, so the owner-actions concept is consistent.
+  // Synchronous inputs the parallel fetches below depend on.
+  //  - ownerReview: everything waiting on you for THIS project, bucketed like the
+  //    Floor review and mirrored in the tile.
+  //  - lastPr: the most recent merged PR (the "last run" pulse).
   const ownerReview = buildOwnerReview([snapshot]);
-  // "What the factory built" — only meaningful once flagged ready to submit.
-  const launch = snapshot.readyForSubmission
-    ? await getLaunchSummary(snapshot)
-    : null;
-  // Per-routine "last run" digest — what each scheduled routine last did. The
-  // auditor rows get a plain-language AI read of their (engineer-facing) gaps.
-  // The demand routine's counter-signal notes get the same plain-language read.
-  // The chore backlog gets a one-line AI read of what the pile is about.
-  const [qualityAuditSummary, gtmAuditSummary, counterSignalSummary, backlogSummary] =
-    await Promise.all([
-      getScorecardSummary(snapshot.qualityScorecard, "Quality audit"),
-      getScorecardSummary(snapshot.gtmScorecard, "GTM audit"),
-      snapshot.growth.demand
-        ? getCounterSignalSummary(snapshot.growth.demand.disconfirming)
-        : Promise.resolve(null),
-      getBacklogSummary(ownerReview.backlog),
-    ]);
+  const lastPr = snapshot.recentMerged[0] ?? null;
+
+  // Every AI read here depends only on the snapshot / ownerReview / lastPr, so
+  // fetch them in ONE parallel batch instead of four sequential LLM waves — a
+  // cold render was paying up to four round-trips back-to-back for no reason.
+  const [
+    narrative,
+    history,
+    valuation,
+    tagline,
+    growthSummary,
+    launch, // "What the factory built" — only meaningful once flagged ready.
+    qualityAuditSummary,
+    gtmAuditSummary,
+    counterSignalSummary,
+    backlogSummary,
+    lastRunSummary,
+  ] = await Promise.all([
+    getNarrative(snapshot),
+    getHistory(slug),
+    getValuation(snapshot),
+    getProjectTagline(snapshot),
+    getGrowthSummary(snapshot),
+    snapshot.readyForSubmission ? getLaunchSummary(snapshot) : Promise.resolve(null),
+    getScorecardSummary(snapshot.qualityScorecard, "Quality audit"),
+    getScorecardSummary(snapshot.gtmScorecard, "GTM audit"),
+    snapshot.growth.demand
+      ? getCounterSignalSummary(snapshot.growth.demand.disconfirming)
+      : Promise.resolve(null),
+    getBacklogSummary(ownerReview.backlog),
+    lastPr ? getLastRunSummary(lastPr, snapshot) : Promise.resolve(null),
+  ]);
+
+  // Depends on the resolved narrative + growth + audit summaries above.
   const routineRunSummaries = buildRoutineRunSummaries(
     snapshot,
     narrative,
@@ -174,10 +185,7 @@ export default async function ProjectPage({
   // cron schedule (config/routines.ts), computed live in UTC (never cached).
   const routineRuns = runsFor(routinesForSlug(slug));
   // The project pulse: the most recent PR it shipped + the next routine to fire.
-  const lastPr = snapshot.recentMerged[0] ?? null;
-  const lastRunSummary = lastPr
-    ? await getLastRunSummary(lastPr, snapshot)
-    : null;
+  // (lastPr + lastRunSummary are resolved in the batch above.)
   const soonestRoutine = soonestRun(routineRuns);
   // Scheduled-run workload (the activity-as-cost proxy's backbone) — runs/week
   // per routine, computed live from the same authoritative cron schedule.

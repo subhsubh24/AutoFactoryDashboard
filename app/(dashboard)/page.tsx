@@ -346,9 +346,9 @@ export default async function OverviewPage() {
                   )}
               </>
             ) : (
-              <span className="text-muted/70">
-                fills in once the daily snapshot records history (Vercel KV)
-              </span>
+              // One canonical short phrase (shared with the tile deltas); the full
+              // "why" lives once in the Progress-to-launch section below.
+              <span className="text-muted/70">fills in once daily history records</span>
             )}
           </div>
         </div>

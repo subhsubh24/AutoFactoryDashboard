@@ -345,3 +345,11 @@ export function safeHttpUrl(u?: string | null): string | undefined {
     return undefined;
   }
 }
+
+/** First sentence of a string (whitespace-collapsed), clipped at a word boundary. */
+export function firstSentence(s: string, max = 180): string {
+  const t = s.replace(/\s+/g, " ").trim();
+  const m = t.match(/^(.*?[.!?])(?:\s|$)/);
+  const out = m ? m[1] : t;
+  return out.length > max ? `${out.slice(0, max).replace(/\s+\S*$/, "").trim()}…` : out;
+}

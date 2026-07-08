@@ -7,7 +7,7 @@
  * project is near completion / ready / launched when the numbers say otherwise,
  * while normal early-stage prose must pass untouched.
  */
-import { checkNarrative, checkBriefing } from "./llm-guard.ts";
+import { checkNarrative, checkBriefing, checkNoFalseLaunch } from "./llm-guard.ts";
 
 let failed = 0;
 function expect(name: string, got: boolean, want: boolean) {
@@ -150,6 +150,14 @@ expect(
   bflags("Six PRs merged across three projects, focusing on features. GroceryManager is ready for your sign-off.", false),
   false,
 );
+
+console.log("── false-launch guard (tagline / launch / last-run, repo-fed) ──");
+const nfl = (t: string) => checkNoFalseLaunch(t).length > 0;
+expect("flags 'now live on the App Store'", nfl("The app is now live on the App Store."), true);
+expect("flags 'shipped to production'", nfl("We shipped to production this week."), true);
+expect("flags 'available on Google Play'", nfl("It's available on Google Play now."), true);
+expect("allows 'ready to submit'", nfl("The build is ready to submit to the App Store."), false);
+expect("allows normal feature prose", nfl("Adds household sharing and a nightly reconciliation job."), false);
 
 console.log(failed === 0 ? "\nALL PASS" : `\n${failed} FAILED`);
 if (failed) process.exitCode = 1;

@@ -3,7 +3,7 @@ import type { Narrative, GrowthSummary } from "@/lib/narrative";
 import type { QualityScorecard } from "@/lib/scorecard";
 import type { RoutineType } from "@/config/routines";
 import { routinesForSlug } from "@/config/routines";
-import { cn, formatShortDate, toneClasses, type Tone } from "@/lib/utils";
+import { cn, firstSentence, formatShortDate, toneClasses, type Tone } from "@/lib/utils";
 
 /**
  * "What each routine last did" — one line per scheduled routine that touches a
@@ -34,14 +34,6 @@ const GRADE_TONE: Record<string, Tone> = {
   D: "clay",
   F: "clay",
 };
-
-/** First sentence of a digest, clipped — the "what it did" gist for one row. */
-function firstSentence(s: string, max = 180): string {
-  const t = s.replace(/\s+/g, " ").trim();
-  const m = t.match(/^(.*?[.!?])(?:\s|$)/);
-  const out = m ? m[1] : t;
-  return out.length > max ? `${out.slice(0, max).replace(/\s+\S*$/, "").trim()}…` : out;
-}
 
 function scorecardRow(
   type: RoutineType,

@@ -67,6 +67,27 @@ export function checkNarrative(text: string, f: NarrativeFacts): Violation[] {
   return out;
 }
 
+/**
+ * Flag a false "live / launched / in production" claim. Used to guard the
+ * product-facing summaries (tagline, launch, last-run) that are generated from
+ * repo-controlled text (README / ROADMAP / PR bodies) — a crafted doc could
+ * otherwise steer the LLM into telling the owner a pre-launch product is live.
+ * These products are pre-launch by definition, so any such claim is false.
+ */
+export function checkNoFalseLaunch(text: string): Violation[] {
+  if (LAUNCHED_RE.test(text)) {
+    return [
+      {
+        rule: "false-launch",
+        message:
+          "Do not say the product is live/launched/in production/on the app store — " +
+          "it has NOT launched to users. Describe what was built, not that it's live.",
+      },
+    ];
+  }
+  return [];
+}
+
 export interface BriefingFacts {
   /** True if at least one project is flagged ready for submission. */
   anyReady: boolean;
