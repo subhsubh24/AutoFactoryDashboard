@@ -433,16 +433,20 @@ function asPriority(v: unknown): ActionPriority {
  * normal, and maps each to an ActionItem. Returns null when no block exists (so
  * the caller falls back to the prose/issue scrape).
  */
-function parseOwnerActions(md: string): ActionItem[] | null {
+function parseOwnerActions(
+  md: string,
+): { items: ActionItem[]; resolved: number } | null {
   const block = parseYamlBlock(md, "OWNER_ACTIONS");
   if (!block) return null;
   const rawItems = Array.isArray(block.items) ? block.items : [];
 
+  let resolved = 0;
   const ranked: { item: ActionItem; rank: number }[] = [];
   for (const raw of rawItems) {
     if (!raw || typeof raw !== "object") continue;
     const o = raw as Record<string, unknown>;
     const status = String(o.status ?? "").toLowerCase();
+    if (status === "done") resolved++; // §38 — count the resolved audit trail
     if (status !== "open" && status !== "in_progress") continue; // actionable only
     const title = typeof o.title === "string" ? o.title.trim() : "";
     if (!title) continue;
@@ -462,7 +466,7 @@ function parseOwnerActions(md: string): ActionItem[] | null {
     });
   }
   ranked.sort((a, b) => a.rank - b.rank);
-  return ranked.map((r) => r.item);
+  return { items: ranked.map((r) => r.item), resolved };
 }
 
 export function parsePendingOps(md: string | null | undefined): ActionItemsInfo {
@@ -480,9 +484,14 @@ export function parsePendingOps(md: string | null | undefined): ActionItemsInfo 
   // Prefer the structured OWNER_ACTIONS block when the repo publishes one.
   const owner = parseOwnerActions(md);
   if (owner !== null) {
-    return owner.length > 0
-      ? { available: true, items: owner }
-      : { available: true, items: [], note: "none queued" };
+    return owner.items.length > 0
+      ? { available: true, items: owner.items, resolvedCount: owner.resolved }
+      : {
+          available: true,
+          items: [],
+          note: "none queued",
+          resolvedCount: owner.resolved,
+        };
   }
 
   const ls = lines(md);

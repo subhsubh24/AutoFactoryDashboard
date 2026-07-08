@@ -5,6 +5,21 @@ import { cn } from "@/lib/utils";
 import { CheckBox, useCheckedSet } from "@/components/checklist";
 import { CheckIcon } from "@/components/icons";
 
+/**
+ * A quiet tally of OWNER_ACTIONS the loop has marked resolved (FACTORY_STANDARD
+ * §38). Keeps the audit trail visible without cluttering the actionable list;
+ * renders nothing when zero/absent.
+ */
+function ResolvedTally({ n }: { n?: number }) {
+  if (!n || n <= 0) return null;
+  return (
+    <p className="mt-2 flex items-center gap-1.5 text-xs text-muted">
+      <CheckIcon className="h-3 w-3 text-sage-strong" />
+      {n} resolved · cleared by the loop
+    </p>
+  );
+}
+
 /** Per-project action items from PENDING_OPS.md — checkable, locally persisted. */
 export function ActionItemsPanel({
   info,
@@ -36,6 +51,7 @@ export function ActionItemsPanel({
             ? "Nothing queued — you're all clear."
             : (info.note ?? "No action items.")}
         </div>
+        <ResolvedTally n={info.resolvedCount} />
         {info.rawSection && (
           <pre className="mt-1 overflow-x-auto whitespace-pre-wrap rounded-lg bg-bg p-3 text-xs text-muted">
             {info.rawSection}
@@ -80,6 +96,7 @@ export function ActionItemsPanel({
       {hydrated && remaining === 0 && (
         <p className="mt-3 text-xs text-sage-strong">All items checked off. ✨</p>
       )}
+      <ResolvedTally n={info.resolvedCount} />
     </div>
   );
 }
