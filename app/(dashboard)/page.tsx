@@ -534,7 +534,7 @@ export default async function OverviewPage() {
           </div>
           {overview.velocityTotal > 0 ? (
             <div className="mt-5">
-              <WeekBars days={overview.velocity} />
+              <WeekBars days={overview.velocity} rows={overview.weekRows} />
             </div>
           ) : (
             <p className="py-4 text-sm text-muted">
@@ -551,7 +551,7 @@ export default async function OverviewPage() {
               <span className="text-xs text-muted">by type · 7-day</span>
             </div>
             <div className="mt-5">
-              <PrMixDonut buckets={workMix} total={workMixTotal} />
+              <PrMixDonut buckets={workMix} total={workMixTotal} rows={overview.weekRows} />
             </div>
           </div>
         )}

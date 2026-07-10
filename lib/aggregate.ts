@@ -1,7 +1,7 @@
 import type { FeedEntry, ProjectSnapshot } from "@/lib/types";
 import type { DailyMetric } from "@/lib/kv";
 import { pluralize, type Tone } from "@/lib/utils";
-import { extractThemes, type ThemeCount } from "@/lib/themes";
+import { extractThemes, workBucketOf, type ThemeCount, type WorkBucket } from "@/lib/themes";
 
 export type NeedKind =
   | "ready"
@@ -81,6 +81,9 @@ export interface Overview {
   velocityTotal: number;
   /** What this week's merged PRs focused on, across the whole factory. */
   themes: ThemeCount[];
+  /** Every PR behind the WeekBars + work-mix donut, tagged with its day + work
+   *  type — the underlying records for the chart drill-downs. */
+  weekRows: DrillPr[];
   /** Mean build completeness across projects that report it, or null. */
   avgProgress: number | null;
   /** Mean submission readiness (Definition of Done) across projects, or null. */
@@ -259,6 +262,21 @@ export interface VelocityDay {
   /** Two-letter weekday label, e.g. "Mo". */
   weekday: string;
   count: number;
+}
+
+/** One merged PR behind the WeekBars / work-mix donut — the record a drill-down
+ *  reveals, tagged with the day it landed and its coarse work type. */
+export interface DrillPr {
+  projectSlug: string;
+  projectName: string;
+  number: number;
+  title: string;
+  url: string;
+  mergedAt: string | null;
+  /** YYYY-MM-DD (UTC) — matches a WeekBars day. */
+  dayKey: string;
+  /** Coarse work type — matches a donut slice. */
+  bucket: WorkBucket;
 }
 
 const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -617,6 +635,19 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
   const velocity = weeklyVelocity(inWeekFeed, now);
   const velocityTotal = velocity.reduce((n, dd) => n + dd.count, 0);
   const themes = extractThemes(inWeekFeed);
+
+  // The underlying records for the chart drill-downs — the SAME in-window set the
+  // bars + donut count, each tagged with its day-key and coarse work type.
+  const weekRows: DrillPr[] = inWeekFeed.map((e) => ({
+    projectSlug: e.projectSlug,
+    projectName: e.projectName,
+    number: e.number,
+    title: e.title,
+    url: e.url,
+    mergedAt: e.mergedAt ?? null,
+    dayKey: new Date(Date.parse(e.mergedAt ?? "")).toISOString().slice(0, 10),
+    bucket: workBucketOf(e.title),
+  }));
   const mean = (xs: number[]): number | null =>
     xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null;
   const avgReady = mean(
@@ -695,6 +726,7 @@ export function buildOverview(snapshots: ProjectSnapshot[]): Overview {
     velocity,
     velocityTotal,
     themes,
+    weekRows,
     avgProgress,
     avgReady,
     factory,

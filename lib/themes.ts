@@ -124,6 +124,11 @@ function classify(title: string): ThemeDef {
   return THEMES.find((t) => t.key === "feature")!;
 }
 
+/** The coarse work-type bucket a single PR rolls up into (for chart drill-downs). */
+export function workBucketOf(title: string): WorkBucket {
+  return BUCKET_OF[classify(title).key];
+}
+
 /** Theme breakdown for a set of PRs, most common first. */
 export function extractThemes(prs: PRItem[]): ThemeCount[] {
   const counts = new Map<ThemeKey, ThemeCount>();
