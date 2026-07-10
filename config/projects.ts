@@ -79,6 +79,15 @@ export const PROJECTS: ProjectConfig[] = [
     kind: "web",
     appUrl: "https://llm-quant-six.vercel.app/",
   },
+  {
+    slug: "margin",
+    displayName: "Margin",
+    owner: "subhsubh24",
+    repo: "Margin.ai",
+    // branch omitted → data layer uses the repo's default_branch
+    kind: "web",
+    // appUrl added once the Vercel demo is live
+  },
 ];
 
 /** Look up a single project by its slug. */
