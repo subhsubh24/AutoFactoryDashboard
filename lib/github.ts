@@ -61,7 +61,7 @@ export const SNAPSHOT_REVALIDATE_SECONDS = 3600;
 // v18: GTM channel approvals — pending_approvals[] (GROWTH_STATUS) + approved_channels: (PENDING_OPS).
 // v19: YAML-subset fold fix — a "- " line inside an open quoted scalar no longer
 //      unwinds the parse (was silently dropping next_actions/demand_signal/etc.).
-const SNAPSHOT_CACHE_VERSION = "v23";
+const SNAPSHOT_CACHE_VERSION = "v24";
 
 const STUCK_PR_HOURS = 12;
 // The factory's "done" issue. The canonical title is "FACTORY: ready for
@@ -107,19 +107,47 @@ const GH_TIMEOUT_MS = 15_000;
 const GH_MAX_RETRIES = 3;
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 
+// Never let a waiter block forever. This state is module-level, so a Vercel warm
+// instance retains it across requests; if the platform kills a render mid-flight
+// (a function timeout) before its release() runs, `ghActive` stays pinned at the
+// cap with nothing to release it — and every later render on that instance would
+// deadlock in ghAcquire, freezing the snapshot cache (the "stopped updating"
+// failure). The bounded wait is the safety valve: a waiter proceeds anyway after
+// GH_ACQUIRE_MAX_WAIT_MS (mild, self-correcting over-subscription) so a render
+// always makes progress instead of hanging.
 let ghActive = 0;
 const ghWaiters: Array<() => void> = [];
-async function ghAcquire(): Promise<void> {
+const GH_ACQUIRE_MAX_WAIT_MS = 5_000;
+
+function ghAcquire(): Promise<void> {
   if (ghActive < MAX_CONCURRENT_GH) {
     ghActive += 1;
-    return;
+    return Promise.resolve();
   }
-  await new Promise<void>((resolve) => ghWaiters.push(resolve));
-  ghActive += 1;
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const grant = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(); // slot handed over by release() — do NOT re-increment here
+    };
+    timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      const i = ghWaiters.indexOf(grant);
+      if (i >= 0) ghWaiters.splice(i, 1);
+      ghActive += 1; // safety valve: took a slot without a formal hand-off
+      resolve();
+    }, GH_ACQUIRE_MAX_WAIT_MS);
+    ghWaiters.push(grant);
+  });
 }
 function ghRelease(): void {
-  ghActive -= 1;
-  ghWaiters.shift()?.();
+  const next = ghWaiters.shift();
+  if (next) next(); // hand this slot straight to the next waiter — count unchanged
+  else ghActive = Math.max(0, ghActive - 1);
 }
 const ghSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 

@@ -156,7 +156,7 @@ export default async function OverviewPage() {
   // is the SAME number the Floor lists + badges (one card per clustered task).
   const [briefing, backlogSummary, narrativeEntries, valuationEntries, taglineEntries] =
     await Promise.all([
-      getFactoryBriefing(snapshots, ownerReview.total),
+      getFactoryBriefing(snapshots, ownerReview.total, overview.totalMerged24h),
       getBacklogSummary(ownerReview.backlog),
       Promise.all(snapshots.map(async (s) => [s.slug, await getNarrative(s)] as const)),
       Promise.all(snapshots.map(async (s) => [s.slug, await getValuation(s)] as const)),

@@ -42,7 +42,7 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 // why an old wrong ARR could persist even after fixing the parser).
 // v9: briefing attention count = grouped "Needs you" cards (matches the badge);
 //     factoryContext drops per-project ask counts so the prose can't contradict it.
-const CACHE_VERSION = "v11";
+const CACHE_VERSION = "v12";
 
 /** True during `next build` (prerender). Used to skip external LLM calls. */
 function buildPhase(): boolean {
@@ -638,18 +638,20 @@ export interface FactoryBriefing {
   source: "llm" | "template";
 }
 
-function templateBriefing(snapshots: ProjectSnapshot[], needs: number): string {
-  const totalMerged = snapshots.reduce((n, s) => n + s.merged24h, 0);
+function templateBriefing(
+  snapshots: ProjectSnapshot[],
+  needs: number,
+  totalMerged: number,
+): string {
   const focus = themeSummary(extractThemes(snapshots.flatMap((s) => s.merged7dItems)));
   const lead =
     totalMerged > 0
       ? `${totalMerged} ${pluralize(totalMerged, "PR")} shipped across the factory in the last 24h` +
         (focus ? ` — ${focus.replace(/^Mostly /, "mostly ").replace(/\.$/, "")}` : "")
       : "Quiet across the factory — nothing shipped in the last 24h";
-  const tail =
-    needs > 0
-      ? `${needs} ${pluralize(needs, "item")} ${needs === 1 ? "needs" : "need"} your attention.`
-      : "Nothing needs you right now.";
+  // Don't restate a count — the masthead badge owns that number (same rule as
+  // the LLM path); just point at the list.
+  const tail = needs > 0 ? "A few items need your attention below." : "Nothing needs you right now.";
   return `${lead}. ${tail}`;
 }
 
@@ -665,13 +667,19 @@ export function getFactoryBriefing(
    * the list exactly. Falls back to the deterministic grouped count.
    */
   attentionCount?: number,
+  /**
+   * The 24h merged count the hero shows (overview.totalMerged24h — a render-time
+   * count). Passed in so the briefing's "N PRs shipped" matches the hero exactly;
+   * without it the per-snapshot merged24h sum (frozen at cache time) can disagree.
+   */
+  totalMerged24h?: number,
 ): Promise<FactoryBriefing> {
-  const totalMerged = snapshots.reduce((n, s) => n + s.merged24h, 0);
+  const totalMerged = totalMerged24h ?? snapshots.reduce((n, s) => n + s.merged24h, 0);
   const needs = attentionCount ?? groupNeeds(snapshots.flatMap(humanAsksFor)).length;
 
   // See getNarrative: skip the LLM (and the cache) during build.
   if (buildPhase()) {
-    return Promise.resolve({ text: templateBriefing(snapshots, needs), source: "template" });
+    return Promise.resolve({ text: templateBriefing(snapshots, needs, totalMerged), source: "template" });
   }
 
   const cacheKey = [
@@ -706,7 +714,7 @@ export function getFactoryBriefing(
         (text) => checkBriefing(text, { anyReady }),
       );
       if (llm.text) return { text: llm.text, source: "llm" };
-      return { text: templateBriefing(snapshots, needs), source: "template" };
+      return { text: templateBriefing(snapshots, needs, totalMerged), source: "template" };
     },
     cacheKey,
     { revalidate: 600 },
