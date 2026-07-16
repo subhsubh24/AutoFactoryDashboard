@@ -220,6 +220,15 @@ export function LoopHealthPanel({
             tone={(tr.circuitBreakerTrips ?? 0) > 0 ? "clay" : "ink"}
           />
         </div>
+        {tr.groundedAgainstMobbin !== null && (
+          <p className="mt-2">
+            <Chip tone={tr.groundedAgainstMobbin ? "sage" : "clay"}>
+              {tr.groundedAgainstMobbin
+                ? "design grounded in Mobbin ✓"
+                : "UI shipped ungrounded"}
+            </Chip>
+          </p>
+        )}
       </div>
 
       <div className="border-t border-hairline pt-3">
