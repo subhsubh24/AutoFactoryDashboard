@@ -26,6 +26,12 @@ export interface LoopThisRun {
   verifyCycleFailures: number | null;
   reviewRejections: number | null;
   circuitBreakerTrips: number | null;
+  /**
+   * FACTORY_STANDARD §6b — did a UI/design change this run ground against Mobbin?
+   * true = queried Mobbin + left the REFERENCES.md receipt; false = UI shipped
+   * ungrounded (a design-taste gap); null = no UI work this run.
+   */
+  groundedAgainstMobbin: boolean | null;
 }
 
 /** Rolling 7-day loop metrics. */
@@ -79,6 +85,9 @@ function num(v: unknown): number | null {
 function str(v: unknown): string | null {
   return typeof v === "string" && v.trim() ? v.trim() : null;
 }
+function bool(v: unknown): boolean | null {
+  return typeof v === "boolean" ? v : null;
+}
 function strArr(v: unknown): string[] {
   return Array.isArray(v)
     ? v
@@ -104,6 +113,7 @@ function blank(): Omit<LoopHealth, "available"> {
       verifyCycleFailures: null,
       reviewRejections: null,
       circuitBreakerTrips: null,
+      groundedAgainstMobbin: null,
     },
     rolling7d: {
       mergedPrs: null,
@@ -156,6 +166,7 @@ export function parseLoopHealth(
       verifyCycleFailures: num(tr.verify_cycle_failures),
       reviewRejections: num(tr.review_rejections),
       circuitBreakerTrips: num(tr.circuit_breaker_trips),
+      groundedAgainstMobbin: bool(tr.grounded_against_mobbin),
     },
     rolling7d: {
       mergedPrs: num(r7.merged_prs),
